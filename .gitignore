@@ -1,0 +1,32 @@
+# Environment / secrets — NEVER commit these
+.env
+*.env
+.env.*
+
+# Kalshi private key
+~/.kalshi/
+*.pem
+
+# SQLite database (runtime data)
+*.db
+*.sqlite
+*.sqlite3
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
