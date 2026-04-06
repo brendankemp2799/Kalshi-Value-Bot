@@ -200,6 +200,8 @@ def run_scan(
                 consensus_std=opp.consensus_std,
                 kalshi_spread=opp.matched_event.kalshi_market.spread,
                 commence_time=event.commence_time.isoformat(),
+                bet_type=opp.matched_event.kalshi_market.bet_type,
+                threshold=opp.matched_event.kalshi_market.threshold,
             )
             logger.info(
                 "[PAPER] Position logged: %s $%.2f on Kalshi",
@@ -226,6 +228,8 @@ def run_scan(
                 consensus_std=opp.consensus_std,
                 kalshi_spread=opp.matched_event.kalshi_market.spread,
                 commence_time=event.commence_time.isoformat(),
+                bet_type=opp.matched_event.kalshi_market.bet_type,
+                threshold=opp.matched_event.kalshi_market.threshold,
             )
             if exec_status == "submitted":
                 logger.info(

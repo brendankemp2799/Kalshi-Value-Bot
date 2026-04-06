@@ -41,29 +41,52 @@ def remove_vig(probs: list[float]) -> list[float]:
 
 
 def consensus_stats(
-    bookmakers_data: list[dict], outcome_name: str
+    bookmakers_data: list[dict],
+    outcome_name: str,
+    market_key: str = "h2h",
+    point: float | None = None,
 ) -> tuple[float | None, int, float]:
     """
     Compute de-vigged consensus probability plus quality metrics.
 
+    Args:
+        bookmakers_data — The Odds API bookmakers list for an event
+        outcome_name    — The outcome to measure (team name, "Over", "Under",
+                          "Draw", "Yes", "No")
+        market_key      — Odds API market type: "h2h", "totals", "spreads", "btts"
+        point           — For totals/spreads: filter to markets with this line
+                          value (within ±0.25 tolerance). None = accept any line.
+
     Returns:
         (mean_prob, bookmaker_count, std_dev)
-        mean_prob       — average de-vigged probability across all covering books
-                          (None if no book carries this outcome)
-        bookmaker_count — number of books that have odds for this outcome
-        std_dev         — standard deviation of per-book de-vigged probs
-                          (0.0 = perfect agreement, higher = books disagree)
+        mean_prob       — average de-vigged probability (None if no book carries it)
+        bookmaker_count — number of books with odds for this outcome
+        std_dev         — std dev of per-book de-vigged probs (0 = perfect agreement)
     """
     de_vigged_probs: list[float] = []
 
     for book in bookmakers_data:
         for market in book.get("markets", []):
-            if market.get("key") != "h2h":
+            if market.get("key") != market_key:
                 continue
             outcomes = market.get("outcomes", [])
-            target = next((o for o in outcomes if o["name"] == outcome_name), None)
+
+            # For totals/spreads, the point is stored on each outcome.
+            # Filter by line value when specified.
+            if point is not None:
+                target = next(
+                    (o for o in outcomes
+                     if o.get("name") == outcome_name
+                     and o.get("point") is not None
+                     and abs(float(o["point"]) - point) <= 0.25),
+                    None,
+                )
+            else:
+                target = next((o for o in outcomes if o.get("name") == outcome_name), None)
+
             if target is None:
                 continue
+
             all_probs = [american_to_prob(o["price"]) for o in outcomes]
             no_vig = remove_vig(all_probs)
             idx = outcomes.index(target)

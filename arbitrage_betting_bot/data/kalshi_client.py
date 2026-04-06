@@ -12,6 +12,9 @@ Market structure (current):
   We fetch all and deduplicate to one market per game (by event_ticker),
   keeping whichever market's YES team matches the home team, or the first
   one found.  Prices are in yes_bid_dollars / no_bid_dollars (USD strings).
+
+  Totals, spreads, and BTTS markets use separate series (e.g. KXNBATOTAL).
+  Each threshold is a distinct market — we keep them all (no deduplication).
 """
 from __future__ import annotations
 
@@ -29,26 +32,61 @@ import config
 
 logger = logging.getLogger(__name__)
 
-# Maps Odds API sport keys → Kalshi game-winner series tickers
-_SPORT_TO_SERIES: dict[str, str] = {
-    "americanfootball_nfl":        "KXNFLGAME",
-    "americanfootball_ncaaf":      "KXNCAAFGAME",
-    "basketball_nba":              "KXNBAGAME",
-    "basketball_ncaab":            "KXNCAABGAME",
-    "baseball_mlb":                "KXMLBGAME",
-    "icehockey_nhl":               "KXNHLGAME",
-    "soccer_usa_mls":              "KXMLSGAME",
-    "soccer_epl":                  "KXEPLGAME",
-    "soccer_uefa_champs_league":   "KXUCLGAME",
+# Maps Odds API sport keys → list of Kalshi series tickers (H2H first, then non-H2H)
+_SPORT_TO_SERIES: dict[str, list[str]] = {
+    "americanfootball_nfl":      ["KXNFLGAME"],
+    "americanfootball_ncaaf":    ["KXNCAAFGAME"],
+    "basketball_nba":            ["KXNBAGAME", "KXNBATOTAL", "KXNBASPREAD"],
+    "basketball_ncaab":          ["KXNCAABGAME"],
+    "baseball_mlb":              ["KXMLBGAME", "KXMLBTOTAL", "KXMLBSPREAD"],
+    "icehockey_nhl":             ["KXNHLGAME", "KXNHLTOTAL", "KXNHLSPREAD"],
+    "soccer_usa_mls":            ["KXMLSGAME", "KXMLSBTTS"],
+    "soccer_epl":                ["KXEPLGAME", "KXEPLBTTS"],
+    "soccer_uefa_champs_league": ["KXUCLGAME", "KXUCLBTTS"],
 }
+
+# Maps Kalshi series prefix → bet type ("h2h" is default / omitted)
+_SERIES_TO_BET_TYPE: dict[str, str] = {
+    "KXNBATOTAL":  "totals",
+    "KXMLBTOTAL":  "totals",
+    "KXNHLTOTAL":  "totals",
+    "KXEPLTOTAL":  "totals",
+    "KXUCLTOTAL":  "totals",
+    "KXMLSTOTAL":  "totals",
+    "KXNBASPREAD": "spread",
+    "KXMLBSPREAD": "spread",
+    "KXNHLSPREAD": "spread",
+    "KXMLSBTTS":   "btts",
+    "KXEPLBTTS":   "btts",
+    "KXUCLBTTS":   "btts",
+}
+
+
+def _parse_threshold(title: str, bet_type: str) -> float | None:
+    """
+    Extract the numeric threshold from a Kalshi market title.
+      Totals:  "Detroit Pistons vs Orlando Magic Over 222.5?"  → 222.5
+      Spread:  "Detroit Pistons -3.5 at Orlando Magic?"        → -3.5
+      BTTS:    None
+    """
+    if bet_type == "totals":
+        m = re.search(r"(?:Over|Under)\s+([\d.]+)", title, re.IGNORECASE)
+        if m:
+            return float(m.group(1))
+    elif bet_type == "spread":
+        # Spread value is the first number with a sign attached to a team name
+        m = re.search(r"([+-][\d.]+)", title)
+        if m:
+            return float(m.group(1))
+    return None
 
 
 @dataclass
 class KalshiMarket:
     ticker: str
     title: str          # e.g. "New York at Atlanta Winner?"
-    yes_team: str       # team that wins if YES resolves, e.g. "New York"
-    no_team: str        # the other team in the matchup, e.g. "Atlanta"
+    yes_team: str       # team/label that wins if YES resolves
+    no_team: str        # the other team in the matchup (H2H) or "Under"/"No" etc.
     yes_price: float    # 0.0 – 1.0  (mid of bid/ask)
     no_price: float     # 0.0 – 1.0
     yes_bid: float      # raw bid price (for spread calculation)
@@ -56,7 +94,9 @@ class KalshiMarket:
     volume: float
     close_time: str
     category: str
-    event_ticker: str = field(default="")  # e.g. "KXNBAGAME-26APR06NYKATL"
+    event_ticker: str = field(default="")
+    bet_type: str = field(default="h2h")       # "h2h", "totals", "spread", "btts"
+    threshold: float | None = field(default=None)  # line value (totals/spread only)
 
     @property
     def spread(self) -> float:
@@ -76,18 +116,13 @@ class KalshiMarket:
         Falls back to close_time if parsing fails.
         """
         try:
-            # Extract date segment from event_ticker: "KXUCLGAME-26APR14ATMBAR" → "26APR14"
             parts = self.event_ticker.split("-")
             if len(parts) < 2:
                 return self.close_time
             date_seg = parts[1][:7]  # e.g. "26APR14"
             game_date = datetime.strptime(date_seg, "%y%b%d")
-
-            # Extract UTC time from close_time: "2026-04-28T19:00:00Z" → hour=19, min=0
             ct = self.close_time.replace("Z", "+00:00")
             ct_dt = datetime.fromisoformat(ct)
-
-            # Combine: correct date + correct time, in UTC
             game_dt = game_date.replace(
                 hour=ct_dt.hour, minute=ct_dt.minute, tzinfo=timezone.utc
             )
@@ -154,51 +189,63 @@ class KalshiClient:
 
     def fetch_sports_markets(self) -> list[KalshiMarket]:
         """
-        Fetch Kalshi game-winner markets for all configured sports.
+        Fetch Kalshi markets for all configured sports and bet types.
 
-        Queries each sport's series ticker (e.g. KXNBAGAME for NBA),
-        parses prices from the new dollar-denominated fields, and
-        deduplicates to one market per game event.
+        Queries each sport's series tickers (H2H + totals + spreads + BTTS),
+        parses prices from the dollar-denominated fields, and deduplicates:
+          - H2H markets: one per game event (by event_ticker)
+          - Non-H2H markets: all kept (each threshold/direction is a separate opportunity)
         """
-        # Collect raw markets across all active sport series
         seen_series: set[str] = set()
-        raw_all: list[dict] = []
-        for sport in config.SPORTS:
-            series = _SPORT_TO_SERIES.get(sport)
-            if not series or series in seen_series:
-                continue
-            seen_series.add(series)
-            raw = self._fetch_series_markets(series)
-            raw_all.extend(raw)
-            logger.debug("Series %s: %d raw markets", series, len(raw))
+        raw_all: list[tuple[str, dict]] = []  # (series_ticker, raw_market)
 
-        # Parse and deduplicate (one market per event_ticker)
-        # For each event, prefer the market whose yes_team is the home team
-        # (we can't know home vs away yet, so we just keep one per event)
-        by_event: dict[str, KalshiMarket] = {}
-        for raw in raw_all:
+        for sport in config.SPORTS:
+            series_list = _SPORT_TO_SERIES.get(sport, [])
+            for series in series_list:
+                if series in seen_series:
+                    continue
+                seen_series.add(series)
+                raw = self._fetch_series_markets(series)
+                for r in raw:
+                    raw_all.append((series, r))
+                logger.debug("Series %s: %d raw markets", series, len(raw))
+
+        # Parse and deduplicate
+        by_event: dict[str, KalshiMarket] = {}   # H2H dedup key → market
+        non_h2h: list[KalshiMarket] = []         # totals/spreads/btts kept individually
+
+        for series_ticker, raw in raw_all:
             event_ticker = raw.get("event_ticker", "")
+
+            # Determine bet_type from series
+            series_prefix = event_ticker.split("-")[0].upper() if event_ticker else series_ticker.upper()
+            bet_type = _SERIES_TO_BET_TYPE.get(series_prefix, "h2h")
 
             yes_team = raw.get("yes_sub_title", "") or ""
 
-            # Extract the other team from the title for cross-match validation.
-            # Title format: "Team1 at Team2 Winner?" → away=Team1, home=Team2
+            # Extract the other team / label from the title
             no_team = ""
             title_raw = raw.get("title", "") or ""
-            title_clean = re.sub(r"(?i)\s*winner\s*\??$", "", title_raw).strip()
-            for sep in [" at ", " vs ", " @ "]:
-                if sep in title_clean:
-                    t1, t2 = title_clean.split(sep, 1)
-                    t1, t2 = t1.strip(), t2.strip()
-                    # yes_team matches one side; no_team is the other
-                    yt_lower = yes_team.lower()
-                    if yt_lower and (yt_lower in t2.lower() or t2.lower() in yt_lower):
-                        no_team = t1
-                    else:
-                        no_team = t2
-                    break
 
-            # Price: prefer bid/ask mid for yes; fall back to last_price
+            if bet_type == "h2h":
+                # For H2H: parse home/away from "Team1 at Team2 Winner?"
+                title_clean = re.sub(r"(?i)\s*winner\s*\??$", "", title_raw).strip()
+                for sep in [" at ", " vs ", " @ "]:
+                    if sep in title_clean:
+                        t1, t2 = title_clean.split(sep, 1)
+                        t1, t2 = t1.strip(), t2.strip()
+                        yt_lower = yes_team.lower()
+                        if yt_lower and (yt_lower in t2.lower() or t2.lower() in yt_lower):
+                            no_team = t1
+                        else:
+                            no_team = t2
+                        break
+            else:
+                # For non-H2H: no_team is just the NO label (e.g. "Under", "No")
+                no_sub = raw.get("no_sub_title", "") or ""
+                no_team = no_sub
+
+            # Prices
             yes_bid = self._parse_price(raw, "yes_bid_dollars", "yes_bid")
             yes_ask = self._parse_price(raw, "yes_ask_dollars", "yes_ask")
             if yes_bid is not None and yes_ask is not None:
@@ -225,9 +272,12 @@ class KalshiClient:
             raw_yes_bid = self._parse_price(raw, "yes_bid_dollars", "yes_bid") or 0.0
             raw_yes_ask = self._parse_price(raw, "yes_ask_dollars", "yes_ask") or yes_price
 
+            # Parse threshold for totals/spreads
+            threshold = _parse_threshold(title_raw, bet_type)
+
             km = KalshiMarket(
                 ticker=raw.get("ticker", ""),
-                title=raw.get("title", ""),
+                title=title_raw,
                 yes_team=yes_team,
                 no_team=no_team,
                 yes_price=round(yes_price, 4),
@@ -238,19 +288,27 @@ class KalshiClient:
                 close_time=raw.get("close_time", ""),
                 category=raw.get("category", "") or "",
                 event_ticker=event_ticker,
+                bet_type=bet_type,
+                threshold=threshold,
             )
 
-            # TIE markets are kept separately (one per event).
-            # Team markets are deduplicated to one per event (matcher picks the
-            # right outcome via yes_team fuzzy-matching anyway).
-            if yes_team.lower() == "tie":
-                tie_key = f"tie:{event_ticker}"
-                if tie_key not in by_event:
-                    by_event[tie_key] = km
+            if bet_type == "h2h":
+                # H2H deduplication: TIE markets separate, team markets one per event
+                if yes_team.lower() == "tie":
+                    tie_key = f"tie:{event_ticker}"
+                    if tie_key not in by_event:
+                        by_event[tie_key] = km
+                else:
+                    if event_ticker not in by_event or (yes_team and not by_event[event_ticker].yes_team):
+                        by_event[event_ticker] = km
             else:
-                if event_ticker not in by_event or (yes_team and not by_event[event_ticker].yes_team):
-                    by_event[event_ticker] = km
+                # Non-H2H: keep each market (each threshold/direction is distinct)
+                non_h2h.append(km)
 
-        markets = list(by_event.values())
-        logger.info("Fetched %d Kalshi markets", len(markets))
+        markets = list(by_event.values()) + non_h2h
+        h2h_count = len(by_event)
+        logger.info(
+            "Fetched %d Kalshi markets (%d H2H/TIE, %d totals/spread/btts)",
+            len(markets), h2h_count, len(non_h2h),
+        )
         return markets

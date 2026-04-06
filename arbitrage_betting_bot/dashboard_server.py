@@ -168,11 +168,15 @@ def build_data() -> dict:
         else:
             # Draw bet — show both teams
             opponent = f"{p['home_team']} vs {p['away_team']}"
+        bet_type = p["bet_type"] if "bet_type" in p.keys() else "h2h"
+        threshold = p["threshold"] if "threshold" in p.keys() else None
         open_rows.append({
             "id": p["id"],
             "team": p["team_name"],
             "opponent": opponent,
             "sport": _short_sport(p["sport"]),
+            "bet_type": (bet_type or "h2h").upper(),
+            "threshold": threshold,
             "game_time": _fmt_dt(p["commence_time"]),
             "stake": round(stake, 2),
             "price_pct": round(price * 100, 0),
@@ -505,7 +509,7 @@ function renderOpenTable(rows) {
   document.getElementById('open-count').textContent = rows.length ? rows.length + ' positions' : '';
   if (!rows.length) { t.innerHTML = emptyRow(7, 'No open positions.'); return; }
   t.innerHTML = `<thead><tr>
-    <th>#</th><th>Bet On</th><th>Opponent</th><th>Sport</th><th>Game Time</th>
+    <th>#</th><th>Bet On</th><th>Opponent</th><th>Sport</th><th>Type</th><th>Game Time</th>
     <th>Stake</th><th>Entry Price</th><th>Edge</th><th>Books</th><th>Spread</th>
     <th>Potential Win</th><th>Status</th>
   </tr></thead><tbody>` + rows.map(r => {
@@ -514,11 +518,13 @@ function renderOpenTable(rows) {
     const booksStr = r.books != null ? r.books : '<span style="color:var(--muted)">—</span>';
     const spreadStr = r.spread != null ? `${r.spread.toFixed(1)}¢` : '<span style="color:var(--muted)">—</span>';
     const gameTime = r.game_time && r.game_time !== '—' ? r.game_time : '<span style="color:var(--muted)">—</span>';
+    const typeStr = r.bet_type && r.bet_type !== 'H2H' ? `<span style="color:var(--blue)">${r.bet_type}</span>` : `<span style="color:var(--muted)">H2H</span>`;
     return `<tr>
       <td style="color:var(--muted)">${r.id}</td>
       <td><strong>${r.team}</strong></td>
       <td style="color:var(--muted)">${r.opponent}</td>
       <td>${r.sport}</td>
+      <td>${typeStr}</td>
       <td>${gameTime}</td>
       <td>$${r.stake.toFixed(2)}</td>
       <td>${r.price_pct}¢</td>

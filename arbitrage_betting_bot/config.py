@@ -46,8 +46,22 @@ SPORTS: list[str] = [
 # ── Odds API ──────────────────────────────────────────────────────────────────
 ODDS_API_BASE_URL: str = "https://api.the-odds-api.com/v4"
 ODDS_API_REGIONS: str = "us"
-ODDS_API_MARKETS: str = "h2h"          # h2h = moneyline (easiest to match)
+ODDS_API_MARKETS: str = "h2h"          # default fallback
 ODDS_API_ODDS_FORMAT: str = "american"
+
+# Which Odds API market types to fetch per sport.
+# Multiple types can be comma-separated (one API call per sport).
+SPORT_MARKETS: dict[str, str] = {
+    "americanfootball_nfl":        "h2h",
+    "americanfootball_ncaaf":      "h2h",
+    "basketball_nba":              "h2h,totals,spreads",
+    "basketball_ncaab":            "h2h",
+    "baseball_mlb":                "h2h,totals,spreads",
+    "icehockey_nhl":               "h2h,totals,spreads",
+    "soccer_usa_mls":              "h2h,btts",
+    "soccer_epl":                  "h2h,btts",
+    "soccer_uefa_champs_league":   "h2h,btts",
+}
 
 # ── Kalshi ────────────────────────────────────────────────────────────────────
 KALSHI_API_BASE_URL: str = "https://api.elections.kalshi.com/trade-api/v2"

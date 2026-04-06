@@ -81,14 +81,14 @@ class OddsAPIClient:
         logger.debug("Odds API — used: %s, remaining: %s", used, remaining)
         return resp.json()
 
-    def fetch_odds(self, sport: str) -> list[OddsEvent]:
-        """Fetch moneyline odds for a sport. Returns a list of OddsEvent objects."""
+    def fetch_odds(self, sport: str, markets: str = config.ODDS_API_MARKETS) -> list[OddsEvent]:
+        """Fetch odds for a sport. markets is a comma-separated list of market types."""
         try:
             data = self._get(
                 f"/sports/{sport}/odds",
                 {
                     "regions": config.ODDS_API_REGIONS,
-                    "markets": config.ODDS_API_MARKETS,
+                    "markets": markets,
                     "oddsFormat": config.ODDS_API_ODDS_FORMAT,
                 },
             )
@@ -130,6 +130,7 @@ class OddsAPIClient:
                 continue
             if fetched > 0:
                 time.sleep(1)   # avoid 429 rate-limit between sport requests
-            all_events.extend(self.fetch_odds(sport))
+            markets = config.SPORT_MARKETS.get(sport, config.ODDS_API_MARKETS)
+            all_events.extend(self.fetch_odds(sport, markets=markets))
             fetched += 1
         return all_events

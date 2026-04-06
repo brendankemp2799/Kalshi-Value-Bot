@@ -19,7 +19,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
-from core.value_detector import ValueOpportunity
+from core.value_detector import ValueOpportunity, Outcome
 from core.kelly_calculator import BetSizing
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,19 @@ def send_alert(
 
     table.add_row("Event", f"{home} vs {away}")
     table.add_row("Start Time", commence)
-    table.add_row("Bet On", f"[bold yellow]{opp.team_name}[/bold yellow] to win")
+    if opp.outcome in (Outcome.HOME, Outcome.AWAY):
+        bet_label = f"[bold yellow]{opp.team_name}[/bold yellow] to win"
+    elif opp.outcome == Outcome.DRAW:
+        bet_label = "[bold yellow]Draw[/bold yellow]"
+    elif opp.outcome in (Outcome.OVER, Outcome.UNDER):
+        bet_label = f"[bold yellow]{opp.team_name}[/bold yellow]"   # "Over 222.5"
+    elif opp.outcome == Outcome.COVER:
+        bet_label = f"[bold yellow]{opp.team_name}[/bold yellow] (spread)"
+    elif opp.outcome == Outcome.BTTS:
+        bet_label = "[bold yellow]Both Teams Score[/bold yellow]"
+    else:
+        bet_label = f"[bold yellow]{opp.team_name}[/bold yellow]"
+    table.add_row("Bet On", bet_label)
     table.add_row("Platform", "[bold magenta]Kalshi[/bold magenta]")
     table.add_row("Sportsbook Consensus", _format_prob(opp.consensus_prob))
     table.add_row(

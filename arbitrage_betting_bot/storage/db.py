@@ -94,6 +94,8 @@ def _migrate() -> None:
             ("consensus_std",   "ALTER TABLE positions ADD COLUMN consensus_std REAL"),
             ("kalshi_spread",   "ALTER TABLE positions ADD COLUMN kalshi_spread REAL"),
             ("commence_time",   "ALTER TABLE positions ADD COLUMN commence_time TEXT"),
+            ("bet_type",        "ALTER TABLE positions ADD COLUMN bet_type TEXT NOT NULL DEFAULT 'h2h'"),
+            ("threshold",       "ALTER TABLE positions ADD COLUMN threshold REAL"),
         ]:
             if col not in existing:
                 conn.execute(ddl)
@@ -177,6 +179,8 @@ def add_position(
     consensus_std: float | None = None,
     kalshi_spread: float | None = None,
     commence_time: str | None = None,
+    bet_type: str = "h2h",
+    threshold: float | None = None,
 ) -> int:
     with get_connection() as conn:
         cur = conn.execute(
@@ -185,8 +189,9 @@ def add_position(
                 (entered_at, sport, home_team, away_team, team_name,
                  platform, stake, market_price, status, is_paper,
                  order_id, execution_status, market_ticker, side,
-                 edge, bookmaker_count, consensus_std, kalshi_spread, commence_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 edge, bookmaker_count, consensus_std, kalshi_spread, commence_time,
+                 bet_type, threshold)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 datetime.utcnow().isoformat(),
@@ -201,6 +206,8 @@ def add_position(
                 consensus_std,
                 kalshi_spread,
                 commence_time,
+                bet_type,
+                threshold,
             ),
         )
         return cur.lastrowid
