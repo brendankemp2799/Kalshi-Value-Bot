@@ -58,9 +58,9 @@ SPORT_MARKETS: dict[str, str] = {
     "basketball_ncaab":            "h2h",
     "baseball_mlb":                "h2h,totals,spreads",
     "icehockey_nhl":               "h2h,totals,spreads",
-    "soccer_usa_mls":              "h2h,btts",
-    "soccer_epl":                  "h2h,btts",
-    "soccer_uefa_champs_league":   "h2h,btts",
+    "soccer_usa_mls":              "h2h",
+    "soccer_epl":                  "h2h",
+    "soccer_uefa_champs_league":   "h2h",
 }
 
 # ── Kalshi ────────────────────────────────────────────────────────────────────
