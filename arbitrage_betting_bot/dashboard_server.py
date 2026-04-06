@@ -41,6 +41,15 @@ IS_PAPER = False   # set by CLI arg at startup
 
 # ── Data helpers (same logic as dashboard.py) ────────────────────────────────
 
+def _bet_type_label(raw: str | None) -> str:
+    return {
+        "h2h":    "Moneyline",
+        "totals": "Over/Under",
+        "spread": "ATS",
+        "btts":   "BTTS",
+    }.get((raw or "h2h").lower(), (raw or "h2h").upper())
+
+
 def _short_sport(key: str) -> str:
     return {
         "americanfootball_nfl": "NFL",
@@ -175,7 +184,7 @@ def build_data() -> dict:
             "team": p["team_name"],
             "opponent": opponent,
             "sport": _short_sport(p["sport"]),
-            "bet_type": (bet_type or "h2h").upper(),
+            "bet_type": _bet_type_label(bet_type),
             "threshold": threshold,
             "game_time": _fmt_dt(p["commence_time"]),
             "stake": round(stake, 2),
@@ -194,10 +203,12 @@ def build_data() -> dict:
         if p["status"] != "closed":
             continue
         pnl_v = p["pnl"]
+        bet_type_s = p["bet_type"] if "bet_type" in p.keys() else "h2h"
         settled_rows.append({
             "id": p["id"],
             "team": p["team_name"],
             "sport": _short_sport(p["sport"]),
+            "bet_type": _bet_type_label(bet_type_s),
             "stake": round(p["stake"], 2),
             "price_pct": round(p["market_price"] * 100, 0),
             "pnl": round(pnl_v, 2) if pnl_v is not None else None,
@@ -518,7 +529,7 @@ function renderOpenTable(rows) {
     const booksStr = r.books != null ? r.books : '<span style="color:var(--muted)">—</span>';
     const spreadStr = r.spread != null ? `${r.spread.toFixed(1)}¢` : '<span style="color:var(--muted)">—</span>';
     const gameTime = r.game_time && r.game_time !== '—' ? r.game_time : '<span style="color:var(--muted)">—</span>';
-    const typeStr = r.bet_type && r.bet_type !== 'H2H' ? `<span style="color:var(--blue)">${r.bet_type}</span>` : `<span style="color:var(--muted)">H2H</span>`;
+    const typeStr = r.bet_type && r.bet_type !== 'Moneyline' ? `<span style="color:var(--blue)">${r.bet_type}</span>` : `<span style="color:var(--muted)">Moneyline</span>`;
     return `<tr>
       <td style="color:var(--muted)">${r.id}</td>
       <td><strong>${r.team}</strong></td>
@@ -545,18 +556,22 @@ function renderSettledTable(rows) {
     return;
   }
   t.innerHTML = `<thead><tr>
-    <th>#</th><th>Team</th><th>Sport</th><th>Stake</th>
+    <th>#</th><th>Team</th><th>Sport</th><th>Type</th><th>Stake</th>
     <th>Entry Price</th><th>P&L</th><th>Result</th><th>Settled</th>
-  </tr></thead><tbody>` + rows.map(r => `<tr>
+  </tr></thead><tbody>` + rows.map(r => {
+    const typeStr = r.bet_type && r.bet_type !== 'Moneyline' ? `<span style="color:var(--blue)">${r.bet_type}</span>` : `<span style="color:var(--muted)">Moneyline</span>`;
+    return `<tr>
     <td style="color:var(--muted)">${r.id}</td>
     <td><strong>${r.team}</strong></td>
     <td>${r.sport}</td>
+    <td>${typeStr}</td>
     <td>$${r.stake.toFixed(2)}</td>
     <td>${r.price_pct}¢</td>
     <td>${pnlStr(r.pnl)}</td>
     <td><span class="tag ${r.won ? 'tag-win' : 'tag-loss'}">${r.won ? 'WIN' : 'LOSS'}</span></td>
     <td style="color:var(--muted)">${r.settled}</td>
-  </tr>`).join('') + '</tbody>';
+  </tr>`;
+  }).join('') + '</tbody>';
 }
 
 function renderOppTable(rows) {
