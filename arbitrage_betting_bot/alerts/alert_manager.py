@@ -4,7 +4,12 @@ Sends value alerts to the terminal (rich formatted table).
 from __future__ import annotations
 
 import logging
-from datetime import timezone
+try:
+    from zoneinfo import ZoneInfo
+    _PT = ZoneInfo("America/Los_Angeles")
+except ImportError:
+    import pytz
+    _PT = pytz.timezone("America/Los_Angeles")
 
 from rich.console import Console
 from rich.table import Table
@@ -40,7 +45,10 @@ def send_alert(
     home = event.home_team
     away = event.away_team
     sport = event.sport_key.replace("_", " ").upper()
-    commence = event.commence_time.astimezone(timezone.utc).strftime("%b %d %H:%M UTC")
+    game_dt = event.commence_time.astimezone(_PT)
+    h = game_dt.hour % 12 or 12
+    ampm = "AM" if game_dt.hour < 12 else "PM"
+    commence = f"{game_dt.strftime('%b')} {game_dt.day}  {h}:{game_dt.strftime('%M')} {ampm} PT"
 
     tag = "[DRY RUN] " if dry_run else "[PAPER] " if paper else ""
     console.print()

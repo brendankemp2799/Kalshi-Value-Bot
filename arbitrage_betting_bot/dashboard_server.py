@@ -25,6 +25,12 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+try:
+    from zoneinfo import ZoneInfo
+    _PT = ZoneInfo("America/Los_Angeles")
+except ImportError:
+    import pytz
+    _PT = pytz.timezone("America/Los_Angeles")
 from flask import Flask, jsonify, render_template_string
 import storage.db as db
 from execution.auto_settle import auto_settle_positions
@@ -44,6 +50,8 @@ def _short_sport(key: str) -> str:
         "baseball_mlb": "MLB",
         "icehockey_nhl": "NHL",
         "soccer_usa_mls": "MLS",
+        "soccer_epl": "EPL",
+        "soccer_uefa_champs_league": "UCL",
     }.get(key, key.upper())
 
 
@@ -51,12 +59,12 @@ def _fmt_dt(iso: str | None) -> str:
     if not iso:
         return "—"
     try:
-        dt = datetime.fromisoformat(iso)
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
         if dt.tzinfo is not None:
-            dt = dt.astimezone()  # convert UTC → local timezone
+            dt = dt.astimezone(_PT)
         h = dt.hour % 12 or 12
         ampm = "AM" if dt.hour < 12 else "PM"
-        return f"{dt.strftime('%b')} {dt.day}  {h}:{dt.strftime('%M')} {ampm}"
+        return f"{dt.strftime('%b')} {dt.day}  {h}:{dt.strftime('%M')} {ampm} PT"
     except ValueError:
         return iso[:16]
 

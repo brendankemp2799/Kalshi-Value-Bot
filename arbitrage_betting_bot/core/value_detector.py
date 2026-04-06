@@ -65,8 +65,11 @@ class ValueOpportunity:
         return prob_to_american(self.market_price)
 
 
-def _kalshi_url(ticker: str) -> str:
-    return f"https://kalshi.com/markets/{ticker}"
+def _kalshi_url(ticker: str, event_ticker: str = "") -> str:
+    # Kalshi website uses the event ticker in its URLs, not the individual market ticker
+    # e.g. https://kalshi.com/markets/KXNBAGAME-26APR05HOUGSW
+    slug = event_ticker if event_ticker else ticker
+    return f"https://kalshi.com/markets/{slug}"
 
 
 def detect_value(
@@ -122,7 +125,7 @@ def detect_value(
                         consensus_prob=consensus,
                         market_price=kalshi_price,
                         edge=edge,
-                        market_url=_kalshi_url(km.ticker),
+                        market_url=_kalshi_url(km.ticker, km.event_ticker),
                         bookmaker_count=book_count,
                         consensus_std=std_dev,
                     )
@@ -176,7 +179,7 @@ def detect_value(
                         consensus_prob=consensus,
                         market_price=kalshi_price,
                         edge=edge,
-                        market_url=_kalshi_url(km.ticker),
+                        market_url=_kalshi_url(km.ticker, km.event_ticker),
                         bookmaker_count=book_count,
                         consensus_std=std_dev,
                     )

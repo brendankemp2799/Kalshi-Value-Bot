@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 import requests
 
@@ -30,13 +31,15 @@ logger = logging.getLogger(__name__)
 
 # Maps Odds API sport keys → Kalshi game-winner series tickers
 _SPORT_TO_SERIES: dict[str, str] = {
-    "americanfootball_nfl":   "KXNFLGAME",
-    "americanfootball_ncaaf": "KXNCAAFGAME",
-    "basketball_nba":         "KXNBAGAME",
-    "basketball_ncaab":       "KXNCAABGAME",
-    "baseball_mlb":           "KXMLBGAME",
-    "icehockey_nhl":          "KXNHLGAME",
-    "soccer_usa_mls":         "KXMLSGAME",
+    "americanfootball_nfl":        "KXNFLGAME",
+    "americanfootball_ncaaf":      "KXNCAAFGAME",
+    "basketball_nba":              "KXNBAGAME",
+    "basketball_ncaab":            "KXNCAABGAME",
+    "baseball_mlb":                "KXMLBGAME",
+    "icehockey_nhl":               "KXNHLGAME",
+    "soccer_usa_mls":              "KXMLSGAME",
+    "soccer_epl":                  "KXEPLGAME",
+    "soccer_uefa_champs_league":   "KXUCLGAME",
 }
 
 
@@ -59,6 +62,38 @@ class KalshiMarket:
     def spread(self) -> float:
         """Bid-ask spread (0.0–1.0). Smaller = more liquid."""
         return round(self.yes_ask - self.yes_bid, 4)
+
+    @property
+    def game_time(self) -> str:
+        """
+        ISO 8601 UTC string for actual game kickoff/tip-off.
+
+        Kalshi's close_time is the settlement deadline (~2 weeks after the game),
+        not the start time. The game DATE is encoded in the event_ticker:
+          KXUCLGAME-26APR14ATMBAR  →  April 14, 2026
+        The game TIME (hour:minute) is correct in close_time — only the date is off.
+        We combine the ticker date with the close_time's UTC hour:minute.
+        Falls back to close_time if parsing fails.
+        """
+        try:
+            # Extract date segment from event_ticker: "KXUCLGAME-26APR14ATMBAR" → "26APR14"
+            parts = self.event_ticker.split("-")
+            if len(parts) < 2:
+                return self.close_time
+            date_seg = parts[1][:7]  # e.g. "26APR14"
+            game_date = datetime.strptime(date_seg, "%y%b%d")
+
+            # Extract UTC time from close_time: "2026-04-28T19:00:00Z" → hour=19, min=0
+            ct = self.close_time.replace("Z", "+00:00")
+            ct_dt = datetime.fromisoformat(ct)
+
+            # Combine: correct date + correct time, in UTC
+            game_dt = game_date.replace(
+                hour=ct_dt.hour, minute=ct_dt.minute, tzinfo=timezone.utc
+            )
+            return game_dt.isoformat()
+        except Exception:
+            return self.close_time
 
 
 class KalshiClient:

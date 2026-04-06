@@ -24,13 +24,15 @@ logger = logging.getLogger(__name__)
 # them wastes credits. Each tuple is (start_month, end_month); ranges that
 # wrap across January use two tuples.
 _SPORT_SEASONS: dict[str, list[tuple[int, int]]] = {
-    "americanfootball_nfl":   [(9, 2)],   # Sep – Feb  (wraps Jan)
-    "americanfootball_ncaaf": [(8, 1)],   # Aug – Jan  (wraps Jan)
-    "basketball_nba":         [(10, 6)],  # Oct – Jun  (wraps Jan)
-    "basketball_ncaab":       [(11, 4)],  # Nov – Apr  (wraps Jan)
-    "baseball_mlb":           [(3, 10)],  # Mar – Oct
-    "icehockey_nhl":          [(10, 6)],  # Oct – Jun  (wraps Jan)
-    "soccer_usa_mls":         [(2, 11)],  # Feb – Nov
+    "americanfootball_nfl":      [(9, 2)],   # Sep – Feb  (wraps Jan)
+    "americanfootball_ncaaf":    [(8, 1)],   # Aug – Jan  (wraps Jan)
+    "basketball_nba":            [(10, 6)],  # Oct – Jun  (wraps Jan)
+    "basketball_ncaab":          [(11, 4)],  # Nov – Apr  (wraps Jan)
+    "baseball_mlb":              [(3, 10)],  # Mar – Oct
+    "icehockey_nhl":             [(10, 6)],  # Oct – Jun  (wraps Jan)
+    "soccer_usa_mls":            [(2, 11)],  # Feb – Nov
+    "soccer_epl":                [(8, 5)],   # Aug – May  (wraps Jan)
+    "soccer_uefa_champs_league": [(9, 5)],   # Sep – May  (wraps Jan)
 }
 
 
