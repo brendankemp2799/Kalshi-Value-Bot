@@ -27,6 +27,7 @@ Setup (first time):
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 import time
@@ -202,6 +203,7 @@ def run_scan(
                 commence_time=event.commence_time.isoformat(),
                 bet_type=opp.matched_event.kalshi_market.bet_type,
                 threshold=opp.matched_event.kalshi_market.threshold,
+                bookmakers_json=json.dumps(event.bookmakers),
             )
             logger.info(
                 "[PAPER] Position logged: %s $%.2f on Kalshi",
@@ -230,6 +232,7 @@ def run_scan(
                 commence_time=event.commence_time.isoformat(),
                 bet_type=opp.matched_event.kalshi_market.bet_type,
                 threshold=opp.matched_event.kalshi_market.threshold,
+                bookmakers_json=json.dumps(event.bookmakers),
             )
             if exec_status == "submitted":
                 logger.info(

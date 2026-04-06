@@ -31,8 +31,9 @@ try:
 except ImportError:
     import pytz
     _PT = pytz.timezone("America/Los_Angeles")
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template_string, abort
 import storage.db as db
+from core.odds_converter import american_to_prob, remove_vig
 from execution.auto_settle import auto_settle_positions
 
 app = Flask(__name__)
@@ -251,6 +252,70 @@ def build_data() -> dict:
     }
 
 
+# ── Per-book consensus breakdown ──────────────────────────────────────────────
+
+def _book_breakdown(bookmakers_json: str, team_name: str, bet_type: str, threshold: float | None) -> list[dict]:
+    """
+    Return per-book de-vigged probability for the outcome we bet on.
+    Each entry: {book, odds_american, raw_prob, devigged_prob}
+    """
+    market_key_map = {"h2h": "h2h", "totals": "totals", "spread": "spreads", "btts": "btts"}
+    market_key = market_key_map.get(bet_type, "h2h")
+
+    # Derive outcome_name from team_name + bet_type
+    if bet_type == "totals":
+        outcome_name = "Over" if team_name.lower().startswith("over") else "Under"
+    elif bet_type == "btts":
+        outcome_name = "Yes"
+    elif bet_type == "spread":
+        # Strip the spread value suffix (e.g. "Washington Nationals -1.5" → "Washington Nationals")
+        import re
+        outcome_name = re.sub(r"\s*[+-]\d+\.?\d*\s*$", "", team_name).strip()
+    else:
+        outcome_name = team_name  # H2H: team name
+
+    try:
+        bookmakers = json.loads(bookmakers_json)
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+    rows = []
+    for book in bookmakers:
+        book_name = book.get("title") or book.get("key") or "Unknown"
+        for market in book.get("markets", []):
+            if market.get("key") != market_key:
+                continue
+            outcomes = market.get("outcomes", [])
+
+            # For totals/spreads, filter by point
+            if threshold is not None:
+                target = next(
+                    (o for o in outcomes
+                     if o.get("name") == outcome_name
+                     and o.get("point") is not None
+                     and abs(float(o["point"]) - threshold) <= 0.25),
+                    None,
+                )
+            else:
+                target = next((o for o in outcomes if o.get("name") == outcome_name), None)
+
+            if target is None:
+                continue
+
+            raw_probs = [american_to_prob(o["price"]) for o in outcomes]
+            no_vig = remove_vig(raw_probs)
+            idx = outcomes.index(target)
+            rows.append({
+                "book": book_name,
+                "odds": target["price"],
+                "raw_prob": round(raw_probs[idx] * 100, 1),
+                "devigged_prob": round(no_vig[idx] * 100, 1),
+            })
+
+    rows.sort(key=lambda r: r["devigged_prob"], reverse=True)
+    return rows
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/api/data")
@@ -258,9 +323,170 @@ def api_data():
     return jsonify(build_data())
 
 
+@app.route("/position/<int:position_id>")
+def position_detail(position_id: int):
+    p = db.get_position(position_id)
+    if not p:
+        abort(404)
+
+    bet_type = p["bet_type"] if "bet_type" in p.keys() else "h2h"
+    threshold = p["threshold"] if "threshold" in p.keys() else None
+    bj = p["bookmakers_json"] if "bookmakers_json" in p.keys() else None
+
+    breakdown = _book_breakdown(bj, p["team_name"], bet_type or "h2h", threshold) if bj else []
+    consensus = sum(r["devigged_prob"] for r in breakdown) / len(breakdown) if breakdown else None
+
+    data = {
+        "id": p["id"],
+        "team": p["team_name"],
+        "home": p["home_team"],
+        "away": p["away_team"],
+        "sport": _short_sport(p["sport"]),
+        "bet_type": _bet_type_label(bet_type),
+        "threshold": threshold,
+        "game_time": _fmt_dt(p["commence_time"]),
+        "entered": _fmt_dt(p["entered_at"]),
+        "stake": round(p["stake"], 2),
+        "price_pct": round(p["market_price"] * 100, 1),
+        "edge": round(p["edge"] * 100, 1) if p["edge"] is not None else None,
+        "status": p["status"],
+        "pnl": round(p["pnl"], 2) if p["pnl"] is not None else None,
+        "breakdown": breakdown,
+        "consensus": round(consensus, 1) if consensus is not None else None,
+        "book_count": len(breakdown),
+        "has_data": len(breakdown) > 0,
+    }
+    return render_template_string(DETAIL_TEMPLATE, p=data)
+
+
 @app.route("/")
 def index():
     return render_template_string(HTML_TEMPLATE)
+
+
+# ── Detail page template ──────────────────────────────────────────────────────
+
+DETAIL_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Position #{{ p.id }} — Arb Bot</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+    --text: #e2e8f0; --muted: #64748b; --green: #22c55e;
+    --red: #ef4444; --blue: #3b82f6; --yellow: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
+  header { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  header a { color: var(--muted); text-decoration: none; font-size: 13px; }
+  header a:hover { color: var(--text); }
+  header h1 { font-size: 17px; font-weight: 600; }
+  main { padding: 24px; max-width: 900px; margin: 0 auto; }
+  .section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
+  .section-header { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .section-header h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0; }
+  .cell { padding: 14px 18px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .cell:last-child { border-right: none; }
+  .cell-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 5px; }
+  .cell-value { font-size: 16px; font-weight: 600; }
+  .pos { color: var(--green); } .neg { color: var(--red); } .neutral { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; padding: 10px 16px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .bar-bg { flex: 1; height: 6px; background: var(--border); border-radius: 3px; max-width: 120px; }
+  .bar-fill { height: 6px; border-radius: 3px; background: var(--blue); }
+  .consensus-row td { font-weight: 700; background: rgba(59,130,246,0.06); border-top: 2px solid var(--blue); }
+  .no-data { padding: 32px; text-align: center; color: var(--muted); font-size: 13px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+  .tag-open { background: #1c1a07; color: var(--yellow); }
+  .tag-closed { background: #1a1d27; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← Dashboard</a>
+  <h1>Position #{{ p.id }} — {{ p.team }} ({{ p.sport }})</h1>
+  <span class="tag {{ 'tag-open' if p.status == 'open' else 'tag-closed' }}">{{ p.status.upper() }}</span>
+</header>
+<main>
+
+  <!-- Summary -->
+  <div class="section">
+    <div class="section-header"><h2>Bet Summary</h2></div>
+    <div class="grid">
+      <div class="cell"><div class="cell-label">Bet On</div><div class="cell-value">{{ p.team }}</div></div>
+      <div class="cell"><div class="cell-label">Matchup</div><div class="cell-value" style="font-size:13px">{{ p.home }} vs {{ p.away }}</div></div>
+      <div class="cell"><div class="cell-label">Type</div><div class="cell-value" style="color:var(--blue)">{{ p.bet_type }}</div></div>
+      <div class="cell"><div class="cell-label">Game Time</div><div class="cell-value" style="font-size:13px">{{ p.game_time }}</div></div>
+      <div class="cell"><div class="cell-label">Stake</div><div class="cell-value">${{ "%.2f"|format(p.stake) }}</div></div>
+      <div class="cell"><div class="cell-label">Entry Price</div><div class="cell-value">{{ p.price_pct }}¢</div></div>
+      {% if p.edge is not none %}
+      <div class="cell"><div class="cell-label">Edge at Entry</div><div class="cell-value pos">+{{ p.edge }}%</div></div>
+      {% endif %}
+      {% if p.pnl is not none %}
+      <div class="cell"><div class="cell-label">P&L</div><div class="cell-value {{ 'pos' if p.pnl >= 0 else 'neg' }}">{{ '+' if p.pnl >= 0 else '' }}${{ "%.2f"|format(p.pnl) }}</div></div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Per-book consensus breakdown -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Sportsbook Consensus Breakdown{% if p.book_count %} — {{ p.book_count }} books{% endif %}</h2>
+    </div>
+    {% if p.has_data %}
+    <table>
+      <thead><tr>
+        <th>Sportsbook</th>
+        <th>Odds</th>
+        <th>Raw Implied %</th>
+        <th>De-vigged %</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+        {% for r in p.breakdown %}
+        <tr>
+          <td><strong>{{ r.book }}</strong></td>
+          <td>{{ '+' if r.odds > 0 else '' }}{{ r.odds }}</td>
+          <td style="color:var(--muted)">{{ r.raw_prob }}%</td>
+          <td><strong>{{ r.devigged_prob }}%</strong></td>
+          <td>
+            <div class="bar-wrap">
+              <div class="bar-bg"><div class="bar-fill" style="width:{{ [r.devigged_prob, 100]|min }}%"></div></div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if p.consensus %}
+        <tr class="consensus-row">
+          <td>Consensus (avg)</td>
+          <td>—</td>
+          <td>—</td>
+          <td><strong style="color:var(--green)">{{ p.consensus }}%</strong></td>
+          <td></td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="no-data">
+      No sportsbook data stored for this position.<br>
+      <small>Positions logged before this feature was added won't have breakdown data.</small>
+    </div>
+    {% endif %}
+  </div>
+
+</main>
+</body>
+</html>
+"""
 
 
 # ── HTML + JS template ────────────────────────────────────────────────────────
@@ -531,7 +757,7 @@ function renderOpenTable(rows) {
     const gameTime = r.game_time && r.game_time !== '—' ? r.game_time : '<span style="color:var(--muted)">—</span>';
     const typeStr = r.bet_type && r.bet_type !== 'Moneyline' ? `<span style="color:var(--blue)">${r.bet_type}</span>` : `<span style="color:var(--muted)">Moneyline</span>`;
     return `<tr>
-      <td style="color:var(--muted)">${r.id}</td>
+      <td><a href="/position/${r.id}" style="color:var(--blue);text-decoration:none">#${r.id}</a></td>
       <td><strong>${r.team}</strong></td>
       <td style="color:var(--muted)">${r.opponent}</td>
       <td>${r.sport}</td>
@@ -561,7 +787,7 @@ function renderSettledTable(rows) {
   </tr></thead><tbody>` + rows.map(r => {
     const typeStr = r.bet_type && r.bet_type !== 'Moneyline' ? `<span style="color:var(--blue)">${r.bet_type}</span>` : `<span style="color:var(--muted)">Moneyline</span>`;
     return `<tr>
-    <td style="color:var(--muted)">${r.id}</td>
+    <td><a href="/position/${r.id}" style="color:var(--blue);text-decoration:none">#${r.id}</a></td>
     <td><strong>${r.team}</strong></td>
     <td>${r.sport}</td>
     <td>${typeStr}</td>
