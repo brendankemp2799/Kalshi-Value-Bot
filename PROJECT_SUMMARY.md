@@ -39,7 +39,7 @@ arbitrage_betting_bot/
 ├── main.py                     # Orchestrator: scan loop, mode flags
 ├── config.py                   # All tunable parameters, loaded from .env
 ├── .env                        # Environment variables (API keys, bankroll)
-├── requirements.txt            # requests, dotenv, rapidfuzz, schedule, rich, cryptography, flask
+├── requirements.txt            # requests, dotenv, rapidfuzz, schedule, rich, cryptography, flask, pytz
 ├── test_connections.py         # Pre-flight check: verify all API keys work
 ├── dashboard.py                # Terminal P&L dashboard + manual settle CLI
 ├── dashboard_server.py         # Flask web dashboard (localhost:5000, phone-accessible)
@@ -63,7 +63,7 @@ arbitrage_betting_bot/
 │   └── auto_settle.py          # Polls Kalshi for resolved markets, auto-closes positions
 │
 ├── alerts/
-│   └── alert_manager.py        # Rich terminal output with [PAPER] / [DRY RUN] tags
+│   └── alert_manager.py        # Rich terminal output with [PAPER] / [DRY RUN] tags, times in PT
 │
 └── storage/
     └── db.py                   # SQLite layer (betting_bot.db)
@@ -83,13 +83,14 @@ Each scan executes these steps in order:
 1. Fetch
    OddsAPIClient   → list[OddsEvent]     (season-filtered, sharp books)
    KalshiClient    → list[KalshiMarket]  (series-based: KXNBAGAME, KXMLBGAME, etc.)
-                                          Includes TIE markets for 3-way sports (MLS)
+                                          Includes TIE markets for 3-way sports (MLS/EPL/UCL)
 
 2. Match
    market_matcher.match_events()
    → sport-gated: NBA events only match NBA markets, etc.
-   → rapidfuzz token matching on yes_team field (threshold: 80/100)
-   → TIE markets attached separately for MLS events
+   → two-team cross-validation: both teams must fuzzy-match before a market is accepted
+   → rapidfuzz token matching on yes_team + no_team fields (threshold: 80/100)
+   → TIE markets attached separately for 3-way soccer events
    → list[MatchedEvent]
 
 3. Detect Value + Hard Filters
@@ -97,11 +98,11 @@ Each scan executes these steps in order:
    → consensus_stats() → (mean_prob, bookmaker_count, std_dev)
    → Hard filters (skip if any fail):
        - bookmaker_count < MIN_BOOKMAKER_COUNT (5)
-       - Kalshi spread > MAX_KALSHI_SPREAD (5¢)
+       - Kalshi spread > MAX_KALSHI_SPREAD (5¢)   ← uses ASK price for edge calc, not mid
        - Kalshi volume < MIN_KALSHI_VOLUME ($500)
-   → edge = consensus_prob − kalshi_price
+   → edge = consensus_prob − kalshi_ask_price     ← fill price, not mid
    → keep if edge ≥ MIN_EDGE_THRESHOLD (4%)
-   → MLS Draw handled via 3-way de-vig against TIE market YES price
+   → Soccer Draw handled via 3-way de-vig against TIE market YES ask price
    → list[ValueOpportunity] (unsorted)
 
 4. Score & Rank
@@ -117,7 +118,7 @@ Each scan executes these steps in order:
    b. Exposure check       → block if bankroll limits would be exceeded
    c. Daily cap check      → stop if MAX_DAILY_ALERTS reached
    d. Log opportunity to DB
-   e. Print alert (terminal)
+   e. Print alert (terminal) — game time displayed in Pacific Time
    f. Log alert to DB
 
    ┌─ PAPER MODE ──────────────────────────────────────────────────────┐
@@ -168,7 +169,12 @@ Recommended location: `~/.kalshi/private_key.pem` — outside the project direct
 
 ## Kalshi Market Structure
 
-Kalshi sports markets are fetched by **series ticker** (not by category):
+Kalshi sports markets are fetched by **series ticker** (not by category).
+The `close_time` field is the **settlement deadline** (~2 weeks after the game), NOT the game time.
+The actual game date is encoded in the event_ticker (e.g. `26APR14` = April 14, 2026).
+Game times are sourced from The Odds API `commence_time` field (always accurate).
+
+### Game-Winner (H2H) Series
 
 | Sport | Odds API Key | Kalshi Series |
 |---|---|---|
@@ -179,15 +185,38 @@ Kalshi sports markets are fetched by **series ticker** (not by category):
 | MLB | `baseball_mlb` | `KXMLBGAME` |
 | NHL | `icehockey_nhl` | `KXNHLGAME` |
 | MLS | `soccer_usa_mls` | `KXMLSGAME` |
+| EPL | `soccer_epl` | `KXEPLGAME` |
+| UCL | `soccer_uefa_champs_league` | `KXUCLGAME` |
 
 Each game produces markets keyed by `yes_sub_title` (e.g. `"New York"`, `"Atlanta"`, `"Tie"`).
-Prices are dollar-denominated strings (`yes_bid_dollars`, `yes_ask_dollars`). The mid of bid/ask
-is used as the market price.
+Prices are dollar-denominated strings (`yes_bid_dollars`, `yes_ask_dollars`).
+**Edge is calculated using the ASK price** (actual fill cost), not the mid.
 
-**MLS 3-way markets:** Each MLS game has three Kalshi markets (home / away / tie). The matcher
-attaches the TIE market as a separate `MatchedEvent` with `kalshi_outcome="tie"`. The draw
-probability is extracted from the sportsbook's 3-way h2h odds and compared against the TIE
-market's YES price.
+**Soccer 3-way markets:** EPL, UCL, and MLS each have three Kalshi markets per game (home / away / tie).
+The matcher attaches the TIE market as a separate `MatchedEvent` with `kalshi_outcome="tie"`.
+The draw probability is extracted from the sportsbook's 3-way h2h odds.
+
+### Kalshi Market URL Format
+
+```
+https://kalshi.com/markets/{series_lower}/{slug}/{event_ticker_lower}
+```
+
+Known slugs:
+- KXNBAGAME → `nba-game`
+- KXMLBGAME → `mlb-game`
+- KXNHLGAME → `nhl-game`
+- KXEPLGAME → `epl-game`
+- KXUCLGAME → `uefa-champions-league-game`
+- KXMLSGAME → `mls-game`
+- KXNFLGAME → `nfl-game`
+
+### Cross-Team Validation (Matching)
+
+The matcher validates **both** teams before accepting a match:
+- `yes_team` must fuzzy-match one team (home or away)
+- `no_team` (parsed from the market title) must fuzzy-match the other team
+- This prevents cross-game mismatches (e.g. Orlando Magic matched to a different game's Orlando market)
 
 ---
 
@@ -238,14 +267,14 @@ python3 dashboard_server.py            # live mode
 ```
 
 Accessible at `http://localhost:5000` or `http://<mac-ip>:5000` on the same WiFi (phone-friendly).
-Auto-refreshes every 60 seconds.
+Auto-refreshes every 60 seconds. All times displayed in **Pacific Time (PT)**.
 
 **Panels:**
 - Summary cards: Total P&L, Win Rate, ROI, Open Positions, Total Staked
 - Bankroll over time (line chart with "at risk" overlay)
 - Cumulative P&L chart
 - Performance by sport
-- Open Positions: Bet On, Opponent, Sport, Game Time, Stake, Entry Price, Edge, Books, Spread, Potential Win, Status
+- Open Positions: Bet On, Opponent, Sport, Game Time (PT), Stake, Entry Price, Edge, Books, Spread, Potential Win, Status
 - Settled Positions: P&L, WIN/LOSS badge
 - Recent Value Detections
 
@@ -271,6 +300,9 @@ Three hard filters applied before any opportunity is ranked:
 2. **Kalshi spread** ≤ 5¢ — ensures the quoted price is actually fillable
 3. **Kalshi volume** ≥ $500 — illiquid markets have unreliable prices
 
+**Edge is computed using the ASK price** (what you actually pay to buy), not the bid-ask midpoint.
+This avoids overstating edge by half the spread on every trade.
+
 ### Composite Scoring (`main.py`)
 After Kelly is calculated, opportunities are ranked by:
 ```
@@ -289,6 +321,10 @@ Bet size = `f* × KELLY_FRACTION × bankroll`, capped by:
 
 `KELLY_FRACTION` defaults to **0.25** (quarter-Kelly).
 
+**Note on low-probability bets:** Kelly naturally produces smaller stakes for underdogs at equal edge
+(the denominator `1 - market_price` is larger for low prices). A `MIN_CONSENSUS_PROB` filter
+(not yet implemented) could further protect against high-variance longshots.
+
 ### Season Filtering (`odds_fetcher.py`)
 Sports are automatically skipped when out of season to conserve Odds API credits:
 
@@ -301,13 +337,18 @@ Sports are automatically skipped when out of season to conserve Odds API credits
 | MLB | Mar – Oct |
 | NHL | Oct – Jun |
 | MLS | Feb – Nov |
+| EPL | Aug – May |
+| UCL | Sep – May |
+
+A 1-second delay between Odds API sport fetches prevents 429 rate-limit errors.
 
 ### Market Matching (`market_matcher.py`)
 - **Sport-gated:** NBA events only match `KXNBAGAME` markets, MLS only `KXMLSGAME`, etc.
-  Prevents cross-sport mismatches.
-- `yes_team` field on each Kalshi market identifies who wins if YES resolves.
+- **Two-team cross-validation:** Both `yes_team` (from `yes_sub_title`) and `no_team` (parsed
+  from market title) must fuzzy-match the sportsbook event's two teams. Prevents cross-game mismatches.
 - `rapidfuzz` (partial_ratio, token_sort_ratio, token_set_ratio) matches team names.
-- Known abbreviations expanded before comparison (LA, NY, GS, KC, OKC, etc.).
+- Known abbreviations expanded before comparison (LA, NY, GS, KC, OKC, NO, TB, NE, SF).
+- TIE markets matched via shared `event_ticker` after team-winner match is found.
 
 ---
 
@@ -328,7 +369,7 @@ positions
   pnl, settled_at,           -- auto-populated by auto_settle
   market_ticker, side,       -- used by auto_settle to check Kalshi result
   edge, bookmaker_count, consensus_std, kalshi_spread,  -- quality signals at entry
-  commence_time              -- game start time from Odds API
+  commence_time              -- game start time from Odds API (UTC ISO 8601)
 
 bankroll_log
   id, log_date (unique), bankroll, total_at_risk
@@ -359,6 +400,43 @@ bankroll_log
 
 ---
 
+## Sports Monitored
+
+| Sport | Odds API Key | In Season |
+|---|---|---|
+| NFL | `americanfootball_nfl` | Sep – Feb |
+| NCAAF | `americanfootball_ncaaf` | Aug – Jan |
+| NBA | `basketball_nba` | Oct – Jun |
+| NCAAB | `basketball_ncaab` | Nov – Apr |
+| MLB | `baseball_mlb` | Mar – Oct |
+| NHL | `icehockey_nhl` | Oct – Jun |
+| MLS | `soccer_usa_mls` | Feb – Nov |
+| EPL | `soccer_epl` | Aug – May |
+| UCL | `soccer_uefa_champs_league` | Sep – May |
+
+---
+
+## Planned Next Feature: Totals, Spreads, BTTS
+
+A plan exists to add non-h2h bet types. Key decisions:
+
+**Kalshi series confirmed:**
+- Totals: `KXMLBTOTAL` (MLB, liquid ~$50K vol), `KXNBATOTAL`, `KXNHLTOTAL`, `KXEPLTOTAL`, `KXUCLTOTAL`, `KXMLSTOTAL`
+- Spreads: `KXMLBSPREAD`, `KXNBASPREAD`, `KXNHLSPREAD`
+- BTTS: `KXMLSBTTS`, `KXEPLBTTS`, `KXUCLBTTS` (all currently illiquid — EPL/UCL spreads 90–94¢)
+
+**Only MLB totals are liquid today.** All others are infrastructure-only until Kalshi volume develops.
+
+**Architecture:** `BetType` enum (H2H/TOTALS/SPREAD/BTTS), multi-series `_SPORT_TO_SERIES`,
+non-h2h matching via shared event_ticker suffix, `market_key` param on `consensus_stats()`,
+`bet_type`/`threshold` columns in DB, sport-specific Odds API market requests to control credit usage.
+
+**11 files to modify:** config.py, kalshi_client.py, odds_fetcher.py, value_detector.py,
+odds_converter.py, market_matcher.py, db.py, main.py, trade_executor.py, alert_manager.py,
+dashboard_server.py.
+
+---
+
 ## Pre-Flight Check
 
 ```bash
@@ -381,10 +459,14 @@ Tests:
 - **Paper trading before live.** `--paper` runs the full pipeline including correlation/exposure enforcement — identical to live mode except no orders are placed.
 - **Composite scoring over raw edge.** High-edge bets backed by few books or with wide spreads are ranked below lower-edge bets with stronger consensus.
 - **Hard quality filters.** Markets with < 5 books, > 5¢ spread, or < $500 volume are eliminated before scoring — not just ranked lower.
-- **Sport-gated matching.** The matcher enforces sport boundaries to prevent cross-sport ticker mismatches (e.g., an MLS team being matched to an NBA market).
-- **MLS 3-way handling.** MLS regular season games can end in a draw. The bot correctly de-vigs the 3-way h2h odds and compares the draw probability against Kalshi's TIE market.
+- **ASK price for edge calculation.** The fill price (ask) is used rather than the mid, so displayed edge reflects what you actually pay.
+- **Two-team cross-validation in matcher.** Both teams in a Kalshi market must match the sportsbook event — prevents cross-game mismatches that inflate apparent edge.
+- **Sport-gated matching.** The matcher enforces sport boundaries to prevent cross-sport ticker mismatches.
+- **Soccer 3-way handling.** EPL, UCL, and MLS regular season games can end in a draw. The bot de-vigs 3-way h2h odds and bets the TIE market when draw has edge.
 - **Auto-settle.** Positions close automatically once Kalshi publishes a result. No manual tracking needed.
-- **API credit conservation.** Off-season sports are skipped. Scans are skipped entirely (auto-settle only) when daily cap or exposure limit is already reached.
+- **API credit conservation.** Off-season sports are skipped. Scans skipped entirely (auto-settle only) when daily cap or exposure limit reached. 1s delay between sport fetches prevents 429 errors.
+- **Pacific Time display.** All game times and timestamps shown in PT throughout dashboard and terminal.
 - **RSA-PSS not PKCS1v15.** Kalshi requires PSS padding. PKCS1v15 returns 401 even with a valid key.
-- **Kalshi API base URL:** `https://api.elections.kalshi.com/trade-api/v2` (migrated from `trading-api.kalshi.com`).
-- **Series-based market fetch.** Kalshi removed category filtering from `/markets`. Markets are now fetched per series ticker (e.g. `KXNBAGAME`) with `series_ticker` param.
+- **Kalshi API base URL:** `https://api.elections.kalshi.com/trade-api/v2`
+- **Series-based market fetch.** Kalshi removed category filtering. Markets fetched per series ticker with `series_ticker` param.
+- **Kalshi close_time ≠ game time.** `close_time` is the settlement deadline (~2 weeks post-game). Game time comes from Odds API `commence_time`.

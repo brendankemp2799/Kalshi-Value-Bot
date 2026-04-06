@@ -65,11 +65,26 @@ class ValueOpportunity:
         return prob_to_american(self.market_price)
 
 
+_SERIES_SLUG: dict[str, str] = {
+    "KXNFLGAME":    "nfl-game",
+    "KXNCAAFGAME":  "ncaaf-game",
+    "KXNBAGAME":    "nba-game",
+    "KXNCAABGAME":  "ncaab-game",
+    "KXMLBGAME":    "mlb-game",
+    "KXNHLGAME":    "nhl-game",
+    "KXMLSGAME":    "mls-game",
+    "KXEPLGAME":    "epl-game",
+    "KXUCLGAME":    "uefa-champions-league-game",
+}
+
+
 def _kalshi_url(ticker: str, event_ticker: str = "") -> str:
-    # Kalshi website uses the event ticker in its URLs, not the individual market ticker
-    # e.g. https://kalshi.com/markets/KXNBAGAME-26APR05HOUGSW
-    slug = event_ticker if event_ticker else ticker
-    return f"https://kalshi.com/markets/{slug}"
+    # Kalshi URL format: /markets/{series}/{slug}/{event_ticker_lower}
+    # e.g. https://kalshi.com/markets/kxuclgame/uefa-champions-league-game/kxuclgame-26apr14atmbar
+    event = (event_ticker if event_ticker else ticker).lower()
+    series = event.split("-")[0].upper()
+    slug = _SERIES_SLUG.get(series, series.lower())
+    return f"https://kalshi.com/markets/{series.lower()}/{slug}/{event}"
 
 
 def detect_value(
