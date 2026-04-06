@@ -129,20 +129,26 @@ def detect_value(
         # ── Filter 2: Kalshi spread ───────────────────────────────────────────
         if km.spread > config.MAX_KALSHI_SPREAD:
             logger.debug(
-                "Skip %s vs %s [%s] — Kalshi spread %.2f > max %.2f",
+                "Skip %s vs %s [%s] — spread %.2f > max %.2f (ticker=%s)",
                 event.home_team, event.away_team, km.bet_type,
-                km.spread, config.MAX_KALSHI_SPREAD,
+                km.spread, config.MAX_KALSHI_SPREAD, km.ticker,
             )
             continue
 
         # ── Filter 3: Kalshi volume ───────────────────────────────────────────
         if km.volume < config.MIN_KALSHI_VOLUME:
             logger.debug(
-                "Skip %s vs %s [%s] — Kalshi volume $%.0f < min $%.0f",
+                "Skip %s vs %s [%s] — volume %.0f < min %.0f (ticker=%s)",
                 event.home_team, event.away_team, km.bet_type,
-                km.volume, config.MIN_KALSHI_VOLUME,
+                km.volume, config.MIN_KALSHI_VOLUME, km.ticker,
             )
             continue
+
+        logger.debug(
+            "Passed filters: %s vs %s [%s] ticker=%s spread=%.2f vol=%.0f",
+            event.home_team, event.away_team, km.bet_type,
+            km.ticker, km.spread, km.volume,
+        )
 
         # ── Route by bet type ─────────────────────────────────────────────────
         if km.bet_type == "totals":

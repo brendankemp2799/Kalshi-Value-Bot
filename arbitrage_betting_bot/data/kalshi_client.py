@@ -275,6 +275,19 @@ class KalshiClient:
             # Parse threshold for totals/spreads
             threshold = _parse_threshold(title_raw, bet_type)
 
+            # Volume: use explicit None checks to avoid 0.0 being treated as falsy.
+            # volume_fp is the float contract count; open_interest is outstanding contracts.
+            # We take the max so a market with a deep order book but low recent trades
+            # still qualifies (e.g. a totals market that just opened).
+            vol_fp = raw.get("volume_fp")
+            vol_int = raw.get("volume")
+            oi = raw.get("open_interest")
+            volume = max(
+                float(vol_fp) if vol_fp is not None else 0.0,
+                float(vol_int) if vol_int is not None else 0.0,
+                float(oi) if oi is not None else 0.0,
+            )
+
             km = KalshiMarket(
                 ticker=raw.get("ticker", ""),
                 title=title_raw,
@@ -284,7 +297,7 @@ class KalshiClient:
                 no_price=round(no_price, 4),
                 yes_bid=round(raw_yes_bid, 4),
                 yes_ask=round(raw_yes_ask, 4),
-                volume=float(raw.get("volume_fp") or raw.get("volume", 0) or 0),
+                volume=volume,
                 close_time=raw.get("close_time", ""),
                 category=raw.get("category", "") or "",
                 event_ticker=event_ticker,
