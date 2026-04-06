@@ -72,4 +72,4 @@ FUZZY_MATCH_THRESHOLD: int = 80       # Minimum rapidfuzz score (0-100)
 # ── Opportunity Quality Filters ───────────────────────────────────────────────
 MIN_BOOKMAKER_COUNT: int = 5          # Consensus must come from ≥5 books
 MAX_KALSHI_SPREAD: float = 0.05       # Kalshi bid-ask spread ≤ 5¢ (ensures fillable price)
-MIN_KALSHI_VOLUME: float = 500.0      # Kalshi volume ≥ $500 (liquid market)
+MIN_KALSHI_VOLUME: float = 0.0        # Disabled — spread filter (MAX_KALSHI_SPREAD) is sufficient liquidity gate
