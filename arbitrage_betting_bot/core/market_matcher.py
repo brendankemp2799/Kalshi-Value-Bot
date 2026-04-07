@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
 
 from rapidfuzz import fuzz
 
@@ -68,6 +69,36 @@ def _team_score(team: str, candidate: str) -> int:
         fuzz.token_sort_ratio(t, c),
         fuzz.token_set_ratio(t, c),
     )
+
+
+def _kalshi_game_date(event_ticker: str) -> datetime | None:
+    """
+    Parse the game date from a Kalshi event_ticker.
+    e.g. "KXMLBGAME-26APR08PITNYY" → datetime(2026, 4, 8, tzinfo=UTC)
+    Returns None if parsing fails.
+    """
+    try:
+        parts = event_ticker.split("-")
+        if len(parts) < 2:
+            return None
+        date_seg = parts[1][:7]  # e.g. "26APR08"
+        dt = datetime.strptime(date_seg, "%y%b%d")
+        return dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _dates_compatible(kalshi_ticker: str, odds_commence: datetime, tolerance_days: int = 1) -> bool:
+    """
+    Return True if the Kalshi market's game date is within tolerance_days of
+    the sportsbook event's commence_time. Prevents e.g. an Apr 8 Kalshi market
+    from matching an Apr 6 sportsbook event for the same team.
+    """
+    kalshi_date = _kalshi_game_date(kalshi_ticker)
+    if kalshi_date is None:
+        return True  # can't parse — allow match rather than block it
+    delta = abs((kalshi_date.date() - odds_commence.date()).days)
+    return delta <= tolerance_days
 
 
 def _parse_title_teams(title: str) -> tuple[str, str] | None:
@@ -151,6 +182,13 @@ def match_events(
                 continue
             if not km.yes_team:
                 continue
+            if not _dates_compatible(km.event_ticker, event.commence_time):
+                logger.debug(
+                    "Skip %s — date mismatch with %s vs %s (%s)",
+                    km.ticker, event.home_team, event.away_team,
+                    event.commence_time.date(),
+                )
+                continue
 
             home_score = _team_score(event.home_team, km.yes_team)
             away_score = _team_score(event.away_team, km.yes_team)
@@ -233,6 +271,8 @@ def match_events(
         for event in odds_events:
             allowed_series = set(_SPORT_TO_SERIES.get(event.sport_key, []))
             if km_series and km_series not in allowed_series:
+                continue
+            if not _dates_compatible(km.event_ticker, event.commence_time):
                 continue
 
             # Both teams must match — try both orderings
