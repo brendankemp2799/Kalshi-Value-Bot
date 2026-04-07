@@ -254,10 +254,35 @@ def build_data() -> dict:
 
 # ── Per-book consensus breakdown ──────────────────────────────────────────────
 
+# Odds API key → (display name, URL)
+_BOOK_URLS: dict[str, tuple[str, str]] = {
+    "draftkings":        ("DraftKings",      "https://sportsbook.draftkings.com"),
+    "fanduel":           ("FanDuel",         "https://sportsbook.fanduel.com"),
+    "betmgm":            ("BetMGM",          "https://sports.betmgm.com"),
+    "caesars":           ("Caesars",         "https://www.caesars.com/sportsbook-and-casino"),
+    "pointsbet":         ("PointsBet",       "https://www.pointsbet.com"),
+    "williamhill_us":    ("Caesars (WH)",    "https://www.caesars.com/sportsbook-and-casino"),
+    "betrivers":         ("BetRivers",       "https://www.betrivers.com"),
+    "unibet_us":         ("Unibet",          "https://www.unibet.com/betting"),
+    "barstool":          ("Barstool",        "https://www.barstoolsports.com/bets"),
+    "mybookieag":        ("MyBookie",        "https://mybookie.ag"),
+    "bovada":            ("Bovada",          "https://www.bovada.lv/sports"),
+    "betonlineag":       ("BetOnline",       "https://www.betonline.ag/sportsbook"),
+    "lowvig":            ("LowVig",          "https://www.lowvig.ag"),
+    "pinnacle":          ("Pinnacle",        "https://www.pinnacle.com/en/betting-resources"),
+    "superbook":         ("SuperBook",       "https://superbook.com"),
+    "wynnbet":           ("WynnBET",         "https://www.wynnbet.com"),
+    "betfair":           ("Betfair",         "https://www.betfair.com"),
+    "sport888":          ("888sport",        "https://www.888sport.com"),
+    "betus":             ("BetUS",           "https://www.betus.com.pa"),
+    "betway":            ("Betway",          "https://betway.com"),
+}
+
+
 def _book_breakdown(bookmakers_json: str, team_name: str, bet_type: str, threshold: float | None) -> list[dict]:
     """
     Return per-book de-vigged probability for the outcome we bet on.
-    Each entry: {book, odds_american, raw_prob, devigged_prob}
+    Each entry: {book, book_key, url, odds_american, raw_prob, devigged_prob}
     """
     market_key_map = {"h2h": "h2h", "totals": "totals", "spread": "spreads", "btts": "btts"}
     market_key = market_key_map.get(bet_type, "h2h")
@@ -281,7 +306,8 @@ def _book_breakdown(bookmakers_json: str, team_name: str, bet_type: str, thresho
 
     rows = []
     for book in bookmakers:
-        book_name = book.get("title") or book.get("key") or "Unknown"
+        book_key = book.get("key", "")
+        display_name, url = _BOOK_URLS.get(book_key, (book.get("title") or book_key or "Unknown", ""))
         for market in book.get("markets", []):
             if market.get("key") != market_key:
                 continue
@@ -306,7 +332,8 @@ def _book_breakdown(bookmakers_json: str, team_name: str, bet_type: str, thresho
             no_vig = remove_vig(raw_probs)
             idx = outcomes.index(target)
             rows.append({
-                "book": book_name,
+                "book": display_name,
+                "url": url,
                 "odds": target["price"],
                 "raw_prob": round(raw_probs[idx] * 100, 1),
                 "devigged_prob": round(no_vig[idx] * 100, 1),
@@ -440,6 +467,7 @@ DETAIL_TEMPLATE = """<!DOCTYPE html>
   <div class="section">
     <div class="section-header">
       <h2>Sportsbook Consensus Breakdown{% if p.book_count %} — {{ p.book_count }} books{% endif %}</h2>
+      <p style="font-size:11px;color:var(--muted);margin-top:4px">Odds captured at bet entry time. Click a book name to verify on their site. Some books post lines 2–3 days in advance — if you can't find the line, check back closer to game time.</p>
     </div>
     {% if p.has_data %}
     <table>
@@ -453,8 +481,17 @@ DETAIL_TEMPLATE = """<!DOCTYPE html>
       <tbody>
         {% for r in p.breakdown %}
         <tr>
-          <td><strong>{{ r.book }}</strong></td>
-          <td>{{ '+' if r.odds > 0 else '' }}{{ r.odds }}</td>
+          <td>
+            {% if r.url %}
+            <a href="{{ r.url }}" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none">
+              <strong>{{ r.book }}</strong>
+              <span style="font-size:10px;color:var(--blue);margin-left:4px">↗</span>
+            </a>
+            {% else %}
+            <strong>{{ r.book }}</strong>
+            {% endif %}
+          </td>
+          <td style="font-family:monospace">{{ '+' if r.odds > 0 else '' }}{{ r.odds }}</td>
           <td style="color:var(--muted)">{{ r.raw_prob }}%</td>
           <td><strong>{{ r.devigged_prob }}%</strong></td>
           <td>
@@ -466,7 +503,7 @@ DETAIL_TEMPLATE = """<!DOCTYPE html>
         {% endfor %}
         {% if p.consensus %}
         <tr class="consensus-row">
-          <td>Consensus (avg)</td>
+          <td>Consensus (avg of {{ p.book_count }} books)</td>
           <td>—</td>
           <td>—</td>
           <td><strong style="color:var(--green)">{{ p.consensus }}%</strong></td>
