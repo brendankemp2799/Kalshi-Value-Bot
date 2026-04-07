@@ -88,17 +88,16 @@ def _kalshi_game_date(event_ticker: str) -> datetime | None:
         return None
 
 
-def _dates_compatible(kalshi_ticker: str, odds_commence: datetime, tolerance_days: int = 1) -> bool:
+def _dates_compatible(kalshi_ticker: str, odds_commence: datetime) -> bool:
     """
-    Return True if the Kalshi market's game date is within tolerance_days of
-    the sportsbook event's commence_time. Prevents e.g. an Apr 8 Kalshi market
-    from matching an Apr 6 sportsbook event for the same team.
+    Return True only if the Kalshi market's game date exactly matches the
+    sportsbook event's date (UTC). Same-team series (e.g. Pirates play Apr 6
+    AND Apr 8) would otherwise cross-contaminate consensus probabilities.
     """
     kalshi_date = _kalshi_game_date(kalshi_ticker)
     if kalshi_date is None:
         return True  # can't parse — allow match rather than block it
-    delta = abs((kalshi_date.date() - odds_commence.date()).days)
-    return delta <= tolerance_days
+    return kalshi_date.date() == odds_commence.date()
 
 
 def _parse_title_teams(title: str) -> tuple[str, str] | None:
