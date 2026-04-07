@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from rapidfuzz import fuzz
 
@@ -88,16 +88,28 @@ def _kalshi_game_date(event_ticker: str) -> datetime | None:
         return None
 
 
+try:
+    from zoneinfo import ZoneInfo
+    _ET = ZoneInfo("America/New_York")
+except ImportError:
+    import pytz
+    _ET = pytz.timezone("America/New_York")
+
+
 def _dates_compatible(kalshi_ticker: str, odds_commence: datetime) -> bool:
     """
     Return True only if the Kalshi market's game date exactly matches the
-    sportsbook event's date (UTC). Same-team series (e.g. Pirates play Apr 6
-    AND Apr 8) would otherwise cross-contaminate consensus probabilities.
+    sportsbook event's date, both expressed in US Eastern time.
+
+    Kalshi tickers encode Eastern dates (e.g. 26APR08 = Apr 8 ET).
+    The Odds API commence_time is UTC — a 7 PM PT game on Apr 8 is Apr 9 UTC
+    but still Apr 8 ET. Comparing UTC dates would block valid West Coast matches.
     """
     kalshi_date = _kalshi_game_date(kalshi_ticker)
     if kalshi_date is None:
         return True  # can't parse — allow match rather than block it
-    return kalshi_date.date() == odds_commence.date()
+    odds_date_et = odds_commence.astimezone(_ET).date()
+    return kalshi_date.date() == odds_date_et
 
 
 def _parse_title_teams(title: str) -> tuple[str, str] | None:

@@ -254,35 +254,63 @@ def build_data() -> dict:
 
 # ── Per-book consensus breakdown ──────────────────────────────────────────────
 
-# Odds API key → (display name, URL)
-_BOOK_URLS: dict[str, tuple[str, str]] = {
-    "draftkings":        ("DraftKings",      "https://sportsbook.draftkings.com"),
-    "fanduel":           ("FanDuel",         "https://sportsbook.fanduel.com"),
-    "betmgm":            ("BetMGM",          "https://sports.betmgm.com"),
-    "caesars":           ("Caesars",         "https://www.caesars.com/sportsbook-and-casino"),
-    "pointsbet":         ("PointsBet",       "https://www.pointsbet.com"),
-    "williamhill_us":    ("Caesars (WH)",    "https://www.caesars.com/sportsbook-and-casino"),
-    "betrivers":         ("BetRivers",       "https://www.betrivers.com"),
-    "unibet_us":         ("Unibet",          "https://www.unibet.com/betting"),
-    "barstool":          ("Barstool",        "https://www.barstoolsports.com/bets"),
-    "mybookieag":        ("MyBookie",        "https://mybookie.ag"),
-    "bovada":            ("Bovada",          "https://www.bovada.lv/sports"),
-    "betonlineag":       ("BetOnline",       "https://www.betonline.ag/sportsbook"),
-    "lowvig":            ("LowVig",          "https://www.lowvig.ag"),
-    "pinnacle":          ("Pinnacle",        "https://www.pinnacle.com/en/betting-resources"),
-    "superbook":         ("SuperBook",       "https://superbook.com"),
-    "wynnbet":           ("WynnBET",         "https://www.wynnbet.com"),
-    "betfair":           ("Betfair",         "https://www.betfair.com"),
-    "sport888":          ("888sport",        "https://www.888sport.com"),
-    "betus":             ("BetUS",           "https://www.betus.com.pa"),
-    "betway":            ("Betway",          "https://betway.com"),
+# Odds API key → (display name, sport_slug_map)
+# sport_slug_map: Odds API sport key → sport-specific URL path
+# Falls back to base URL if sport not in map.
+_BOOK_INFO: dict[str, tuple[str, str, dict[str, str]]] = {
+    # key: (display_name, base_url, {sport_key: sport_path})
+    "draftkings": ("DraftKings", "https://sportsbook.draftkings.com", {
+        "baseball_mlb":              "/leagues/baseball/mlb",
+        "basketball_nba":            "/leagues/basketball/nba",
+        "icehockey_nhl":             "/leagues/hockey/nhl",
+        "americanfootball_nfl":      "/leagues/football/nfl",
+        "soccer_usa_mls":            "/leagues/soccer/mls",
+        "soccer_epl":                "/leagues/soccer/english-premier-league",
+        "soccer_uefa_champs_league": "/leagues/soccer/uefa-champions-league",
+    }),
+    "fanduel": ("FanDuel", "https://sportsbook.fanduel.com", {
+        "baseball_mlb":              "/baseball/mlb",
+        "basketball_nba":            "/basketball/nba",
+        "icehockey_nhl":             "/hockey/nhl",
+        "americanfootball_nfl":      "/football/nfl",
+        "soccer_usa_mls":            "/soccer/mls",
+        "soccer_epl":                "/soccer/epl",
+        "soccer_uefa_champs_league": "/soccer/champions-league",
+    }),
+    "betmgm":         ("BetMGM",       "https://sports.betmgm.com",                    {}),
+    "caesars":        ("Caesars",      "https://www.caesars.com/sportsbook-and-casino", {}),
+    "williamhill_us": ("Caesars (WH)", "https://www.caesars.com/sportsbook-and-casino", {}),
+    "betrivers":      ("BetRivers",    "https://www.betrivers.com",                     {}),
+    "pointsbet":      ("PointsBet",    "https://www.pointsbet.com",                     {}),
+    "unibet_us":      ("Unibet",       "https://www.unibet.com/betting",                {}),
+    "barstool":       ("Barstool",     "https://www.barstoolsports.com/bets",           {}),
+    "mybookieag":     ("MyBookie",     "https://mybookie.ag",                           {}),
+    "bovada":         ("Bovada",       "https://www.bovada.lv/sports",                  {}),
+    "betonlineag":    ("BetOnline",    "https://www.betonline.ag/sportsbook",           {}),
+    "lowvig":         ("LowVig",       "https://www.lowvig.ag",                         {}),
+    "pinnacle":       ("Pinnacle",     "https://www.pinnacle.com/en/baseball/matchups", {}),
+    "superbook":      ("SuperBook",    "https://superbook.com",                         {}),
+    "wynnbet":        ("WynnBET",      "https://www.wynnbet.com",                       {}),
+    "betfair":        ("Betfair",      "https://www.betfair.com",                       {}),
+    "sport888":       ("888sport",     "https://www.888sport.com",                      {}),
+    "betus":          ("BetUS",        "https://www.betus.com.pa",                      {}),
+    "betway":         ("Betway",       "https://betway.com",                            {}),
 }
 
 
-def _book_breakdown(bookmakers_json: str, team_name: str, bet_type: str, threshold: float | None) -> list[dict]:
+def _book_url(book_key: str, sport_key: str) -> tuple[str, str]:
+    """Return (display_name, url) for a book + sport combination."""
+    if book_key not in _BOOK_INFO:
+        return book_key, ""
+    name, base, sport_map = _BOOK_INFO[book_key]
+    path = sport_map.get(sport_key, "")
+    return name, base + path
+
+
+def _book_breakdown(bookmakers_json: str, team_name: str, bet_type: str, threshold: float | None, sport_key: str = "") -> list[dict]:
     """
     Return per-book de-vigged probability for the outcome we bet on.
-    Each entry: {book, book_key, url, odds_american, raw_prob, devigged_prob}
+    Each entry: {book, url, odds, raw_prob, devigged_prob}
     """
     market_key_map = {"h2h": "h2h", "totals": "totals", "spread": "spreads", "btts": "btts"}
     market_key = market_key_map.get(bet_type, "h2h")
@@ -307,7 +335,7 @@ def _book_breakdown(bookmakers_json: str, team_name: str, bet_type: str, thresho
     rows = []
     for book in bookmakers:
         book_key = book.get("key", "")
-        display_name, url = _BOOK_URLS.get(book_key, (book.get("title") or book_key or "Unknown", ""))
+        display_name, url = _book_url(book_key, sport_key)
         for market in book.get("markets", []):
             if market.get("key") != market_key:
                 continue
@@ -360,7 +388,7 @@ def position_detail(position_id: int):
     threshold = p["threshold"] if "threshold" in p.keys() else None
     bj = p["bookmakers_json"] if "bookmakers_json" in p.keys() else None
 
-    breakdown = _book_breakdown(bj, p["team_name"], bet_type or "h2h", threshold) if bj else []
+    breakdown = _book_breakdown(bj, p["team_name"], bet_type or "h2h", threshold, sport_key=p["sport"]) if bj else []
     consensus = sum(r["devigged_prob"] for r in breakdown) / len(breakdown) if breakdown else None
 
     data = {

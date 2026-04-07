@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 import requests
 
@@ -99,25 +99,43 @@ class OddsAPIClient:
             logger.error("Odds API request failed for %s: %s", sport, e)
             return []
 
+        now = datetime.now(timezone.utc)
         events: list[OddsEvent] = []
+        skipped_live = 0
         for raw in data:
             try:
+                commence = datetime.fromisoformat(
+                    raw["commence_time"].replace("Z", "+00:00")
+                )
+                # Skip games that have already started — live odds are not
+                # pre-game consensus and will produce wildly inflated edge values.
+                if commence <= now:
+                    skipped_live += 1
+                    logger.debug(
+                        "Skipping in-progress/past event: %s vs %s (%s)",
+                        raw.get("home_team"), raw.get("away_team"), commence,
+                    )
+                    continue
                 events.append(
                     OddsEvent(
                         event_id=raw["id"],
                         sport_key=raw["sport_key"],
                         home_team=raw["home_team"],
                         away_team=raw["away_team"],
-                        commence_time=datetime.fromisoformat(
-                            raw["commence_time"].replace("Z", "+00:00")
-                        ),
+                        commence_time=commence,
                         bookmakers=raw.get("bookmakers", []),
                     )
                 )
             except (KeyError, ValueError) as e:
                 logger.warning("Skipping malformed event: %s", e)
 
-        logger.info("Fetched %d events for %s", len(events), sport)
+        if skipped_live:
+            logger.info(
+                "Fetched %d upcoming events for %s (%d in-progress/past skipped)",
+                len(events), sport, skipped_live,
+            )
+        else:
+            logger.info("Fetched %d events for %s", len(events), sport)
         return events
 
     def fetch_all_sports(self) -> list[OddsEvent]:
