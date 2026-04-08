@@ -62,19 +62,31 @@ _SERIES_TO_BET_TYPE: dict[str, str] = {
 }
 
 
-def _parse_threshold(title: str, bet_type: str) -> float | None:
+def _parse_threshold(title: str, bet_type: str, ticker: str = "") -> float | None:
     """
-    Extract the numeric threshold from a Kalshi market title.
-      Totals:  "Detroit Pistons vs Orlando Magic Over 222.5?"  → 222.5
-      Spread:  "Detroit Pistons -3.5 at Orlando Magic?"        → -3.5
-      BTTS:    None
+    Extract the numeric threshold from a Kalshi market title or ticker.
+
+    Totals: title may say "Over 222.5" OR ticker suffix encodes the line
+      e.g. KXNBATOTAL-26APR08PORSAS-236  → 236 (integer points)
+           KXMLBTOTAL-26APR08BOSSEA-7     → 7.0 (runs)
+    Spread: title typically has "-3.5" embedded.
+    BTTS:   None
     """
     if bet_type == "totals":
+        # Try title first (has "Over X.X" or "Under X.X")
         m = re.search(r"(?:Over|Under)\s+([\d.]+)", title, re.IGNORECASE)
         if m:
             return float(m.group(1))
+        # Fall back to ticker suffix: last segment after final "-"
+        # e.g. KXNBATOTAL-26APR08PORSAS-236 → "236"
+        if ticker:
+            parts = ticker.split("-")
+            if len(parts) >= 3:
+                try:
+                    return float(parts[-1])
+                except ValueError:
+                    pass
     elif bet_type == "spread":
-        # Spread value is the first number with a sign attached to a team name
         m = re.search(r"([+-][\d.]+)", title)
         if m:
             return float(m.group(1))
@@ -273,7 +285,7 @@ class KalshiClient:
             raw_yes_ask = self._parse_price(raw, "yes_ask_dollars", "yes_ask") or yes_price
 
             # Parse threshold for totals/spreads
-            threshold = _parse_threshold(title_raw, bet_type)
+            threshold = _parse_threshold(title_raw, bet_type, ticker=raw.get("ticker", ""))
 
             # Volume: use explicit None checks to avoid 0.0 being treated as falsy.
             # volume_fp is the float contract count; open_interest is outstanding contracts.
