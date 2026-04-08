@@ -40,9 +40,9 @@ _SPORT_TO_SERIES: dict[str, list[str]] = {
     "basketball_ncaab":          ["KXNCAABGAME"],
     "baseball_mlb":              ["KXMLBGAME", "KXMLBTOTAL", "KXMLBSPREAD"],
     "icehockey_nhl":             ["KXNHLGAME", "KXNHLTOTAL", "KXNHLSPREAD"],
-    "soccer_usa_mls":            ["KXMLSGAME", "KXMLSBTTS"],
-    "soccer_epl":                ["KXEPLGAME", "KXEPLBTTS"],
-    "soccer_uefa_champs_league": ["KXUCLGAME", "KXUCLBTTS"],
+    "soccer_usa_mls":            ["KXMLSGAME"],
+    "soccer_epl":                ["KXEPLGAME"],
+    "soccer_uefa_champs_league": ["KXUCLGAME"],
 }
 
 # Maps Kalshi series prefix → bet type ("h2h" is default / omitted)

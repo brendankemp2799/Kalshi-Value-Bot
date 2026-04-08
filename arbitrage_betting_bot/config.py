@@ -61,6 +61,7 @@ SPORT_MARKETS: dict[str, str] = {
     "soccer_usa_mls":              "h2h",
     "soccer_epl":                  "h2h",
     "soccer_uefa_champs_league":   "h2h",
+    # BTTS excluded — not available in us region from Odds API
 }
 
 # ── Kalshi ────────────────────────────────────────────────────────────────────
