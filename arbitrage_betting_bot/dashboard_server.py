@@ -33,8 +33,9 @@ except ImportError:
     _PT = pytz.timezone("America/Los_Angeles")
 from flask import Flask, jsonify, render_template_string, abort
 import storage.db as db
-from core.odds_converter import american_to_prob, remove_vig
+from core.odds_converter import american_to_prob, remove_vig, _norm_team, _names_match
 from execution.auto_settle import auto_settle_positions
+import re as _re
 
 app = Flask(__name__)
 IS_PAPER = False   # set by CLI arg at startup
@@ -42,12 +43,38 @@ IS_PAPER = False   # set by CLI arg at startup
 
 # ── Data helpers (same logic as dashboard.py) ────────────────────────────────
 
+_KALSHI_SLUG: dict[str, str] = {
+    "KXNFLGAME":   "nfl-game",    "KXNCAAFGAME": "ncaaf-game",
+    "KXNBAGAME":   "nba-game",    "KXNCAABGAME": "ncaab-game",
+    "KXMLBGAME":   "mlb-game",    "KXNHLGAME":   "nhl-game",
+    "KXMLSGAME":   "mls-game",    "KXEPLGAME":   "epl-game",
+    "KXUCLGAME":   "uefa-champions-league-game",
+    "KXNBATOTAL":  "nba-total",   "KXMLBTOTAL":  "mlb-total",
+    "KXNHLTOTAL":  "nhl-total",   "KXEPLTOTAL":  "epl-total",
+    "KXUCLTOTAL":  "ucl-total",   "KXMLSTOTAL":  "mls-total",
+    "KXNBASPREAD": "nba-spread",  "KXMLBSPREAD": "mlb-spread",
+    "KXNHLSPREAD": "nhl-spread",  "KXMLSSPREAD": "mls-spread",
+    "KXEPLSPREAD": "epl-spread",  "KXUCLSPREAD": "ucl-spread",
+}
+
+
+def _kalshi_market_url(ticker: str) -> str:
+    """Build a Kalshi market URL from a ticker like KXMLBTOTAL-26APR09CWSKC-9."""
+    if not ticker:
+        return ""
+    # event_ticker = everything except the last segment (the threshold/team suffix)
+    parts = ticker.split("-")
+    event = "-".join(parts[:2]).lower() if len(parts) >= 2 else ticker.lower()
+    series = parts[0].upper()
+    slug = _KALSHI_SLUG.get(series, series.lower())
+    return f"https://kalshi.com/markets/{series.lower()}/{slug}/{event}"
+
+
 def _bet_type_label(raw: str | None) -> str:
     return {
         "h2h":    "Moneyline",
         "totals": "Over/Under",
         "spread": "ATS",
-        "btts":   "BTTS",
     }.get((raw or "h2h").lower(), (raw or "h2h").upper())
 
 
@@ -230,6 +257,17 @@ def build_data() -> dict:
             "detected": _fmt_dt(o["detected_at"]),
         })
 
+    # ── API credits ──────────────────────────────────────────────────────────
+    credits_row = db.get_api_credits()
+    api_credits = None
+    if credits_row:
+        api_credits = {
+            "used_this_scan": credits_row["used_this_scan"],
+            "used_total":     credits_row["used_total"],
+            "remaining":      credits_row["remaining"],
+            "recorded_at":    _fmt_dt(credits_row["recorded_at"]),
+        }
+
     return {
         "mode": "PAPER" if IS_PAPER else "LIVE",
         "summary": {
@@ -243,6 +281,7 @@ def build_data() -> dict:
             "open_count": open_count,
             "total_bets": len(positions),
         },
+        "api_credits": api_credits,
         "bankroll_chart": {"labels": bk_labels, "bankroll": bk_values, "at_risk": bk_at_risk},
         "pnl_chart": {"labels": pnl_labels, "cumulative": pnl_cumulative},
         "sport_rows": sport_rows,
@@ -312,14 +351,12 @@ def _book_breakdown(bookmakers_json: str, team_name: str, bet_type: str, thresho
     Return per-book de-vigged probability for the outcome we bet on.
     Each entry: {book, url, odds, raw_prob, devigged_prob}
     """
-    market_key_map = {"h2h": "h2h", "totals": "totals", "spread": "spreads", "btts": "btts"}
+    market_key_map = {"h2h": "h2h", "totals": "totals", "spread": "spreads"}
     market_key = market_key_map.get(bet_type, "h2h")
 
     # Derive outcome_name from team_name + bet_type
     if bet_type == "totals":
         outcome_name = "Over" if team_name.lower().startswith("over") else "Under"
-    elif bet_type == "btts":
-        outcome_name = "Yes"
     elif bet_type == "spread":
         # Strip the spread value suffix (e.g. "Washington Nationals -1.5" → "Washington Nationals")
         import re
@@ -341,17 +378,23 @@ def _book_breakdown(bookmakers_json: str, team_name: str, bet_type: str, thresho
                 continue
             outcomes = market.get("outcomes", [])
 
-            # For totals/spreads, filter by point
+            # For spreads/totals: fuzzy name match + exact point match.
+            # For H2H (threshold is None): exact normalized match.
             if threshold is not None:
                 target = next(
                     (o for o in outcomes
-                     if o.get("name") == outcome_name
+                     if _names_match(o.get("name", ""), outcome_name)
                      and o.get("point") is not None
-                     and abs(float(o["point"]) - threshold) <= 0.25),
+                     and abs(float(o["point"]) - threshold) <= 0.01),
                     None,
                 )
             else:
-                target = next((o for o in outcomes if o.get("name") == outcome_name), None)
+                norm_outcome = _norm_team(outcome_name)
+                target = next(
+                    (o for o in outcomes
+                     if _norm_team(o.get("name", "")) == norm_outcome),
+                    None,
+                )
 
             if target is None:
                 continue
@@ -359,9 +402,12 @@ def _book_breakdown(bookmakers_json: str, team_name: str, bet_type: str, thresho
             raw_probs = [american_to_prob(o["price"]) for o in outcomes]
             no_vig = remove_vig(raw_probs)
             idx = outcomes.index(target)
+            pt = target.get("point")
+            line = f"{outcome_name} {pt}" if pt is not None else outcome_name
             rows.append({
                 "book": display_name,
                 "url": url,
+                "line": line,
                 "odds": target["price"],
                 "raw_prob": round(raw_probs[idx] * 100, 1),
                 "devigged_prob": round(no_vig[idx] * 100, 1),
@@ -414,9 +460,439 @@ def position_detail(position_id: int):
     return render_template_string(DETAIL_TEMPLATE, p=data)
 
 
+@app.route("/scan/detail/<int:entry_id>")
+def scan_detail(entry_id: int):
+    row = db.get_scan_entry(entry_id)
+    if not row:
+        abort(404)
+
+    bet_type = row["bet_type"] or "h2h"
+    threshold = row["threshold"]
+    bj = row["bookmakers_json"] if "bookmakers_json" in row.keys() else None
+    breakdown = _book_breakdown(bj, row["team_name"], bet_type, threshold, row["sport"]) if bj else []
+
+    consensus = round(row["consensus_prob"] * 100, 1) if row["consensus_prob"] is not None else None
+    book_count = len(breakdown)
+
+    ticker = row["kalshi_ticker"] or ""
+    data = {
+        "id":          row["id"],
+        "team":        row["team_name"],
+        "sport":       _short_sport(row["sport"]),
+        "home":        row["home_team"],
+        "away":        row["away_team"],
+        "bet_type":    _bet_type_label(bet_type),
+        "game_time":   _fmt_dt(row["commence_time"]),
+        "price_pct":   round(row["kalshi_price"] * 100, 1) if row["kalshi_price"] is not None else "—",
+        "edge":        round(row["edge"] * 100, 1) if row["edge"] is not None else None,
+        "status":      row["status"],
+        "reason":      row["reason"] or "",
+        "consensus":   consensus,
+        "book_count":  book_count,
+        "has_data":    len(breakdown) > 0,
+        "breakdown":   breakdown,
+        "scanned_at":  _fmt_dt(row["scanned_at"]),
+        "kalshi_ticker": ticker,
+        "kalshi_url":  _kalshi_market_url(ticker),
+    }
+    return render_template_string(SCAN_DETAIL_TEMPLATE, p=data)
+
+
+@app.route("/scan")
+def scan_results():
+    rows = db.get_last_scan()
+    scanned_at = _fmt_dt(rows[0]["scanned_at"]) if rows else "No scan data yet"
+
+    entries = []
+    for r in rows:
+        bet_type = r["bet_type"] or "h2h"
+        threshold = r["threshold"]
+        matchup = f"{r['home_team']} vs {r['away_team']}"
+        entries.append({
+            "id":          r["id"],
+            "sport":       _short_sport(r["sport"]),
+            "matchup":     matchup,
+            "team":        r["team_name"],
+            "bet_type":    _bet_type_label(bet_type),
+            "threshold":   threshold,
+            "ticker":      r["kalshi_ticker"] or "",
+            "price":       round(r["kalshi_price"] * 100, 1) if r["kalshi_price"] is not None else None,
+            "consensus":   round(r["consensus_prob"] * 100, 1) if r["consensus_prob"] is not None else None,
+            "edge":        round(r["edge"] * 100, 1) if r["edge"] is not None else None,
+            "books":       r["bookmaker_count"],
+            "spread":      round(r["kalshi_spread"] * 100, 1) if r["kalshi_spread"] is not None else None,
+            "volume":      int(r["kalshi_volume"]) if r["kalshi_volume"] is not None else None,
+            "status":      r["status"],
+            "reason":      r["reason"] or "",
+            "game_time":   _fmt_dt(r["commence_time"]),
+        })
+
+    return render_template_string(SCAN_TEMPLATE, entries=entries, scanned_at=scanned_at)
+
+
 @app.route("/")
 def index():
     return render_template_string(HTML_TEMPLATE)
+
+
+# ── Scan results template ─────────────────────────────────────────────────────
+
+SCAN_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Last Scan — Arb Bot</title>
+<style>
+  :root {
+    --bg:#0f1117;--surface:#1a1d27;--border:#2a2d3a;--text:#e2e8f0;
+    --muted:#64748b;--green:#22c55e;--red:#ef4444;--blue:#3b82f6;
+    --yellow:#f59e0b;--orange:#f97316;--purple:#a855f7;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;}
+  header{display:flex;align-items:center;gap:16px;padding:14px 24px;border-bottom:1px solid var(--border);}
+  header a{color:var(--muted);text-decoration:none;font-size:13px;}
+  header a:hover{color:var(--text);}
+  header h1{font-size:16px;font-weight:600;}
+  .meta{font-size:12px;color:var(--muted);margin-left:auto;}
+  main{padding:20px 24px;max-width:1600px;margin:0 auto;}
+  .toolbar{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center;}
+  .search-input{background:var(--surface);border:1px solid var(--border);color:var(--text);
+    padding:6px 12px;border-radius:8px;font-size:13px;width:240px;outline:none;}
+  .search-input:focus{border-color:var(--blue);}
+  .search-input::placeholder{color:var(--muted);}
+  .col-select{background:var(--surface);border:1px solid var(--border);color:var(--text);
+    padding:6px 10px;border-radius:8px;font-size:12px;outline:none;cursor:pointer;}
+  .filters{display:flex;gap:6px;flex-wrap:wrap;}
+  .filter-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);
+    padding:4px 12px;border-radius:20px;cursor:pointer;font-size:11px;font-weight:600;}
+  .filter-btn.active{border-color:currentColor;}
+  .filter-btn[data-status="all"].active{color:var(--text);}
+  .filter-btn[data-status="value"].active{color:var(--green);}
+  .filter-btn[data-status="no_edge"].active{color:var(--blue);}
+  .filter-btn[data-status="spread_too_wide"].active{color:var(--yellow);}
+  .filter-btn[data-status="few_books"].active{color:var(--yellow);}
+  .filter-btn[data-status="no_consensus"].active{color:var(--yellow);}
+  .filter-btn[data-status="no_threshold"].active{color:var(--yellow);}
+  .filter-btn[data-status="blocked"].active{color:var(--orange);}
+  .filter-btn[data-status="kelly_no_edge"].active{color:var(--purple);}
+  .filter-btn[data-status="daily_cap"].active{color:var(--red);}
+  .visible-count{font-size:12px;color:var(--muted);margin-left:auto;white-space:nowrap;}
+  .section{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+  .table-wrap{overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;}
+  th{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;
+     padding:10px 12px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;}
+  td{padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  tr:last-child td{border-bottom:none;}
+  tr:hover td{background:rgba(255,255,255,0.02);}
+  .badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;letter-spacing:0.4px;}
+  .s-value      {color:var(--green);background:rgba(34,197,94,0.1);}
+  .s-no_edge    {color:var(--blue);background:rgba(59,130,246,0.1);}
+  .s-spread_too_wide,.s-low_volume,.s-few_books,.s-no_consensus,.s-no_threshold
+                {color:var(--yellow);background:rgba(245,158,11,0.1);}
+  .s-blocked    {color:var(--orange);background:rgba(249,115,22,0.1);}
+  .s-kelly_no_edge{color:var(--purple);background:rgba(168,85,247,0.1);}
+  .s-daily_cap  {color:var(--red);background:rgba(239,68,68,0.1);}
+  .pos{color:var(--green);} .neg{color:var(--red);} .muted{color:var(--muted);}
+  .empty{padding:40px;text-align:center;color:var(--muted);}
+  .count-badge{font-size:11px;color:var(--muted);margin-left:4px;}
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← Dashboard</a>
+  <h1>Last Scan Results</h1>
+  <span class="meta">Scanned: {{ scanned_at }}</span>
+</header>
+<main>
+  <div class="toolbar">
+    <input class="search-input" id="search" type="text" placeholder="Search any column…">
+    <select class="col-select" id="col-select">
+      <option value="-1">All columns</option>
+      <option value="0">Sport</option>
+      <option value="1">Matchup</option>
+      <option value="2">Bet</option>
+      <option value="3">Type</option>
+      <option value="4">Game Time</option>
+      <option value="5">Kalshi Price</option>
+      <option value="6">Consensus</option>
+      <option value="7">Edge</option>
+      <option value="8">Books</option>
+      <option value="9">Spread</option>
+      <option value="10">Status</option>
+      <option value="11">Reason</option>
+    </select>
+    <span class="visible-count" id="visible-count"></span>
+  </div>
+  <div class="filters" id="filters">
+    <button class="filter-btn active" data-status="all">All <span class="count-badge" id="cnt-all"></span></button>
+    <button class="filter-btn" data-status="value">Value <span class="count-badge" id="cnt-value"></span></button>
+    <button class="filter-btn" data-status="no_edge">No Edge <span class="count-badge" id="cnt-no_edge"></span></button>
+    <button class="filter-btn" data-status="spread_too_wide">Spread Too Wide <span class="count-badge" id="cnt-spread_too_wide"></span></button>
+    <button class="filter-btn" data-status="few_books">Few Books <span class="count-badge" id="cnt-few_books"></span></button>
+    <button class="filter-btn" data-status="no_consensus">No Consensus <span class="count-badge" id="cnt-no_consensus"></span></button>
+    <button class="filter-btn" data-status="no_threshold">No Threshold <span class="count-badge" id="cnt-no_threshold"></span></button>
+    <button class="filter-btn" data-status="blocked">Blocked <span class="count-badge" id="cnt-blocked"></span></button>
+    <button class="filter-btn" data-status="kelly_no_edge">Kelly ✗ <span class="count-badge" id="cnt-kelly_no_edge"></span></button>
+    <button class="filter-btn" data-status="daily_cap">Daily Cap <span class="count-badge" id="cnt-daily_cap"></span></button>
+  </div>
+
+  <div class="section">
+    <div class="table-wrap">
+      <table id="scan-table">
+        <thead><tr>
+          <th>Sport</th><th>Matchup</th><th>Bet</th><th>Type</th>
+          <th>Game Time</th><th>Kalshi Price</th><th>Consensus</th>
+          <th>Edge</th><th>Books</th><th>Spread</th><th>Status</th><th>Reason</th>
+        </tr></thead>
+        <tbody id="scan-body">
+          {% if not entries %}
+          <tr><td colspan="12" class="empty">No scan data yet — run the bot first.</td></tr>
+          {% else %}
+          {% for r in entries %}
+          <tr data-status="{{ r.status }}">
+            <td>{{ r.sport }}</td>
+            <td style="color:var(--muted)">{{ r.matchup }}</td>
+            <td><a href="/scan/detail/{{ r.id }}" style="color:var(--text);text-decoration:none"><strong>{{ r.team }}</strong> <span style="font-size:10px;color:var(--blue)">↗</span></a></td>
+            <td><span style="color:var(--blue)">{{ r.bet_type }}</span></td>
+            <td style="color:var(--muted)">{{ r.game_time }}</td>
+            <td>{% if r.price is not none %}{{ r.price }}¢{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td>{% if r.consensus is not none %}<strong>{{ r.consensus }}%</strong>{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td>
+              {% if r.edge is not none %}
+                <span class="{{ 'pos' if r.edge >= 4 else 'muted' }}"><strong>{{ r.edge }}%</strong></span>
+              {% else %}<span class="muted">—</span>{% endif %}
+            </td>
+            <td>{% if r.books is not none %}{{ r.books }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td>{% if r.spread is not none %}{{ r.spread }}¢{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td><span class="badge s-{{ r.status }}">{{ r.status.replace('_',' ').upper() }}</span></td>
+            <td style="color:var(--muted);font-size:12px">{{ r.reason }}</td>
+          </tr>
+          {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+<script>
+const rows = Array.from(document.querySelectorAll('#scan-body tr[data-status]'));
+
+// Count by status
+const counts = {};
+rows.forEach(r => { const s = r.dataset.status; counts[s] = (counts[s]||0)+1; });
+document.getElementById('cnt-all').textContent = rows.length;
+Object.entries(counts).forEach(([s, n]) => {
+  const el = document.getElementById('cnt-'+s);
+  if (el) el.textContent = n;
+});
+
+let activeStatus = 'all';
+let searchText = '';
+let searchCol = -1;
+
+function applyFilters() {
+  let visible = 0;
+  rows.forEach(r => {
+    const statusOk = activeStatus === 'all' || r.dataset.status === activeStatus;
+    let textOk = true;
+    if (searchText) {
+      const cells = Array.from(r.querySelectorAll('td'));
+      if (searchCol >= 0) {
+        textOk = cells[searchCol] ? cells[searchCol].textContent.toLowerCase().includes(searchText) : false;
+      } else {
+        textOk = cells.some(c => c.textContent.toLowerCase().includes(searchText));
+      }
+    }
+    const show = statusOk && textOk;
+    r.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  document.getElementById('visible-count').textContent =
+    visible === rows.length ? `${rows.length} rows` : `${visible} of ${rows.length} rows`;
+}
+
+// Status filter buttons
+document.getElementById('filters').addEventListener('click', e => {
+  const btn = e.target.closest('.filter-btn');
+  if (!btn) return;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  activeStatus = btn.dataset.status;
+  applyFilters();
+});
+
+// Search input
+document.getElementById('search').addEventListener('input', e => {
+  searchText = e.target.value.toLowerCase().trim();
+  applyFilters();
+});
+
+// Column selector
+document.getElementById('col-select').addEventListener('change', e => {
+  searchCol = parseInt(e.target.value);
+  applyFilters();
+});
+
+applyFilters();
+</script>
+</body>
+</html>
+"""
+
+
+# ── Scan detail template ─────────────────────────────────────────────────────
+
+SCAN_DETAIL_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scan Entry #{{ p.id }} — Arb Bot</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+    --text: #e2e8f0; --muted: #64748b; --green: #22c55e;
+    --red: #ef4444; --blue: #3b82f6; --yellow: #f59e0b; --orange: #f97316; --purple: #a855f7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
+  header { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  header a { color: var(--muted); text-decoration: none; font-size: 13px; }
+  header a:hover { color: var(--text); }
+  header h1 { font-size: 17px; font-weight: 600; }
+  main { padding: 24px; max-width: 900px; margin: 0 auto; }
+  .section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
+  .section-header { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .section-header h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+  .section-header p { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; }
+  .cell { padding: 14px 18px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .cell:last-child { border-right: none; }
+  .cell-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 5px; }
+  .cell-value { font-size: 16px; font-weight: 600; }
+  .pos { color: var(--green); } .neg { color: var(--red); }
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; padding: 10px 16px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .bar-bg { flex: 1; height: 6px; background: var(--border); border-radius: 3px; max-width: 120px; }
+  .bar-fill { height: 6px; border-radius: 3px; background: var(--blue); }
+  .consensus-row td { font-weight: 700; background: rgba(59,130,246,0.06); border-top: 2px solid var(--blue); }
+  .no-data { padding: 32px; text-align: center; color: var(--muted); font-size: 13px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+  .s-value       { color: var(--green);  background: rgba(34,197,94,0.1); }
+  .s-no_edge     { color: var(--blue);   background: rgba(59,130,246,0.1); }
+  .s-blocked     { color: var(--orange); background: rgba(249,115,22,0.1); }
+  .s-kelly_no_edge { color: var(--purple); background: rgba(168,85,247,0.1); }
+  .s-daily_cap   { color: var(--red);    background: rgba(239,68,68,0.1); }
+  .s-spread_too_wide,.s-few_books,.s-no_consensus,.s-no_threshold,.s-low_volume
+                 { color: var(--yellow); background: rgba(245,158,11,0.1); }
+</style>
+</head>
+<body>
+<header>
+  <a href="/scan">← Last Scan</a>
+  <h1>{{ p.team }} — {{ p.sport }}</h1>
+  <span class="badge s-{{ p.status }}">{{ p.status.replace('_',' ').upper() }}</span>
+</header>
+<main>
+
+  <div class="section">
+    <div class="section-header"><h2>Bet Summary</h2></div>
+    <div class="grid">
+      <div class="cell"><div class="cell-label">Bet On</div><div class="cell-value">{{ p.team }}</div></div>
+      <div class="cell"><div class="cell-label">Matchup</div><div class="cell-value" style="font-size:13px">{{ p.home }} vs {{ p.away }}</div></div>
+      <div class="cell"><div class="cell-label">Type</div><div class="cell-value" style="color:var(--blue)">{{ p.bet_type }}</div></div>
+      <div class="cell"><div class="cell-label">Game Time</div><div class="cell-value" style="font-size:13px">{{ p.game_time }}</div></div>
+      <div class="cell"><div class="cell-label">Kalshi Price</div><div class="cell-value">{{ p.price_pct }}¢</div></div>
+      {% if p.consensus is not none %}
+      <div class="cell"><div class="cell-label">Consensus</div><div class="cell-value pos">{{ p.consensus }}%</div></div>
+      {% endif %}
+      {% if p.edge is not none %}
+      <div class="cell"><div class="cell-label">Edge</div><div class="cell-value {{ 'pos' if p.edge >= 0 else 'neg' }}">{{ '+' if p.edge >= 0 else '' }}{{ p.edge }}%</div></div>
+      {% endif %}
+      <div class="cell"><div class="cell-label">Scanned At</div><div class="cell-value" style="font-size:13px">{{ p.scanned_at }}</div></div>
+    </div>
+    <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
+      {% if p.kalshi_url %}
+      <a href="{{ p.kalshi_url }}" target="_blank" rel="noopener"
+         style="font-size:13px;color:var(--blue);text-decoration:none;">
+        View on Kalshi ↗
+        {% if p.kalshi_ticker %}<span style="font-size:11px;color:var(--muted);margin-left:6px">{{ p.kalshi_ticker }}</span>{% endif %}
+      </a>
+      {% endif %}
+      {% if p.reason %}
+      <span style="font-size:12px;color:var(--muted)"><strong>Reason not placed:</strong> {{ p.reason }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2>Sportsbook Consensus Breakdown{% if p.book_count %} — {{ p.book_count }} books{% endif %}</h2>
+      <p>Odds captured at scan time. Click a book name to verify on their site.</p>
+    </div>
+    {% if p.has_data %}
+    <table>
+      <thead><tr>
+        <th>Sportsbook</th>
+        <th>Line</th>
+        <th>Odds</th>
+        <th>Raw Implied %</th>
+        <th>De-vigged %</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+        {% for r in p.breakdown %}
+        <tr>
+          <td>
+            {% if r.url %}
+            <a href="{{ r.url }}" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none">
+              <strong>{{ r.book }}</strong>
+              <span style="font-size:10px;color:var(--blue);margin-left:4px">↗</span>
+            </a>
+            {% else %}
+            <strong>{{ r.book }}</strong>
+            {% endif %}
+          </td>
+          <td style="color:var(--blue)">{{ r.line }}</td>
+          <td style="font-family:monospace">{{ '+' if r.odds > 0 else '' }}{{ r.odds }}</td>
+          <td style="color:var(--muted)">{{ r.raw_prob }}%</td>
+          <td><strong>{{ r.devigged_prob }}%</strong></td>
+          <td>
+            <div class="bar-wrap">
+              <div class="bar-bg"><div class="bar-fill" style="width:{{ [r.devigged_prob, 100]|min }}%"></div></div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if p.consensus %}
+        <tr class="consensus-row">
+          <td>Consensus (avg of {{ p.book_count }} books)</td>
+          <td>—</td><td>—</td>
+          <td><strong style="color:var(--green)">{{ p.consensus }}%</strong></td>
+          <td></td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="no-data">
+      No sportsbook data for this entry.<br>
+      <small>Only entries from scans after this feature was added will have breakdown data.</small>
+    </div>
+    {% endif %}
+  </div>
+
+</main>
+</body>
+</html>
+"""
 
 
 # ── Detail page template ──────────────────────────────────────────────────────
@@ -501,6 +977,7 @@ DETAIL_TEMPLATE = """<!DOCTYPE html>
     <table>
       <thead><tr>
         <th>Sportsbook</th>
+        <th>Line</th>
         <th>Odds</th>
         <th>Raw Implied %</th>
         <th>De-vigged %</th>
@@ -519,6 +996,7 @@ DETAIL_TEMPLATE = """<!DOCTYPE html>
             <strong>{{ r.book }}</strong>
             {% endif %}
           </td>
+          <td style="color:var(--blue)">{{ r.line }}</td>
           <td style="font-family:monospace">{{ '+' if r.odds > 0 else '' }}{{ r.odds }}</td>
           <td style="color:var(--muted)">{{ r.raw_prob }}%</td>
           <td><strong>{{ r.devigged_prob }}%</strong></td>
@@ -631,6 +1109,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <header>
   <h1>Kalshi Arbitrage Bot</h1>
   <div style="display:flex;align-items:center;gap:16px;">
+    <a href="/scan" style="font-size:13px;color:var(--blue);text-decoration:none;padding:4px 12px;border:1px solid var(--blue);border-radius:6px;">Last Scan</a>
     <span id="mode-badge" class="mode-badge">—</span>
     <span class="refresh-info" id="last-updated">Loading…</span>
   </div>
@@ -704,7 +1183,7 @@ function emptyRow(cols, msg) {
   return `<tr><td colspan="${cols}" class="empty-state">${msg}</td></tr>`;
 }
 
-function renderCards(s, mode) {
+function renderCards(s, mode, credits) {
   const badge = document.getElementById('mode-badge');
   badge.textContent = mode;
   badge.className = 'mode-badge ' + (mode === 'PAPER' ? 'mode-paper' : 'mode-live');
@@ -721,11 +1200,26 @@ function renderCards(s, mode) {
     ? `<span class="${pnlClass(s.roi)}">${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(1)}%</span>`
     : '<span class="neutral">—</span>';
 
+  let creditsCard = '';
+  if (credits) {
+    const lastRun = credits.used_this_scan != null ? credits.used_this_scan : '—';
+    const remaining = credits.remaining != null ? credits.remaining.toLocaleString() : '—';
+    const usedTotal = credits.used_total != null ? credits.used_total.toLocaleString() : '—';
+    const remColor = credits.remaining != null && credits.remaining < 100 ? 'neg' : credits.remaining != null && credits.remaining < 500 ? 'neutral' : 'pos';
+    creditsCard = `
+    <div class="card">
+      <div class="card-label">Odds API Credits</div>
+      <div class="card-value"><span class="${remColor}">${remaining}</span></div>
+      <div class="card-sub">remaining &nbsp;·&nbsp; ${lastRun} used last scan &nbsp;·&nbsp; ${usedTotal} used total</div>
+    </div>`;
+  }
+
   document.getElementById('cards').innerHTML = `
     <div class="card"><div class="card-label">Total P&L</div><div class="card-value">${pnlVal}</div><div class="card-sub">${s.settled} settled bets</div></div>
     <div class="card"><div class="card-label">Win Rate</div><div class="card-value">${wrVal}</div><div class="card-sub">${s.wins}W / ${s.losses}L</div></div>
     <div class="card"><div class="card-label">ROI</div><div class="card-value">${roiVal}</div><div class="card-sub">on $${s.total_staked.toFixed(2)} staked</div></div>
     <div class="card"><div class="card-label">Open Positions</div><div class="card-value"><span class="neutral">${s.open_count}</span></div><div class="card-sub">${s.total_bets} total bets</div></div>
+    ${creditsCard}
   `;
 }
 
@@ -886,7 +1380,7 @@ async function refresh() {
   try {
     const res = await fetch('/api/data');
     const d = await res.json();
-    renderCards(d.summary, d.mode);
+    renderCards(d.summary, d.mode, d.api_credits);
     renderCharts(d.bankroll_chart, d.pnl_chart);
     renderSportTable(d.sport_rows);
     renderOpenTable(d.open_rows);

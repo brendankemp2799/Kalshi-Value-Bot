@@ -24,10 +24,7 @@ logger = logging.getLogger(__name__)
 # them wastes credits. Each tuple is (start_month, end_month); ranges that
 # wrap across January use two tuples.
 _SPORT_SEASONS: dict[str, list[tuple[int, int]]] = {
-    "americanfootball_nfl":      [(9, 2)],   # Sep – Feb  (wraps Jan)
-    "americanfootball_ncaaf":    [(8, 1)],   # Aug – Jan  (wraps Jan)
     "basketball_nba":            [(10, 6)],  # Oct – Jun  (wraps Jan)
-    "basketball_ncaab":          [(11, 4)],  # Nov – Apr  (wraps Jan)
     "baseball_mlb":              [(3, 10)],  # Mar – Oct
     "icehockey_nhl":             [(10, 6)],  # Oct – Jun  (wraps Jan)
     "soccer_usa_mls":            [(2, 11)],  # Feb – Nov
@@ -76,15 +73,29 @@ class OddsAPIClient:
         url = f"{self.base_url}{path}"
         resp = self.session.get(url, params=params, timeout=15)
         resp.raise_for_status()
-        remaining = resp.headers.get("x-requests-remaining", "?")
-        used = resp.headers.get("x-requests-used", "?")
+        remaining = resp.headers.get("x-requests-remaining")
+        used = resp.headers.get("x-requests-used")
         logger.debug("Odds API — used: %s, remaining: %s", used, remaining)
+        # Persist latest credit snapshot so dashboard can display it
+        if remaining is not None or used is not None:
+            try:
+                from storage.db import update_api_credits
+                update_api_credits(
+                    used=int(used) if used is not None else None,
+                    remaining=int(remaining) if remaining is not None else None,
+                )
+            except Exception:
+                pass  # never crash a fetch due to credit tracking
         return resp.json()
 
-    def fetch_odds(self, sport: str, markets: str = config.ODDS_API_MARKETS) -> list[OddsEvent]:
-        """Fetch odds for a sport. markets is a comma-separated list of market types."""
+    def _fetch_raw(self, sport: str, markets: str) -> list[dict]:
+        """
+        Single Odds API request. Returns raw event list or [] on error.
+        The Odds API rejects alternate_* markets when combined with standard
+        markets in the same call (422), so callers must split them.
+        """
         try:
-            data = self._get(
+            return self._get(
                 f"/sports/{sport}/odds",
                 {
                     "regions": config.ODDS_API_REGIONS,
@@ -93,22 +104,55 @@ class OddsAPIClient:
                 },
             )
         except requests.HTTPError as e:
-            logger.error("Odds API HTTP error for %s: %s", sport, e)
+            status = e.response.status_code if e.response is not None else "?"
+            logger.error("Odds API HTTP %s for %s markets=%s", status, sport, markets)
             return []
         except requests.RequestException as e:
             logger.error("Odds API request failed for %s: %s", sport, e)
             return []
 
+    def fetch_odds(self, sport: str, markets: str = config.ODDS_API_MARKETS) -> list[OddsEvent]:
+        """
+        Fetch odds for a sport. markets is a comma-separated list of market types.
+
+        The Odds API requires alternate_totals / alternate_spreads to be fetched
+        in a separate call from standard markets. This method splits the markets
+        list automatically, makes up to two calls, and merges the bookmaker data
+        by event_id before returning.
+        """
+        market_list = [m.strip() for m in markets.split(",") if m.strip()]
+        alternate_keys = {"alternate_totals", "alternate_spreads"}
+        main_markets   = [m for m in market_list if m not in alternate_keys]
+        alt_markets    = [m for m in market_list if m in alternate_keys]
+
+        # First call: main markets
+        raw_main = self._fetch_raw(sport, ",".join(main_markets)) if main_markets else []
+
+        # Second call: alternate markets (separate request required by API)
+        raw_alt: list[dict] = []
+        if alt_markets:
+            time.sleep(0.5)  # small gap to avoid rate-limit
+            raw_alt = self._fetch_raw(sport, ",".join(alt_markets))
+
+        # Index alternate bookmaker data by event_id for merging
+        alt_by_event: dict[str, dict[str, list[dict]]] = {}  # event_id → book_name → markets
+        for raw in raw_alt:
+            eid = raw.get("id", "")
+            for book in raw.get("bookmakers", []):
+                bname = book.get("key", book.get("title", ""))
+                alt_by_event.setdefault(eid, {}).setdefault(bname, []).extend(
+                    book.get("markets", [])
+                )
+
         now = datetime.now(timezone.utc)
         events: list[OddsEvent] = []
         skipped_live = 0
-        for raw in data:
+
+        for raw in raw_main:
             try:
                 commence = datetime.fromisoformat(
                     raw["commence_time"].replace("Z", "+00:00")
                 )
-                # Skip games that have already started — live odds are not
-                # pre-game consensus and will produce wildly inflated edge values.
                 if commence <= now:
                     skipped_live += 1
                     logger.debug(
@@ -116,14 +160,30 @@ class OddsAPIClient:
                         raw.get("home_team"), raw.get("away_team"), commence,
                     )
                     continue
+
+                # Merge alternate markets into each bookmaker's market list
+                eid = raw["id"]
+                bookmakers = raw.get("bookmakers", [])
+                if eid in alt_by_event:
+                    alt_books = alt_by_event[eid]
+                    merged = []
+                    for book in bookmakers:
+                        bname = book.get("key", book.get("title", ""))
+                        extra = alt_books.get(bname, [])
+                        if extra:
+                            book = dict(book)
+                            book["markets"] = list(book.get("markets", [])) + extra
+                        merged.append(book)
+                    bookmakers = merged
+
                 events.append(
                     OddsEvent(
-                        event_id=raw["id"],
+                        event_id=eid,
                         sport_key=raw["sport_key"],
                         home_team=raw["home_team"],
                         away_team=raw["away_team"],
                         commence_time=commence,
-                        bookmakers=raw.get("bookmakers", []),
+                        bookmakers=bookmakers,
                     )
                 )
             except (KeyError, ValueError) as e:

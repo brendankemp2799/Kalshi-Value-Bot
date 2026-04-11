@@ -31,15 +31,15 @@ import json
 import logging
 import sys
 import time
+from datetime import datetime, timezone
 
-import schedule
 from rich.console import Console
 from rich.logging import RichHandler
 
 import config
-from storage.db import init_db, log_opportunity, log_alert, add_position, count_alerts_today
+from storage.db import init_db, log_opportunity, log_alert, add_position, count_alerts_today, log_scan_results, mark_scan_start, get_api_credits
 from execution.trade_executor import execute_trade, resolve_side
-from data.odds_fetcher import OddsAPIClient
+from data.odds_fetcher import OddsAPIClient, _in_season
 from data.kalshi_client import KalshiClient
 from core.market_matcher import match_events
 from core.value_detector import detect_value
@@ -52,6 +52,25 @@ from execution.auto_settle import auto_settle_positions
 console = Console()
 
 
+def _update_scan_log(scan_log: list[dict], opp, status: str, reason: str) -> None:
+    """Update the scan_log entry for a ValueOpportunity after Kelly/blocking decisions."""
+    ticker = opp.matched_event.kalshi_market.ticker
+    team = opp.team_name
+    for entry in reversed(scan_log):
+        if entry.get("kalshi_ticker") == ticker and entry.get("team_name") == team:
+            entry["status"] = status
+            entry["reason"] = reason
+            return
+
+
+def _finalise_scan_log(scan_log: list[dict], scan_id: str) -> None:
+    """Stamp scanned_at on all entries and write to DB."""
+    now = datetime.utcnow().isoformat()
+    for entry in scan_log:
+        entry["scanned_at"] = now
+    log_scan_results(scan_id, scan_log)
+
+
 def setup_logging(verbose: bool = False) -> None:
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
@@ -61,6 +80,24 @@ def setup_logging(verbose: bool = False) -> None:
     )
 
 
+def _log_api_credits(logger: logging.Logger) -> None:
+    """Log Odds API credit usage after every scan (all exit paths)."""
+    try:
+        credits = get_api_credits()
+        if credits and credits["used_total"] is not None:
+            used_scan = credits["used_this_scan"]
+            used_scan_str = f"{used_scan} this scan, " if used_scan is not None else ""
+            logger.info(
+                "Odds API credits — %s%s used total, %s remaining",
+                used_scan_str,
+                credits["used_total"],
+                credits["remaining"] if credits["remaining"] is not None else "?",
+            )
+    except Exception:
+        pass  # never crash a scan over credit logging
+
+
+
 def run_scan(
     odds_client: OddsAPIClient,
     kalshi_client: KalshiClient,
@@ -68,10 +105,20 @@ def run_scan(
     tracker: CorrelationTracker,
     dry_run: bool = False,
     paper: bool = False,
+    _prefetched_odds: list | None = None,
+    _prefetched_kalshi: list | None = None,
 ) -> None:
+    """
+    Run one scan cycle.
+
+    If _prefetched_odds / _prefetched_kalshi are provided the API fetch step is
+    skipped — the variable-frequency loop passes cached+fresh data here so we
+    don't double-spend credits.
+    """
     logger = logging.getLogger(__name__)
     mode = "PAPER" if paper else "DRY RUN" if dry_run else "LIVE"
     logger.info("Starting scan... [%s] (bankroll: $%.2f)", mode, bm.bankroll)
+    mark_scan_start()
 
     # 0. Check hard limits before spending any API credits
     daily_count = count_alerts_today()
@@ -98,9 +145,13 @@ def run_scan(
             bm.snapshot()
         return
 
-    # 1. Fetch data
-    odds_events = odds_client.fetch_all_sports()
-    kalshi_markets = kalshi_client.fetch_sports_markets()
+    # 1. Fetch data (or use pre-fetched data from variable-frequency loop)
+    if _prefetched_odds is not None and _prefetched_kalshi is not None:
+        odds_events = _prefetched_odds
+        kalshi_markets = _prefetched_kalshi
+    else:
+        odds_events = odds_client.fetch_all_sports()
+        kalshi_markets = kalshi_client.fetch_sports_markets()
 
     if not odds_events:
         logger.warning("No sportsbook events fetched — check ODDS_API_KEY")
@@ -110,12 +161,18 @@ def run_scan(
     matched = match_events(odds_events, kalshi_markets)
     if not matched:
         logger.info("No sportsbook events matched to Kalshi markets this scan")
+        _log_api_credits(logger)
         return
 
     # 3. Detect value (hard filters already applied inside detect_value)
-    opportunities = detect_value(matched)
+    scan_id = datetime.utcnow().isoformat()
+    scan_log: list[dict] = []
+    opportunities = detect_value(matched, scan_log=scan_log)
     if not opportunities:
         print_no_value_found()
+        if not dry_run:
+            _finalise_scan_log(scan_log, scan_id)
+        _log_api_credits(logger)
         return
 
     # 4a. Score every opportunity (requires Kelly, so must happen here not in value_detector)
@@ -140,6 +197,16 @@ def run_scan(
         )
         if not sizing.has_edge:
             logger.debug("Kelly says no edge for %s — skipping", opp.team_name)
+            _update_scan_log(scan_log, opp, "kelly_no_edge",
+                             "Kelly criterion: mathematical edge doesn't justify a bet")
+            continue
+        if sizing.recommended_dollars < config.MIN_BET_DOLLARS:
+            reason = (
+                f"Kelly bet ${sizing.recommended_dollars:.2f} below "
+                f"minimum ${config.MIN_BET_DOLLARS:.0f}"
+            )
+            logger.debug("Skip %s — %s", opp.team_name, reason)
+            _update_scan_log(scan_log, opp, "kelly_no_edge", reason)
             continue
         score = _composite_score(opp, sizing)
         scored.append((score, opp, sizing))
@@ -149,6 +216,9 @@ def run_scan(
 
     if not scored:
         print_no_value_found()
+        if not dry_run:
+            _finalise_scan_log(scan_log, scan_id)
+        _log_api_credits(logger)
         return
 
     # 4b. Iterate in ranked order; correlation/exposure checks unchanged
@@ -174,6 +244,7 @@ def run_scan(
 
         if not allowed:
             logger.info("Blocked: %s — %s", opp.team_name, reason)
+            _update_scan_log(scan_log, opp, "blocked", reason)
             continue
 
         send_alert(opp, sizing, dry_run=dry_run, paper=paper)
@@ -247,10 +318,17 @@ def run_scan(
 
         if count_alerts_today() >= config.MAX_DAILY_ALERTS:
             logger.info("Daily cap (%d) reached — stopping scan early", config.MAX_DAILY_ALERTS)
+            # Mark remaining scored opportunities as daily_cap
+            for _, remaining_opp, _ in scored[alerted:]:
+                _update_scan_log(scan_log, remaining_opp, "daily_cap",
+                                 f"Daily bet cap of {config.MAX_DAILY_ALERTS} reached")
             break
 
     if alerted == 0:
         print_no_value_found()
+
+    if not dry_run:
+        _finalise_scan_log(scan_log, scan_id)
 
     bm.snapshot()
 
@@ -258,7 +336,9 @@ def run_scan(
     if not dry_run:
         auto_settle_positions(is_paper=paper)
 
+    _log_api_credits(logger)
     logger.info("Scan complete. %d order(s) placed.", alerted)
+    return
 
 
 def main() -> None:
@@ -295,31 +375,137 @@ def main() -> None:
     odds_client = OddsAPIClient()
     kalshi_client = KalshiClient()
 
-    def scan():
+    if args.once:
         run_scan(
             odds_client, kalshi_client, bm, tracker,
             dry_run=args.dry_run,
             paper=args.paper,
         )
-
-    if args.once:
-        scan()
         return
 
     mode_label = "[yellow]PAPER TRADING[/yellow]" if args.paper else "[bold green]LIVE[/bold green]"
     console.print(
-        f"[bold]Bot started ({mode_label}).[/bold] "
-        f"Scanning every {config.POLL_INTERVAL_SECONDS // 60} minutes. "
+        f"[bold]Bot started ({mode_label}) — variable-frequency polling.[/bold] "
+        f"Default: {config.POLL_INTERVAL_DEFAULT_SECONDS // 60} min / "
+        f"≤{config.PRE_GAME_THRESHOLD_HOURS}h to tip-off: "
+        f"{config.POLL_INTERVAL_PRE_GAME_SECONDS // 60} min / "
+        f"≤{config.NEAR_GAME_THRESHOLD_MINUTES} min to tip-off: "
+        f"{config.POLL_INTERVAL_NEAR_GAME_SECONDS // 60} min. "
         f"Bankroll: [bold]${bankroll:,.2f}[/bold]. "
         f"Press Ctrl+C to stop."
     )
-    scan()  # immediate first scan
-    schedule.every(config.POLL_INTERVAL_SECONDS).seconds.do(scan)
+    _run_variable_loop(
+        odds_client, kalshi_client, bm, tracker,
+        dry_run=args.dry_run,
+        paper=args.paper,
+        logger=logger,
+    )
 
+
+def _sport_poll_interval(sport: str, cached_events: list) -> int:
+    """
+    Return the polling interval (seconds) for *sport* based on its nearest
+    upcoming game. Uses the sportsbook events cached from the last fetch.
+    """
+    now = datetime.now(timezone.utc)
+    upcoming = [e for e in cached_events if e.commence_time > now]
+    if not upcoming:
+        return config.POLL_INTERVAL_DEFAULT_SECONDS
+    nearest = min(e.commence_time for e in upcoming)
+    minutes_away = (nearest - now).total_seconds() / 60.0
+    if minutes_away <= config.NEAR_GAME_THRESHOLD_MINUTES:
+        return config.POLL_INTERVAL_NEAR_GAME_SECONDS
+    if minutes_away <= config.PRE_GAME_THRESHOLD_HOURS * 60:
+        return config.POLL_INTERVAL_PRE_GAME_SECONDS
+    return config.POLL_INTERVAL_DEFAULT_SECONDS
+
+
+def _run_variable_loop(
+    odds_client: OddsAPIClient,
+    kalshi_client: KalshiClient,
+    bm: BankrollManager,
+    tracker: CorrelationTracker,
+    dry_run: bool,
+    paper: bool,
+    logger: logging.Logger,
+) -> None:
+    """
+    Variable-frequency polling loop.
+
+    Each sport is fetched independently at a rate determined by how close its
+    nearest upcoming game is. Only due sports are re-fetched on each tick,
+    so credit usage scales with game proximity rather than always burning all
+    credits at once.
+
+    Tick granularity: 30 seconds (small enough to respect the 2-min near-game
+    interval without wasting CPU when nothing is due).
+    """
+    # Per-sport caches keyed by Odds API sport key
+    sport_events: dict[str, list] = {}    # sport → list[OddsEvent]
+    sport_kalshi: dict[str, list] = {}    # sport → list[KalshiMarket]
+    last_fetched: dict[str, float] = {}   # sport → unix timestamp of last fetch
+
+    # ── Initial full fetch ──────────────────────────────────────────────────
+    now_ts = time.time()
+    for i, sport in enumerate(config.SPORTS):
+        if not _in_season(sport):
+            logger.debug("Skipping %s — off season", sport)
+            continue
+        if i > 0:
+            time.sleep(1)  # avoid 429 between sports
+        markets = config.SPORT_MARKETS.get(sport, config.ODDS_API_MARKETS)
+        sport_events[sport] = odds_client.fetch_odds(sport, markets=markets)
+        sport_kalshi[sport] = kalshi_client.fetch_sports_markets(sports=[sport])
+        last_fetched[sport] = now_ts
+
+    all_events  = [e for evs in sport_events.values() for e in evs]
+    all_kalshi  = [m for ms  in sport_kalshi.values()  for m in ms]
+    run_scan(
+        odds_client, kalshi_client, bm, tracker,
+        dry_run=dry_run, paper=paper,
+        _prefetched_odds=all_events, _prefetched_kalshi=all_kalshi,
+    )
+
+    # ── Main tick loop ──────────────────────────────────────────────────────
     try:
         while True:
-            schedule.run_pending()
-            time.sleep(10)
+            time.sleep(30)
+            now_ts = time.time()
+
+            due: list[str] = []
+            for sport in config.SPORTS:
+                if not _in_season(sport):
+                    continue
+                cached = sport_events.get(sport, [])
+                interval = _sport_poll_interval(sport, cached)
+                elapsed  = now_ts - last_fetched.get(sport, 0)
+                if elapsed >= interval:
+                    due.append(sport)
+
+            if not due:
+                continue
+
+            logger.info(
+                "Refreshing %d sport(s): %s",
+                len(due), ", ".join(due),
+            )
+
+            for i, sport in enumerate(due):
+                if i > 0:
+                    time.sleep(1)
+                markets = config.SPORT_MARKETS.get(sport, config.ODDS_API_MARKETS)
+                sport_events[sport] = odds_client.fetch_odds(sport, markets=markets)
+                sport_kalshi[sport] = kalshi_client.fetch_sports_markets(sports=[sport])
+                last_fetched[sport] = now_ts
+
+            all_events = [e for evs in sport_events.values() for e in evs]
+            all_kalshi = [m for ms  in sport_kalshi.values()  for m in ms]
+            run_scan(
+                odds_client, kalshi_client, bm, tracker,
+                dry_run=dry_run, paper=paper,
+                _prefetched_odds=all_events, _prefetched_kalshi=all_kalshi,
+            )
+
     except KeyboardInterrupt:
         logger.info("Bot stopped by user.")
 

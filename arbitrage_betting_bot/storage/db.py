@@ -30,6 +30,31 @@ def init_db() -> None:
     """Create tables if they don't exist, then apply any pending migrations."""
     with get_connection() as conn:
         conn.executescript("""
+            CREATE TABLE IF NOT EXISTS scan_log (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                scan_id         TEXT NOT NULL,
+                scanned_at      TEXT NOT NULL,
+                sport           TEXT NOT NULL,
+                home_team       TEXT NOT NULL,
+                away_team       TEXT NOT NULL,
+                team_name       TEXT NOT NULL,
+                bet_type        TEXT NOT NULL DEFAULT 'h2h',
+                threshold       REAL,
+                kalshi_ticker   TEXT,
+                kalshi_spread   REAL,
+                kalshi_volume   REAL,
+                kalshi_price    REAL,
+                consensus_prob  REAL,
+                bookmaker_count INTEGER,
+                consensus_std   REAL,
+                edge            REAL,
+                status          TEXT NOT NULL,
+                reason          TEXT,
+                commence_time   TEXT,
+                bookmakers_json TEXT
+            );
+        """)
+        conn.executescript("""
             CREATE TABLE IF NOT EXISTS opportunities (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 detected_at     TEXT NOT NULL,
@@ -75,6 +100,14 @@ def init_db() -> None:
                 bankroll        REAL NOT NULL,
                 total_at_risk   REAL NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS api_credits (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                recorded_at     TEXT NOT NULL,
+                used_total      INTEGER,
+                remaining       INTEGER,
+                used_this_scan  INTEGER
+            );
         """)
     _migrate()
     logger.info("Database initialized at %s", DB_PATH)
@@ -83,6 +116,15 @@ def init_db() -> None:
 def _migrate() -> None:
     """Add columns introduced after the initial schema (safe to run multiple times)."""
     with get_connection() as conn:
+        # scan_log migrations
+        scan_existing = {row[1] for row in conn.execute("PRAGMA table_info(scan_log)").fetchall()}
+        for col, ddl in [
+            ("bookmakers_json", "ALTER TABLE scan_log ADD COLUMN bookmakers_json TEXT"),
+        ]:
+            if col not in scan_existing:
+                conn.execute(ddl)
+                logger.debug("Migration: added scan_log.%s", col)
+
         existing = {row[1] for row in conn.execute("PRAGMA table_info(positions)").fetchall()}
         for col, ddl in [
             ("pnl",          "ALTER TABLE positions ADD COLUMN pnl REAL"),
@@ -315,6 +357,93 @@ def get_bankroll_history() -> list[sqlite3.Row]:
         ).fetchall()
 
 
+def log_scan_results(scan_id: str, entries: list[dict]) -> None:
+    """Write all candidates from one scan to scan_log, replacing any prior scan."""
+    if not entries:
+        return
+    with get_connection() as conn:
+        # Keep only the current scan — delete everything older
+        conn.execute("DELETE FROM scan_log WHERE scan_id != ?", (scan_id,))
+        conn.executemany(
+            """
+            INSERT INTO scan_log
+                (scan_id, scanned_at, sport, home_team, away_team, team_name,
+                 bet_type, threshold, kalshi_ticker, kalshi_spread, kalshi_volume,
+                 kalshi_price, consensus_prob, bookmaker_count, consensus_std,
+                 edge, status, reason, commence_time, bookmakers_json)
+            VALUES
+                (:scan_id, :scanned_at, :sport, :home_team, :away_team, :team_name,
+                 :bet_type, :threshold, :kalshi_ticker, :kalshi_spread, :kalshi_volume,
+                 :kalshi_price, :consensus_prob, :bookmaker_count, :consensus_std,
+                 :edge, :status, :reason, :commence_time, :bookmakers_json)
+            """,
+            [{**e, "scan_id": scan_id, "bookmakers_json": e.get("bookmakers_json")} for e in entries],
+        )
+
+
+def get_last_scan() -> list[sqlite3.Row]:
+    """Return all entries from the most recent scan, ordered by edge desc."""
+    with get_connection() as conn:
+        # Ensure table exists (dashboard may query before bot has ever run)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS scan_log (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                scan_id         TEXT NOT NULL,
+                scanned_at      TEXT NOT NULL,
+                sport           TEXT NOT NULL,
+                home_team       TEXT NOT NULL,
+                away_team       TEXT NOT NULL,
+                team_name       TEXT NOT NULL,
+                bet_type        TEXT NOT NULL DEFAULT 'h2h',
+                threshold       REAL,
+                kalshi_ticker   TEXT,
+                kalshi_spread   REAL,
+                kalshi_volume   REAL,
+                kalshi_price    REAL,
+                consensus_prob  REAL,
+                bookmaker_count INTEGER,
+                consensus_std   REAL,
+                edge            REAL,
+                status          TEXT NOT NULL,
+                reason          TEXT,
+                commence_time   TEXT,
+                bookmakers_json TEXT
+            )
+        """)
+        # Migration: add bookmakers_json if missing from existing scan_log
+        existing_scan = {row[1] for row in conn.execute("PRAGMA table_info(scan_log)").fetchall()}
+        if "bookmakers_json" not in existing_scan:
+            conn.execute("ALTER TABLE scan_log ADD COLUMN bookmakers_json TEXT")
+        row = conn.execute(
+            "SELECT scan_id FROM scan_log ORDER BY scanned_at DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return []
+        return conn.execute(
+            """
+            SELECT * FROM scan_log WHERE scan_id = ?
+            ORDER BY
+                CASE status
+                    WHEN 'value'   THEN 0
+                    WHEN 'blocked' THEN 1
+                    WHEN 'no_edge' THEN 2
+                    ELSE 3
+                END,
+                CASE WHEN edge IS NULL THEN 1 ELSE 0 END,
+                edge DESC
+            """,
+            (row["scan_id"],),
+        ).fetchall()
+
+
+def get_scan_entry(entry_id: int) -> sqlite3.Row | None:
+    """Return a single scan_log row by id."""
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM scan_log WHERE id = ?", (entry_id,)
+        ).fetchone()
+
+
 def get_top_opportunities(limit: int = 50) -> list[sqlite3.Row]:
     """Most recent detected opportunities, newest first."""
     with get_connection() as conn:
@@ -322,3 +451,61 @@ def get_top_opportunities(limit: int = 50) -> list[sqlite3.Row]:
             "SELECT * FROM opportunities ORDER BY detected_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
+
+
+# ── API Credits ───────────────────────────────────────────────────────────────
+
+# Module-level state: track used_total at scan start to compute per-scan delta
+_scan_start_used: int | None = None
+
+
+def mark_scan_start() -> None:
+    """Call at the beginning of each scan to capture the baseline credit count."""
+    global _scan_start_used
+    row = get_api_credits()
+    _scan_start_used = row["used_total"] if row and row["used_total"] is not None else None
+
+
+def update_api_credits(used: int | None, remaining: int | None) -> None:
+    """Upsert the latest credit snapshot (called after every Odds API request)."""
+    global _scan_start_used
+    used_this_scan = None
+    if used is not None and _scan_start_used is not None:
+        used_this_scan = used - _scan_start_used
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS api_credits (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                recorded_at    TEXT NOT NULL,
+                used_total     INTEGER,
+                remaining      INTEGER,
+                used_this_scan INTEGER
+            )
+        """)
+        conn.execute(
+            """
+            INSERT INTO api_credits (recorded_at, used_total, remaining, used_this_scan)
+            VALUES (?, ?, ?, ?)
+            """,
+            (datetime.utcnow().isoformat(), used, remaining, used_this_scan),
+        )
+
+
+def get_api_credits() -> sqlite3.Row | None:
+    """Return the most recent credit snapshot."""
+    with get_connection() as conn:
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS api_credits (
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recorded_at    TEXT NOT NULL,
+                    used_total     INTEGER,
+                    remaining      INTEGER,
+                    used_this_scan INTEGER
+                )
+            """)
+            return conn.execute(
+                "SELECT * FROM api_credits ORDER BY recorded_at DESC LIMIT 1"
+            ).fetchone()
+        except Exception:
+            return None

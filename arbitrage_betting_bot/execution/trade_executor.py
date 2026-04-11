@@ -21,8 +21,11 @@ logger = logging.getLogger(__name__)
 def resolve_side(opp: ValueOpportunity) -> str:
     """Return the Kalshi side ('yes' or 'no') to bet for this opportunity."""
     me = opp.matched_event
-    # Non-H2H outcomes (totals, spread, BTTS) and DRAW always buy YES
-    if opp.outcome in (Outcome.DRAW, Outcome.OVER, Outcome.UNDER, Outcome.COVER, Outcome.BTTS):
+    # NO_OVER = buying the NO (Under) side of an Over market
+    if opp.outcome == Outcome.NO_OVER:
+        return "no"
+    # All other non-H2H outcomes (totals YES side, spread cover, draw) buy YES
+    if opp.outcome in (Outcome.DRAW, Outcome.OVER, Outcome.UNDER, Outcome.COVER):
         return "yes"
     if opp.outcome == Outcome.HOME:
         return me.kalshi_outcome or "yes"

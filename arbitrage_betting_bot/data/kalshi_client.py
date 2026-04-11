@@ -34,15 +34,12 @@ logger = logging.getLogger(__name__)
 
 # Maps Odds API sport keys → list of Kalshi series tickers (H2H first, then non-H2H)
 _SPORT_TO_SERIES: dict[str, list[str]] = {
-    "americanfootball_nfl":      ["KXNFLGAME"],
-    "americanfootball_ncaaf":    ["KXNCAAFGAME"],
     "basketball_nba":            ["KXNBAGAME", "KXNBATOTAL", "KXNBASPREAD"],
-    "basketball_ncaab":          ["KXNCAABGAME"],
     "baseball_mlb":              ["KXMLBGAME", "KXMLBTOTAL", "KXMLBSPREAD"],
     "icehockey_nhl":             ["KXNHLGAME", "KXNHLTOTAL", "KXNHLSPREAD"],
-    "soccer_usa_mls":            ["KXMLSGAME"],
-    "soccer_epl":                ["KXEPLGAME"],
-    "soccer_uefa_champs_league": ["KXUCLGAME"],
+    "soccer_usa_mls":            ["KXMLSGAME", "KXMLSTOTAL", "KXMLSSPREAD"],
+    "soccer_epl":                ["KXEPLGAME", "KXEPLTOTAL", "KXEPLSPREAD"],
+    "soccer_uefa_champs_league": ["KXUCLGAME", "KXUCLTOTAL", "KXUCLSPREAD"],
 }
 
 # Maps Kalshi series prefix → bet type ("h2h" is default / omitted)
@@ -56,29 +53,36 @@ _SERIES_TO_BET_TYPE: dict[str, str] = {
     "KXNBASPREAD": "spread",
     "KXMLBSPREAD": "spread",
     "KXNHLSPREAD": "spread",
-    "KXMLSBTTS":   "btts",
-    "KXEPLBTTS":   "btts",
-    "KXUCLBTTS":   "btts",
+    "KXMLSSPREAD": "spread",
+    "KXEPLSPREAD": "spread",
+    "KXUCLSPREAD": "spread",
 }
 
 
-def _parse_threshold(title: str, bet_type: str, ticker: str = "") -> float | None:
+def _parse_threshold(title: str, bet_type: str, ticker: str = "",
+                     yes_subtitle: str = "", no_subtitle: str = "") -> float | None:
     """
-    Extract the numeric threshold from a Kalshi market title or ticker.
+    Extract the numeric threshold from a Kalshi market subtitle, title, or ticker.
 
-    Totals: title may say "Over 222.5" OR ticker suffix encodes the line
-      e.g. KXNBATOTAL-26APR08PORSAS-236  → 236 (integer points)
-           KXMLBTOTAL-26APR08BOSSEA-7     → 7.0 (runs)
-    Spread: title typically has "-3.5" embedded.
-    BTTS:   None
+    Subtitles (yes_sub_title / no_sub_title) are the most reliable source:
+      e.g. yes_sub_title = "Over 8.5 runs scored"  →  8.5
+    Title fallback: some markets embed the line in the title.
+    Ticker suffix fallback (last resort): encodes integer lines for NBA totals
+      e.g. KXNBATOTAL-26APR08PORSAS-236  →  236 (integer NBA points)
+    Spread: title or subtitle typically has "-3.5" embedded.
     """
     if bet_type == "totals":
-        # Try title first (has "Over X.X" or "Under X.X")
+        # 1. Try subtitles first — most reliable, contains exact decimal line
+        for text in (yes_subtitle, no_subtitle):
+            if text:
+                m = re.search(r"(?:Over|Under)\s+([\d.]+)", text, re.IGNORECASE)
+                if m:
+                    return float(m.group(1))
+        # 2. Try title
         m = re.search(r"(?:Over|Under)\s+([\d.]+)", title, re.IGNORECASE)
         if m:
             return float(m.group(1))
-        # Fall back to ticker suffix: last segment after final "-"
-        # e.g. KXNBATOTAL-26APR08PORSAS-236 → "236"
+        # 3. Fall back to ticker suffix (works for NBA integer totals like 236)
         if ticker:
             parts = ticker.split("-")
             if len(parts) >= 3:
@@ -87,9 +91,18 @@ def _parse_threshold(title: str, bet_type: str, ticker: str = "") -> float | Non
                 except ValueError:
                     pass
     elif bet_type == "spread":
-        m = re.search(r"([+-][\d.]+)", title)
-        if m:
-            return float(m.group(1))
+        for text in (yes_subtitle, no_subtitle, title):
+            if not text:
+                continue
+            # 1. Explicit signed value: "-3.5" or "+3.5"
+            m = re.search(r"([+-][\d.]+)", text)
+            if m:
+                return float(m.group(1))
+            # 2. "wins by X.Y [runs/points/goals]" → negative spread
+            #    e.g. "Minnesota wins by 3.5 runs" → -3.5
+            m = re.search(r"wins\s+by\s+(?:more\s+than\s+|over\s+)?([\d.]+)", text, re.IGNORECASE)
+            if m:
+                return -float(m.group(1))
     return None
 
 
@@ -199,19 +212,26 @@ class KalshiClient:
                 break
         return results
 
-    def fetch_sports_markets(self) -> list[KalshiMarket]:
+    def fetch_sports_markets(
+        self,
+        sports: list[str] | None = None,
+    ) -> list[KalshiMarket]:
         """
-        Fetch Kalshi markets for all configured sports and bet types.
+        Fetch Kalshi markets for the given sports (default: all configured sports).
 
-        Queries each sport's series tickers (H2H + totals + spreads + BTTS),
+        Queries each sport's series tickers (H2H + totals + spreads),
         parses prices from the dollar-denominated fields, and deduplicates:
           - H2H markets: one per game event (by event_ticker)
           - Non-H2H markets: all kept (each threshold/direction is a separate opportunity)
+
+        Args:
+            sports: Restrict fetch to these sport keys. None = all config.SPORTS.
         """
+        target_sports = sports if sports is not None else config.SPORTS
         seen_series: set[str] = set()
         raw_all: list[tuple[str, dict]] = []  # (series_ticker, raw_market)
 
-        for sport in config.SPORTS:
+        for sport in target_sports:
             series_list = _SPORT_TO_SERIES.get(sport, [])
             for series in series_list:
                 if series in seen_series:
@@ -285,7 +305,21 @@ class KalshiClient:
             raw_yes_ask = self._parse_price(raw, "yes_ask_dollars", "yes_ask") or yes_price
 
             # Parse threshold for totals/spreads
-            threshold = _parse_threshold(title_raw, bet_type, ticker=raw.get("ticker", ""))
+            no_subtitle = raw.get("no_sub_title", "") or ""
+            threshold = _parse_threshold(
+                title_raw, bet_type,
+                ticker=raw.get("ticker", ""),
+                yes_subtitle=yes_team,   # yes_team already holds yes_sub_title
+                no_subtitle=no_subtitle,
+            )
+
+            # For spread markets, yes_sub_title is "Team wins by X.Y [units]" —
+            # extract just the team name so it can be matched against sportsbook outcomes.
+            # e.g. "Minnesota wins by 3.5 runs or more" → "Minnesota"
+            if bet_type == "spread" and yes_team:
+                m = re.match(r'^(.+?)\s+wins\s+by\b', yes_team, re.IGNORECASE)
+                if m:
+                    yes_team = m.group(1).strip()
 
             # Volume: use explicit None checks to avoid 0.0 being treated as falsy.
             # volume_fp is the float contract count; open_interest is outstanding contracts.

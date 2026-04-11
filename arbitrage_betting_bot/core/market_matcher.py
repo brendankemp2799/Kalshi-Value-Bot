@@ -9,18 +9,19 @@ H2H matching (game-winner):
     2. Set kalshi_outcome = "yes" if YES team == home_team,
                             "no"  if YES team == away_team.
 
-Non-H2H matching (totals, spreads, BTTS):
+Non-H2H matching (totals, spreads):
   These markets list both team names in their title (e.g. "Detroit Pistons vs
   Orlando Magic Over 222.5?").  We extract both team names from the title and
   fuzzy-match them as a pair against sportsbook events.  kalshi_outcome is
-  always "yes" (we always buy YES on the specific direction/threshold).
+  always "yes" for the primary (YES) side; the NO side (Under) is evaluated
+  separately in value_detector._detect_totals().
 """
 from __future__ import annotations
 
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from rapidfuzz import fuzz
 
@@ -30,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 from data.odds_fetcher import OddsEvent
 from data.kalshi_client import KalshiMarket, _SPORT_TO_SERIES
+from core.odds_converter import _names_match
 
 logger = logging.getLogger(__name__)
 
@@ -116,21 +118,29 @@ def _parse_title_teams(title: str) -> tuple[str, str] | None:
     """
     Extract two team names from a Kalshi non-H2H market title.
 
-    Strips threshold values, direction words, and trailing punctuation:
-      "Detroit Pistons vs Orlando Magic Over 222.5?"  → ("Detroit Pistons", "Orlando Magic")
-      "Bayern Munich vs Barcelona Both Teams Score?"  → ("Bayern Munich", "Barcelona")
-      "Detroit Pistons -3.5 at Orlando Magic?"        → ("Detroit Pistons", "Orlando Magic")
+    Handles formats:
+      "Detroit Pistons vs Orlando Magic Over 222.5?"     → ("Detroit Pistons", "Orlando Magic")
+      "Los Angeles L at Golden State: Total Points"      → ("Los Angeles L", "Golden State")
+      "Bayern Munich vs Barcelona Both Teams Score?"     → ("Bayern Munich", "Barcelona")
+      "Detroit Pistons -3.5 at Orlando Magic?"           → ("Detroit Pistons", "Orlando Magic")
+
+    Note: "Team wins by over X.5" (Kalshi spread format) cannot yield two teams
+    and returns None — those are matched via event_ticker in the spread path.
     """
     clean = title
+    # Strip ": Total[s] [Points/Runs/Goals/...]" suffix (NBA/NHL/soccer totals format)
+    clean = re.sub(r":\s*Totals?\b.*$", "", clean, flags=re.IGNORECASE)
     # Strip over/under threshold
     clean = re.sub(r"\b(?:Over|Under)\s+[\d.]+", "", clean, flags=re.IGNORECASE)
     # Strip "Both Teams Score" / "BTTS"
     clean = re.sub(r"\bBoth\s+Teams?\s+Score\b", "", clean, flags=re.IGNORECASE)
     clean = re.sub(r"\bBTTS\b", "", clean, flags=re.IGNORECASE)
-    # Strip "Winner"
-    clean = re.sub(r"\bWinner\b", "", clean, flags=re.IGNORECASE)
+    # Strip "Winner" / "Total"
+    clean = re.sub(r"\b(Winner|Total)\b", "", clean, flags=re.IGNORECASE)
     # Strip spread values: -3.5, +3.5
     clean = re.sub(r"\s[+-]\d+\.?\d*", "", clean)
+    # Strip "wins by [more than] X.Y [units]" — Kalshi spread single-team format
+    clean = re.sub(r"\s+wins\s+by\s+(?:more\s+than\s+|over\s+)?[\d.]+(?:\s+\w+)?", "", clean, flags=re.IGNORECASE)
     # Strip trailing punctuation and extra whitespace
     clean = re.sub(r"[?!]", "", clean)
     clean = re.sub(r"\s+", " ", clean).strip()
@@ -141,6 +151,49 @@ def _parse_title_teams(title: str) -> tuple[str, str] | None:
             t1, t2 = t1.strip(), t2.strip()
             if t1 and t2:
                 return t1, t2
+    return None
+
+
+def _sportsbook_lines(event: OddsEvent, market_key: str) -> set[float]:
+    """
+    Return all point values the sportsbooks carry for a given market type.
+    e.g. for market_key="totals" this returns {9.5} if every book has the same
+    main line, or {8.5, 9.0, 9.5} if they differ.
+    Returns an empty set if no books have this market.
+    """
+    lines: set[float] = set()
+    for book in event.bookmakers:
+        for market in book.get("markets", []):
+            if market.get("key") != market_key:
+                continue
+            for o in market.get("outcomes", []):
+                pt = o.get("point")
+                if pt is not None:
+                    lines.add(float(pt))
+    return lines
+
+
+def _team_spread_line(event: OddsEvent, team_name: str) -> float | None:
+    """
+    Return the spread point value a specific team is listed at across sportsbooks.
+
+    Sportsbooks list the favorite at a negative point (e.g. -1.5) and the
+    underdog at a positive point (e.g. +1.5). This lets us check whether a
+    Kalshi spread market's covering team is actually listed at the threshold
+    Kalshi implies (always negative: "wins by over X.5").
+
+    Returns the first matching point value found, or None if the team is not
+    found in any spread market.
+    """
+    for book in event.bookmakers:
+        for market in book.get("markets", []):
+            if market.get("key") != "spreads":
+                continue
+            for o in market.get("outcomes", []):
+                if _names_match(o.get("name", ""), team_name):
+                    pt = o.get("point")
+                    if pt is not None:
+                        return float(pt)
     return None
 
 
@@ -160,10 +213,11 @@ def match_events(
         1. A team-winner market (kalshi_outcome = "yes" or "no")
         2. A TIE market        (kalshi_outcome = "tie")
 
-    Totals / spreads / BTTS markets:
+    Totals / spreads markets:
       Each market is matched by extracting both team names from the title and
       fuzzy-matching the pair to a sportsbook event.
-      kalshi_outcome = "yes" (we always buy YES — direction is baked into the market).
+      kalshi_outcome = "yes" (primary YES side — direction is baked into the market).
+      The NO (Under) side of totals markets is evaluated in value_detector.
     """
     threshold = config.FUZZY_MATCH_THRESHOLD
 
@@ -261,17 +315,37 @@ def match_events(
                     event.home_team, event.away_team, tie_km.ticker,
                 )
 
-    # ── Non-H2H matching (totals / spreads / BTTS) ───────────────────────────
+    # ── Non-H2H matching (totals / spreads) ──────────────────────────────────
+    now_utc = datetime.now(timezone.utc)
+
     for km in non_h2h_markets:
         if km.ticker in matched_tickers:
             continue
 
+        # Skip markets whose game has already started. Kalshi keeps markets
+        # open until settlement (days after the game), but the Odds API drops
+        # completed/in-progress events. Without a sportsbook counterpart the
+        # matcher can latch onto a wrong same-city game, producing phantom edge.
+        game_dt = _kalshi_game_date(km.event_ticker)
+        if game_dt is not None and game_dt < now_utc:
+            # game_dt is date-only (midnight UTC); add 12 hours so a same-day
+            # game isn't skipped until it's clearly in the past.
+            if game_dt + timedelta(hours=12) < now_utc:
+                logger.debug("Skip %s — game date %s is in the past", km.ticker, game_dt.date())
+                continue
+
         teams = _parse_title_teams(km.title)
         if not teams:
-            logger.debug("Skip non-H2H %s — can't parse teams from title: %s", km.ticker, km.title)
-            continue
+            # NBA/NHL spreads use "Team wins by over X.5 points" — single team.
+            # Fall back to matching via yes_team (the covering team) alone, using
+            # the same fuzzy logic as H2H but accepting either home or away.
+            if km.bet_type == "spread" and km.yes_team:
+                teams = None  # handled below in spread-fallback path
+            else:
+                logger.debug("Skip non-H2H %s — can't parse teams from title: %s", km.ticker, km.title)
+                continue
 
-        t1, t2 = teams
+        t1, t2 = teams if teams else (km.yes_team, "")
 
         # Build the set of allowed series for sport-gating
         km_series = km.event_ticker.split("-")[0].upper() if km.event_ticker else ""
@@ -286,22 +360,58 @@ def match_events(
             if not _dates_compatible(km.event_ticker, event.commence_time):
                 continue
 
-            # Both teams must match — try both orderings
-            s_t1h = _team_score(event.home_team, t1)
-            s_t2a = _team_score(event.away_team, t2)
-            s_t1a = _team_score(event.away_team, t1)
-            s_t2h = _team_score(event.home_team, t2)
+            if teams:
+                # Two-team title: both must match
+                s_t1h = _team_score(event.home_team, t1)
+                s_t2a = _team_score(event.away_team, t2)
+                s_t1a = _team_score(event.away_team, t1)
+                s_t2h = _team_score(event.home_team, t2)
+                score_fwd = min(s_t1h, s_t2a)
+                score_rev = min(s_t1a, s_t2h)
+                best_combo = max(score_fwd, score_rev)
+            else:
+                # Single-team spread (e.g. "LA Lakers wins by over 7.5"):
+                # match yes_team against either home or away
+                best_combo = max(
+                    _team_score(event.home_team, t1),
+                    _team_score(event.away_team, t1),
+                )
 
-            # Score = minimum of the two individual match scores (both must pass)
-            score_fwd = min(s_t1h, s_t2a)   # t1=home, t2=away
-            score_rev = min(s_t1a, s_t2h)   # t1=away, t2=home
-
-            best_combo = max(score_fwd, score_rev)
             if best_combo >= threshold and best_combo > best_score:
                 best_event = event
                 best_score = best_combo
 
         if best_event:
+            # For totals/spreads, only keep Kalshi markets whose threshold
+            # matches a line the sportsbooks actually carry.  Without
+            # alternate_totals from the Odds API, off-main-line thresholds
+            # will always produce consensus=None — no point evaluating them.
+            if km.bet_type == "totals" and km.threshold is not None:
+                sb_lines = _sportsbook_lines(best_event, "totals")
+                if sb_lines:
+                    closest = min(sb_lines, key=lambda x: abs(x - km.threshold))
+                    if abs(closest - km.threshold) > 0.26:
+                        logger.debug(
+                            "Skip %s — threshold %.1f not in sportsbook totals lines %s",
+                            km.ticker, km.threshold, sorted(sb_lines),
+                        )
+                        continue
+
+            elif km.bet_type == "spread" and km.threshold is not None and km.yes_team:
+                # For spreads, check that the covering team is listed at this
+                # threshold on sportsbooks.  Kalshi always uses "Team wins by
+                # X.5" (threshold = -X.5) for BOTH teams, but sportsbooks only
+                # list the favorite at -X.5 and the underdog at +X.5.
+                # If Pittsburgh is the underdog, they're at +1.5 on sportsbooks
+                # — searching for Pittsburgh at -1.5 will always fail.
+                sb_point = _team_spread_line(best_event, km.yes_team)
+                if sb_point is not None and abs(sb_point - km.threshold) > 0.26:
+                    logger.debug(
+                        "Skip %s — %s is at %.1f on sportsbooks, not %.1f",
+                        km.ticker, km.yes_team, sb_point, km.threshold,
+                    )
+                    continue
+
             matched_tickers.add(km.ticker)
             results.append(
                 MatchedEvent(
@@ -318,11 +428,23 @@ def match_events(
 
     h2h_count = sum(1 for r in results if r.kalshi_market.bet_type == "h2h")
     non_h2h_count = len(results) - h2h_count
+    matched_event_ids = {r.odds_event.event_id for r in results}
+    unmatched = [e for e in odds_events if e.event_id not in matched_event_ids]
     logger.info(
-        "Matched %d/%d sportsbook events to Kalshi markets (%d H2H/TIE, %d totals/spread/btts)",
-        len(set(r.odds_event.event_id for r in results)),
+        "Matched %d/%d sportsbook events to Kalshi markets (%d H2H/TIE, %d totals/spread)",
+        len(matched_event_ids),
         len(odds_events),
         h2h_count,
         non_h2h_count,
     )
+    if unmatched:
+        logger.info("Unmatched sportsbook events (%d):", len(unmatched))
+        for e in sorted(unmatched, key=lambda x: (x.sport_key, x.commence_time)):
+            logger.info(
+                "  [%s] %s vs %s  (%s)",
+                e.sport_key.split("_")[-1].upper(),
+                e.home_team,
+                e.away_team,
+                e.commence_time.strftime("%a %b %d %H:%M UTC"),
+            )
     return results

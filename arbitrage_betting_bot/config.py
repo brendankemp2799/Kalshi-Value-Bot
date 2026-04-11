@@ -19,7 +19,8 @@ BANKROLL: float = float(os.getenv("BANKROLL", "1000"))
 
 # ── Risk Management ───────────────────────────────────────────────────────────
 KELLY_FRACTION: float = 0.25          # Use quarter-Kelly to reduce variance
-MIN_EDGE_THRESHOLD: float = 0.04      # Minimum edge (4%) to surface an alert
+MIN_BET_DOLLARS: float = 10.0         # Minimum Kelly-recommended bet size to surface an alert
+                                      # Filters out mathematically positive but negligibly small edges
 MAX_BET_DOLLARS: float = 100.0        # Hard dollar cap per bet
 MAX_PCT_BANKROLL: float = 0.05        # Max 5% of bankroll per single bet
 MAX_TOTAL_EXPOSURE_PCT: float = 0.30  # Max 30% of bankroll deployed at once
@@ -27,15 +28,21 @@ MAX_SPORT_EXPOSURE_PCT: float = 0.15  # Max 15% of bankroll in one sport
 MAX_DAILY_ALERTS: int = 5             # Max value alerts surfaced per day
 
 # ── Scheduling ────────────────────────────────────────────────────────────────
-POLL_INTERVAL_SECONDS: int = int(os.getenv("POLL_INTERVAL_SECONDS", "900"))  # default 15 min
+# Variable-frequency polling: each sport is fetched at a rate based on its
+# nearest upcoming game. Sports with no game within 4 hours use the default
+# 15-minute interval; sports near game time are fetched more often.
+POLL_INTERVAL_DEFAULT_SECONDS: int  = int(os.getenv("POLL_INTERVAL_DEFAULT_SECONDS",  "900"))  # 15 min — baseline
+POLL_INTERVAL_PRE_GAME_SECONDS: int = int(os.getenv("POLL_INTERVAL_PRE_GAME_SECONDS", "300"))  # 5 min  — within 4 h
+POLL_INTERVAL_NEAR_GAME_SECONDS: int = int(os.getenv("POLL_INTERVAL_NEAR_GAME_SECONDS", "120"))  # 2 min  — within 30 min
+PRE_GAME_THRESHOLD_HOURS: int        = int(os.getenv("PRE_GAME_THRESHOLD_HOURS",   "4"))
+NEAR_GAME_THRESHOLD_MINUTES: int     = int(os.getenv("NEAR_GAME_THRESHOLD_MINUTES", "30"))
+# Back-compat alias (used by --once path and any external tooling)
+POLL_INTERVAL_SECONDS: int = POLL_INTERVAL_DEFAULT_SECONDS
 
 # ── Sports to Monitor ─────────────────────────────────────────────────────────
 # Full list: https://the-odds-api.com/sports-odds-data/sports-apis.html
 SPORTS: list[str] = [
-    "americanfootball_nfl",
-    "americanfootball_ncaaf",
     "basketball_nba",
-    "basketball_ncaab",
     "baseball_mlb",
     "icehockey_nhl",
     "soccer_usa_mls",
@@ -52,16 +59,15 @@ ODDS_API_ODDS_FORMAT: str = "american"
 # Which Odds API market types to fetch per sport.
 # Multiple types can be comma-separated (one API call per sport).
 SPORT_MARKETS: dict[str, str] = {
-    "americanfootball_nfl":        "h2h",
-    "americanfootball_ncaaf":      "h2h",
     "basketball_nba":              "h2h,totals,spreads",
-    "basketball_ncaab":            "h2h",
     "baseball_mlb":                "h2h,totals,spreads",
     "icehockey_nhl":               "h2h,totals,spreads",
-    "soccer_usa_mls":              "h2h",
-    "soccer_epl":                  "h2h",
-    "soccer_uefa_champs_league":   "h2h",
+    "soccer_usa_mls":              "h2h,totals,spreads",
+    "soccer_epl":                  "h2h,totals,spreads",
+    "soccer_uefa_champs_league":   "h2h,totals,spreads",
     # BTTS excluded — not available in us region from Odds API
+    # alternate_totals/alternate_spreads cover all the non-main lines that
+    # Kalshi lists (e.g. 7.5, 9.5, 10.5 in addition to the main 8.5 line)
 }
 
 # ── Kalshi ────────────────────────────────────────────────────────────────────
@@ -71,6 +77,6 @@ KALSHI_API_BASE_URL: str = "https://api.elections.kalshi.com/trade-api/v2"
 FUZZY_MATCH_THRESHOLD: int = 80       # Minimum rapidfuzz score (0-100)
 
 # ── Opportunity Quality Filters ───────────────────────────────────────────────
-MIN_BOOKMAKER_COUNT: int = 5          # Consensus must come from ≥5 books
+MIN_BOOKMAKER_COUNT: int = 2          # Consensus must come from ≥2 books
 MAX_KALSHI_SPREAD: float = 0.05       # Kalshi bid-ask spread ≤ 5¢ (ensures fillable price)
 MIN_KALSHI_VOLUME: float = 0.0        # Disabled — spread filter (MAX_KALSHI_SPREAD) is sufficient liquidity gate

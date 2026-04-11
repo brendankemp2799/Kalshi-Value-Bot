@@ -64,12 +64,10 @@ def send_alert(
         bet_label = f"[bold yellow]{opp.team_name}[/bold yellow] to win"
     elif opp.outcome == Outcome.DRAW:
         bet_label = "[bold yellow]Draw[/bold yellow]"
-    elif opp.outcome in (Outcome.OVER, Outcome.UNDER):
-        bet_label = f"[bold yellow]{opp.team_name}[/bold yellow]"   # "Over 222.5"
+    elif opp.outcome in (Outcome.OVER, Outcome.UNDER, Outcome.NO_OVER):
+        bet_label = f"[bold yellow]{opp.team_name}[/bold yellow]"   # "Over 222.5" / "Under 222.5"
     elif opp.outcome == Outcome.COVER:
         bet_label = f"[bold yellow]{opp.team_name}[/bold yellow] (spread)"
-    elif opp.outcome == Outcome.BTTS:
-        bet_label = "[bold yellow]Both Teams Score[/bold yellow]"
     else:
         bet_label = f"[bold yellow]{opp.team_name}[/bold yellow]"
     table.add_row("Bet On", bet_label)
