@@ -265,6 +265,27 @@ def get_position(position_id: int) -> sqlite3.Row | None:
         ).fetchone()
 
 
+def get_daily_stake_total(is_paper: bool = False) -> float:
+    """Sum of stakes placed in new positions entered today (UTC). Used for daily capital risk gate."""
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(stake), 0.0) FROM positions "
+            "WHERE entered_at LIKE ? AND is_paper = ?",
+            (f"{today}%", 1 if is_paper else 0),
+        ).fetchone()
+        return float(row[0]) if row else 0.0
+
+
+def count_open_positions(is_paper: bool = False) -> int:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM positions WHERE status = 'open' AND is_paper = ?",
+            (1 if is_paper else 0,),
+        ).fetchone()
+        return row[0] if row else 0
+
+
 def get_open_positions(is_paper: bool = False) -> list[sqlite3.Row]:
     with get_connection() as conn:
         return conn.execute(

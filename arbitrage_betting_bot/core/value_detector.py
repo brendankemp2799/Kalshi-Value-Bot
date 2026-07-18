@@ -159,7 +159,7 @@ def detect_value(
         else:
             _detect_h2h(me, event, km, min_edge, opportunities, scan_log)
 
-    logger.info("Found %d value opportunities with positive edge", len(opportunities))
+    logger.debug("Found %d value opportunities with positive edge", len(opportunities))
     return opportunities
 
 
@@ -216,7 +216,7 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
             ))
             _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
                  edge, "value", "Edge found — bet placed")
-            logger.info("VALUE H2H: %s — edge %.1f%%  (consensus %.1f%% vs price %.1f%%, books=%d, std=%.3f)",
+            logger.debug("VALUE H2H: %s — edge %.1f%%  (consensus %.1f%% vs price %.1f%%, books=%d, std=%.3f)",
                         team, edge*100, consensus*100, kalshi_price*100, book_count, std_dev)
         else:
             reason = f"Edge {edge*100:.1f}% below minimum {min_edge*100:.0f}%"
@@ -251,7 +251,7 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log):
         ))
         _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
              edge, "value", "Edge found — bet placed")
-        logger.info("VALUE DRAW: %s vs %s — edge %.1f%%",
+        logger.debug("VALUE DRAW: %s vs %s — edge %.1f%%",
                     event.home_team, event.away_team, edge*100)
     else:
         reason = f"Edge {edge*100:.1f}% below minimum {min_edge*100:.0f}%"
@@ -323,7 +323,7 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
         ))
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              edge, "value", "Edge found — bet placed")
-        logger.info("VALUE TOTALS: %s (%s vs %s) — edge %.1f%%",
+        logger.debug("VALUE TOTALS: %s (%s vs %s) — edge %.1f%%",
                     label, event.home_team, event.away_team, edge*100)
     else:
         reason = f"Edge {edge*100:.1f}% below minimum {min_edge*100:.0f}%"
@@ -351,7 +351,7 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
             ))
             _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
                  no_edge, "value", "Edge found on NO side — bet placed")
-            logger.info("VALUE TOTALS (NO/Under): %s (%s vs %s) — edge %.1f%%",
+            logger.debug("VALUE TOTALS (NO/Under): %s (%s vs %s) — edge %.1f%%",
                         no_label, event.home_team, event.away_team, no_edge*100)
         else:
             reason = f"Edge {no_edge*100:.1f}% below minimum {min_edge*100:.0f}%"
@@ -429,7 +429,7 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log):
         ))
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              edge, "value", "Edge found — bet placed")
-        logger.info("VALUE SPREAD: %s (%s vs %s) — edge %.1f%%",
+        logger.debug("VALUE SPREAD: %s (%s vs %s) — edge %.1f%%",
                     label, event.home_team, event.away_team, edge*100)
     else:
         reason = f"Edge {edge*100:.1f}% below minimum {min_edge*100:.0f}%"

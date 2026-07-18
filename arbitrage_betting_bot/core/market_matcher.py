@@ -430,7 +430,7 @@ def match_events(
     non_h2h_count = len(results) - h2h_count
     matched_event_ids = {r.odds_event.event_id for r in results}
     unmatched = [e for e in odds_events if e.event_id not in matched_event_ids]
-    logger.info(
+    logger.debug(
         "Matched %d/%d sportsbook events to Kalshi markets (%d H2H/TIE, %d totals/spread)",
         len(matched_event_ids),
         len(odds_events),
@@ -438,13 +438,5 @@ def match_events(
         non_h2h_count,
     )
     if unmatched:
-        logger.info("Unmatched sportsbook events (%d):", len(unmatched))
-        for e in sorted(unmatched, key=lambda x: (x.sport_key, x.commence_time)):
-            logger.info(
-                "  [%s] %s vs %s  (%s)",
-                e.sport_key.split("_")[-1].upper(),
-                e.home_team,
-                e.away_team,
-                e.commence_time.strftime("%a %b %d %H:%M UTC"),
-            )
+        logger.debug("Unmatched sportsbook events (%d) — see dashboard for details", len(unmatched))
     return results

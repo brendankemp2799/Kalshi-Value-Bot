@@ -37,7 +37,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 import config
-from storage.db import init_db, log_opportunity, log_alert, add_position, count_alerts_today, log_scan_results, mark_scan_start, get_api_credits
+from storage.db import init_db, log_opportunity, log_alert, add_position, get_daily_stake_total, count_open_positions, log_scan_results, mark_scan_start, get_api_credits
 from execution.trade_executor import execute_trade, resolve_side
 from data.odds_fetcher import OddsAPIClient, _in_season
 from data.kalshi_client import KalshiClient
@@ -46,7 +46,7 @@ from core.value_detector import detect_value
 from core.kelly_calculator import calculate_kelly
 from core.bankroll_manager import BankrollManager
 from core.correlation_tracker import CorrelationTracker
-from alerts.alert_manager import send_alert, print_no_value_found
+from alerts.alert_manager import send_alert
 from execution.auto_settle import auto_settle_positions
 
 console = Console()
@@ -118,20 +118,21 @@ def run_scan(
     logger = logging.getLogger(__name__)
     mode = "PAPER" if paper else "DRY RUN" if dry_run else "LIVE"
     logger.info("Starting scan... [%s] (bankroll: $%.2f)", mode, bm.bankroll)
-    mark_scan_start()
 
     # 0. Check hard limits before spending any API credits
-    daily_count = count_alerts_today()
-    if daily_count >= config.MAX_DAILY_ALERTS:
-        logger.info(
-            "Daily cap reached (%d/%d) — skipping API fetch. "
-            "Running auto-settle only.",
-            daily_count, config.MAX_DAILY_ALERTS,
-        )
-        if not dry_run:
+    if not dry_run:
+        daily_staked = get_daily_stake_total(is_paper=paper)
+        daily_risk_cap = bm.bankroll * config.MAX_DAILY_CAPITAL_RISK_PCT
+        if daily_staked >= daily_risk_cap:
+            logger.info(
+                "Daily capital risk cap reached ($%.2f staked today / $%.2f cap) — "
+                "skipping API fetch. Running auto-settle only.",
+                daily_staked, daily_risk_cap,
+            )
             auto_settle_positions(is_paper=paper)
             bm.snapshot()
-        return
+            _log_api_credits(logger)
+            return
 
     exposure_pct = bm.total_at_risk / bm.bankroll if bm.bankroll > 0 else 0
     if exposure_pct >= config.MAX_TOTAL_EXPOSURE_PCT:
@@ -143,13 +144,29 @@ def run_scan(
         if not dry_run:
             auto_settle_positions(is_paper=paper)
             bm.snapshot()
+        _log_api_credits(logger)
         return
+
+    if not dry_run:
+        open_count = count_open_positions(is_paper=paper)
+        if open_count >= config.MAX_OPEN_POSITIONS:
+            logger.info(
+                "Max open positions reached (%d/%d) — skipping API fetch. "
+                "Running auto-settle only.",
+                open_count, config.MAX_OPEN_POSITIONS,
+            )
+            auto_settle_positions(is_paper=paper)
+            bm.snapshot()
+            _log_api_credits(logger)
+            return
 
     # 1. Fetch data (or use pre-fetched data from variable-frequency loop)
     if _prefetched_odds is not None and _prefetched_kalshi is not None:
         odds_events = _prefetched_odds
         kalshi_markets = _prefetched_kalshi
     else:
+        # --once path: mark start before the fetch so credits are tracked correctly
+        mark_scan_start()
         odds_events = odds_client.fetch_all_sports()
         kalshi_markets = kalshi_client.fetch_sports_markets()
 
@@ -169,10 +186,10 @@ def run_scan(
     scan_log: list[dict] = []
     opportunities = detect_value(matched, scan_log=scan_log)
     if not opportunities:
-        print_no_value_found()
         if not dry_run:
             _finalise_scan_log(scan_log, scan_id)
         _log_api_credits(logger)
+        logger.info("Scan complete. No value found.")
         return
 
     # 4a. Score every opportunity (requires Kelly, so must happen here not in value_detector)
@@ -215,10 +232,10 @@ def run_scan(
     scored.sort(key=lambda t: t[0], reverse=True)
 
     if not scored:
-        print_no_value_found()
         if not dry_run:
             _finalise_scan_log(scan_log, scan_id)
         _log_api_credits(logger)
+        logger.info("Scan complete. No value found.")
         return
 
     # 4b. Iterate in ranked order; correlation/exposure checks unchanged
@@ -243,7 +260,7 @@ def run_scan(
             )
 
         if not allowed:
-            logger.info("Blocked: %s — %s", opp.team_name, reason)
+            logger.debug("Blocked: %s — %s", opp.team_name, reason)
             _update_scan_log(scan_log, opp, "blocked", reason)
             continue
 
@@ -316,16 +333,6 @@ def run_scan(
                     opp.team_name, sizing.recommended_dollars,
                 )
 
-        if count_alerts_today() >= config.MAX_DAILY_ALERTS:
-            logger.info("Daily cap (%d) reached — stopping scan early", config.MAX_DAILY_ALERTS)
-            # Mark remaining scored opportunities as daily_cap
-            for _, remaining_opp, _ in scored[alerted:]:
-                _update_scan_log(scan_log, remaining_opp, "daily_cap",
-                                 f"Daily bet cap of {config.MAX_DAILY_ALERTS} reached")
-            break
-
-    if alerted == 0:
-        print_no_value_found()
 
     if not dry_run:
         _finalise_scan_log(scan_log, scan_id)
@@ -337,7 +344,10 @@ def run_scan(
         auto_settle_positions(is_paper=paper)
 
     _log_api_credits(logger)
-    logger.info("Scan complete. %d order(s) placed.", alerted)
+    if alerted > 0:
+        logger.info("Scan complete. %d bet(s) placed.", alerted)
+    else:
+        logger.info("Scan complete. No value found.")
     return
 
 
@@ -402,6 +412,26 @@ def main() -> None:
     )
 
 
+def _log_sport_intervals(sport_events: dict, logger: logging.Logger) -> None:
+    """Log the current polling interval for each active sport."""
+    now = datetime.now(timezone.utc)
+    lines = []
+    for sport in config.SPORTS:
+        if not _in_season(sport):
+            continue
+        cached = sport_events.get(sport, [])
+        interval = _sport_poll_interval(sport, cached)
+        short = sport.split("_")[-1].upper()
+        if interval == config.POLL_INTERVAL_NEAR_GAME_SECONDS:
+            label = f"{interval // 60}min ⚡ (game <{config.NEAR_GAME_THRESHOLD_MINUTES}min)"
+        elif interval == config.POLL_INTERVAL_PRE_GAME_SECONDS:
+            label = f"{interval // 60}min 🔜 (game <{config.PRE_GAME_THRESHOLD_HOURS}h)"
+        else:
+            label = f"{interval // 60}min"
+        lines.append(f"  {short:<8} → {label}")
+    logger.info("Polling intervals:\n%s", "\n".join(lines))
+
+
 def _sport_poll_interval(sport: str, cached_events: list) -> int:
     """
     Return the polling interval (seconds) for *sport* based on its nearest
@@ -446,6 +476,7 @@ def _run_variable_loop(
     last_fetched: dict[str, float] = {}   # sport → unix timestamp of last fetch
 
     # ── Initial full fetch ──────────────────────────────────────────────────
+    mark_scan_start()
     now_ts = time.time()
     for i, sport in enumerate(config.SPORTS):
         if not _in_season(sport):
@@ -465,6 +496,7 @@ def _run_variable_loop(
         dry_run=dry_run, paper=paper,
         _prefetched_odds=all_events, _prefetched_kalshi=all_kalshi,
     )
+    _log_sport_intervals(sport_events, logger)
 
     # ── Main tick loop ──────────────────────────────────────────────────────
     try:
@@ -490,6 +522,7 @@ def _run_variable_loop(
                 len(due), ", ".join(due),
             )
 
+            mark_scan_start()
             for i, sport in enumerate(due):
                 if i > 0:
                     time.sleep(1)
@@ -505,6 +538,7 @@ def _run_variable_loop(
                 dry_run=dry_run, paper=paper,
                 _prefetched_odds=all_events, _prefetched_kalshi=all_kalshi,
             )
+            _log_sport_intervals(sport_events, logger)
 
     except KeyboardInterrupt:
         logger.info("Bot stopped by user.")

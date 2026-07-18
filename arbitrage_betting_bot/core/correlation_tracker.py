@@ -4,8 +4,7 @@ Prevents correlated bets that could amplify losses.
 Rules (in order):
   1. Same game:  already have an open position on this exact event.
   2. Same team:  already have an open position involving one of these teams.
-  3. Daily cap:  already alerted MAX_DAILY_ALERTS opportunities today.
-  4. Exposure:   BankrollManager cap on total / per-sport exposure.
+  3. Exposure:   BankrollManager cap on total / per-sport exposure.
 """
 from __future__ import annotations
 
@@ -14,7 +13,6 @@ import logging
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-import config
 from core.value_detector import ValueOpportunity
 from core.bankroll_manager import BankrollManager
 from storage import db
@@ -54,15 +52,7 @@ class CorrelationTracker:
                     f"{pos['home_team']} or {pos['away_team']}",
                 )
 
-        # Rule 3: daily alert cap
-        alerts_today = db.count_alerts_today()
-        if alerts_today >= config.MAX_DAILY_ALERTS:
-            return (
-                False,
-                f"Daily alert cap reached ({alerts_today}/{config.MAX_DAILY_ALERTS})",
-            )
-
-        # Rule 4: bankroll exposure
+        # Rule 3: bankroll exposure
         allowed, reason = self.bm.can_add_exposure(recommended_dollars, sport)
         if not allowed:
             return False, reason

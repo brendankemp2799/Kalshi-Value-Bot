@@ -25,16 +25,17 @@ MAX_BET_DOLLARS: float = 100.0        # Hard dollar cap per bet
 MAX_PCT_BANKROLL: float = 0.05        # Max 5% of bankroll per single bet
 MAX_TOTAL_EXPOSURE_PCT: float = 0.30  # Max 30% of bankroll deployed at once
 MAX_SPORT_EXPOSURE_PCT: float = 0.15  # Max 15% of bankroll in one sport
-MAX_DAILY_ALERTS: int = 5             # Max value alerts surfaced per day
+MAX_OPEN_POSITIONS: int = 10          # Max simultaneous open positions — exposure % is the primary gate
+MAX_DAILY_CAPITAL_RISK_PCT: float = 0.30  # Max % of bankroll staked in new positions per calendar day (UTC)
 
 # ── Scheduling ────────────────────────────────────────────────────────────────
 # Variable-frequency polling: each sport is fetched at a rate based on its
-# nearest upcoming game. Sports with no game within 4 hours use the default
-# 15-minute interval; sports near game time are fetched more often.
-POLL_INTERVAL_DEFAULT_SECONDS: int  = int(os.getenv("POLL_INTERVAL_DEFAULT_SECONDS",  "900"))  # 15 min — baseline
-POLL_INTERVAL_PRE_GAME_SECONDS: int = int(os.getenv("POLL_INTERVAL_PRE_GAME_SECONDS", "300"))  # 5 min  — within 4 h
+# nearest upcoming game. Sports with no game within 1 hour use the default
+# 45-minute interval; sports near game time are fetched more often.
+POLL_INTERVAL_DEFAULT_SECONDS: int   = int(os.getenv("POLL_INTERVAL_DEFAULT_SECONDS",  "2700"))  # 45 min — baseline
+POLL_INTERVAL_PRE_GAME_SECONDS: int  = int(os.getenv("POLL_INTERVAL_PRE_GAME_SECONDS",  "600"))  # 10 min — within 1 h
 POLL_INTERVAL_NEAR_GAME_SECONDS: int = int(os.getenv("POLL_INTERVAL_NEAR_GAME_SECONDS", "120"))  # 2 min  — within 30 min
-PRE_GAME_THRESHOLD_HOURS: int        = int(os.getenv("PRE_GAME_THRESHOLD_HOURS",   "4"))
+PRE_GAME_THRESHOLD_HOURS: int        = int(os.getenv("PRE_GAME_THRESHOLD_HOURS",    "1"))
 NEAR_GAME_THRESHOLD_MINUTES: int     = int(os.getenv("NEAR_GAME_THRESHOLD_MINUTES", "30"))
 # Back-compat alias (used by --once path and any external tooling)
 POLL_INTERVAL_SECONDS: int = POLL_INTERVAL_DEFAULT_SECONDS

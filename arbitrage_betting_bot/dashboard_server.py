@@ -956,6 +956,7 @@ DETAIL_TEMPLATE = """<!DOCTYPE html>
       <div class="cell"><div class="cell-label">Matchup</div><div class="cell-value" style="font-size:13px">{{ p.home }} vs {{ p.away }}</div></div>
       <div class="cell"><div class="cell-label">Type</div><div class="cell-value" style="color:var(--blue)">{{ p.bet_type }}</div></div>
       <div class="cell"><div class="cell-label">Game Time</div><div class="cell-value" style="font-size:13px">{{ p.game_time }}</div></div>
+      <div class="cell"><div class="cell-label">Placed At</div><div class="cell-value" style="font-size:13px">{{ p.entered }}</div></div>
       <div class="cell"><div class="cell-label">Stake</div><div class="cell-value">${{ "%.2f"|format(p.stake) }}</div></div>
       <div class="cell"><div class="cell-label">Entry Price</div><div class="cell-value">{{ p.price_pct }}¢</div></div>
       {% if p.edge is not none %}
@@ -1305,7 +1306,7 @@ function renderOpenTable(rows) {
   document.getElementById('open-count').textContent = rows.length ? rows.length + ' positions' : '';
   if (!rows.length) { t.innerHTML = emptyRow(7, 'No open positions.'); return; }
   t.innerHTML = `<thead><tr>
-    <th>#</th><th>Bet On</th><th>Opponent</th><th>Sport</th><th>Type</th><th>Game Time</th>
+    <th>#</th><th>Bet On</th><th>Opponent</th><th>Sport</th><th>Type</th><th>Placed At</th><th>Game Time</th>
     <th>Stake</th><th>Entry Price</th><th>Edge</th><th>Books</th><th>Spread</th>
     <th>Potential Win</th><th>Status</th>
   </tr></thead><tbody>` + rows.map(r => {
@@ -1315,12 +1316,14 @@ function renderOpenTable(rows) {
     const spreadStr = r.spread != null ? `${r.spread.toFixed(1)}¢` : '<span style="color:var(--muted)">—</span>';
     const gameTime = r.game_time && r.game_time !== '—' ? r.game_time : '<span style="color:var(--muted)">—</span>';
     const typeStr = r.bet_type && r.bet_type !== 'Moneyline' ? `<span style="color:var(--blue)">${r.bet_type}</span>` : `<span style="color:var(--muted)">Moneyline</span>`;
+    const placedAt = r.entered && r.entered !== '—' ? `<span style="color:var(--muted);font-size:12px">${r.entered}</span>` : '<span style="color:var(--muted)">—</span>';
     return `<tr>
       <td><a href="/position/${r.id}" style="color:var(--blue);text-decoration:none">#${r.id}</a></td>
       <td><strong>${r.team}</strong></td>
       <td style="color:var(--muted)">${r.opponent}</td>
       <td>${r.sport}</td>
       <td>${typeStr}</td>
+      <td>${placedAt}</td>
       <td>${gameTime}</td>
       <td>$${r.stake.toFixed(2)}</td>
       <td>${r.price_pct}¢</td>
