@@ -166,7 +166,21 @@ def detect_value(
 # ── H2H ───────────────────────────────────────────────────────────────────────
 
 def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
+    # Soccer is 3-way (home / away / draw). Kalshi issues one binary market per
+    # team (e.g. "Miami wins YES/NO"). The NO side of that market means "Miami
+    # does NOT win" — which includes draws — NOT "opponent wins." Evaluating the
+    # opponent's win probability against the NO price would produce phantom edge.
+    # Skip the non-YES team for soccer so each team's Kalshi market is only
+    # evaluated when it is explicitly the subject of the market.
+    is_soccer = "soccer" in event.sport_key
+
     for outcome, team in [(Outcome.HOME, event.home_team), (Outcome.AWAY, event.away_team)]:
+        if is_soccer:
+            if me.kalshi_outcome == "yes" and outcome == Outcome.AWAY:
+                continue
+            if me.kalshi_outcome == "no" and outcome == Outcome.HOME:
+                continue
+
         consensus, book_count, std_dev = consensus_stats(event.bookmakers, team)
 
         if consensus is None:

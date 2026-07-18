@@ -318,6 +318,19 @@ def match_events(
     # ── Non-H2H matching (totals / spreads) ──────────────────────────────────
     now_utc = datetime.now(timezone.utc)
 
+    # Soccer totals (e.g. MLS) use titles like "Will over 2.5 goals be scored?"
+    # with no team names. Build a suffix → OddsEvent lookup from already-matched
+    # H2H results so we can resolve the event from the shared event_ticker part.
+    # Example: KXMLSGAME-26JUL22MIACHI and KXMLSTOTAL-26JUL22MIACHI-3 both
+    # contain the suffix "26JUL22MIACHI", uniquely identifying the same game.
+    suffix_to_event: dict[str, OddsEvent] = {}
+    for _me in results:
+        et = _me.kalshi_market.event_ticker or ""
+        if "-" in et:
+            _suffix = et.split("-", 1)[1]
+            if _suffix:
+                suffix_to_event[_suffix] = _me.odds_event
+
     for km in non_h2h_markets:
         if km.ticker in matched_tickers:
             continue
@@ -341,6 +354,17 @@ def match_events(
             # the same fuzzy logic as H2H but accepting either home or away.
             if km.bet_type == "spread" and km.yes_team:
                 teams = None  # handled below in spread-fallback path
+            elif km.bet_type == "totals":
+                # Soccer totals have no team names in their title. Use the
+                # event_ticker suffix to look up the event from H2H matches.
+                et = km.event_ticker or ""
+                suffix = et.split("-", 1)[1] if "-" in et else ""
+                ev = suffix_to_event.get(suffix)
+                if ev:
+                    teams = (ev.home_team, ev.away_team)
+                else:
+                    logger.debug("Skip non-H2H %s — can't parse teams from title: %s", km.ticker, km.title)
+                    continue
             else:
                 logger.debug("Skip non-H2H %s — can't parse teams from title: %s", km.ticker, km.title)
                 continue
