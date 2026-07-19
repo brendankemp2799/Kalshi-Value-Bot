@@ -51,7 +51,9 @@ def _requires_auth(f):
         if not config.DASHBOARD_PASSWORD:
             return f(*args, **kwargs)
         auth = request.authorization
-        if not auth or auth.password != config.DASHBOARD_PASSWORD:
+        password_ok = auth and auth.password == config.DASHBOARD_PASSWORD
+        username_ok = (not config.DASHBOARD_USERNAME) or (auth and auth.username == config.DASHBOARD_USERNAME)
+        if not (password_ok and username_ok):
             return Response(
                 "Unauthorized", 401,
                 {"WWW-Authenticate": 'Basic realm="Arbitrage Dashboard"'},
