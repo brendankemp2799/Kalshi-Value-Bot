@@ -143,12 +143,15 @@ def build_data() -> dict:
     # ── Summary stats ────────────────────────────────────────────────────────
     total_staked = 0.0
     total_pnl = 0.0
-    wins = losses = settled = open_count = 0
+    wins = losses = settled = open_count = failed_count = 0
     by_sport: dict[str, dict] = defaultdict(
         lambda: {"staked": 0.0, "pnl": 0.0, "wins": 0, "losses": 0, "open": 0}
     )
 
     for p in positions:
+        if p["execution_status"] == "failed":
+            failed_count += 1
+            continue  # failed orders don't count toward stats
         sport = _short_sport(p["sport"])
         stake = p["stake"]
         total_staked += stake
@@ -212,24 +215,38 @@ def build_data() -> dict:
 
     # ── Open positions ───────────────────────────────────────────────────────
     open_rows = []
+    failed_rows = []
     for p in positions:
         if p["status"] != "open":
+            continue
+        if p["team_name"] == p["home_team"]:
+            opponent = p["away_team"]
+        elif p["team_name"] == p["away_team"]:
+            opponent = p["home_team"]
+        else:
+            opponent = f"{p['home_team']} vs {p['away_team']}"
+        bet_type = p["bet_type"] if "bet_type" in p.keys() else "h2h"
+        threshold = p["threshold"] if "threshold" in p.keys() else None
+        if p["execution_status"] == "failed":
+            failed_rows.append({
+                "id": p["id"],
+                "team": p["team_name"],
+                "opponent": opponent,
+                "sport": _short_sport(p["sport"]),
+                "bet_type": _bet_type_label(bet_type),
+                "threshold": threshold,
+                "game_time": _fmt_dt(p["commence_time"]),
+                "stake": round(p["stake"], 2),
+                "price_pct": round(p["market_price"] * 100, 0),
+                "edge": round(p["edge"] * 100, 1) if p["edge"] is not None else None,
+                "entered": _fmt_dt(p["entered_at"]),
+            })
             continue
         stake = p["stake"]
         price = p["market_price"]
         pot_win = round(stake * (1.0 - price) / price, 2) if price > 0 else 0.0
         edge = p["edge"]
         spread = p["kalshi_spread"]
-        # Determine opponent (the team that isn't the one we bet on)
-        if p["team_name"] == p["home_team"]:
-            opponent = p["away_team"]
-        elif p["team_name"] == p["away_team"]:
-            opponent = p["home_team"]
-        else:
-            # Draw bet — show both teams
-            opponent = f"{p['home_team']} vs {p['away_team']}"
-        bet_type = p["bet_type"] if "bet_type" in p.keys() else "h2h"
-        threshold = p["threshold"] if "threshold" in p.keys() else None
         open_rows.append({
             "id": p["id"],
             "team": p["team_name"],
@@ -302,6 +319,7 @@ def build_data() -> dict:
             "losses": losses,
             "settled": settled,
             "open_count": open_count,
+            "failed_count": failed_count,
             "total_bets": len(positions),
         },
         "api_credits": api_credits,
@@ -309,6 +327,7 @@ def build_data() -> dict:
         "pnl_chart": {"labels": pnl_labels, "cumulative": pnl_cumulative},
         "sport_rows": sport_rows,
         "open_rows": open_rows,
+        "failed_rows": failed_rows,
         "settled_rows": settled_rows[:30],
         "opp_rows": opp_rows,
     }
@@ -1175,6 +1194,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div class="table-wrap"><table id="open-table"></table></div>
   </div>
 
+  <!-- Failed orders -->
+  <div class="section" id="failed-section" style="display:none">
+    <div class="section-header">
+      <h2 style="color:var(--red)">Failed Orders</h2>
+      <span class="count" id="failed-count"></span>
+    </div>
+    <div class="table-wrap"><table id="failed-table"></table></div>
+  </div>
+
   <!-- Settled positions -->
   <div class="section">
     <div class="section-header">
@@ -1364,6 +1392,35 @@ function renderOpenTable(rows) {
   }).join('') + '</tbody>';
 }
 
+function renderFailedTable(rows) {
+  const section = document.getElementById('failed-section');
+  const t = document.getElementById('failed-table');
+  const cnt = document.getElementById('failed-count');
+  if (!rows || !rows.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  cnt.textContent = rows.length + ' order' + (rows.length === 1 ? '' : 's');
+  t.innerHTML = `<thead><tr>
+    <th>#</th><th>Bet On</th><th>Opponent</th><th>Sport</th><th>Type</th>
+    <th>Attempted At</th><th>Game Time</th><th>Stake</th><th>Entry Price</th><th>Edge</th>
+  </tr></thead><tbody>` + rows.map(r => {
+    const edgeStr = r.edge != null ? `<span class="pos"><strong>${r.edge.toFixed(1)}%</strong></span>` : '<span style="color:var(--muted)">—</span>';
+    const gameTime = r.game_time && r.game_time !== '—' ? r.game_time : '<span style="color:var(--muted)">—</span>';
+    const typeStr = r.bet_type && r.bet_type !== 'Moneyline' ? `<span style="color:var(--blue)">${r.bet_type}</span>` : `<span style="color:var(--muted)">Moneyline</span>`;
+    return `<tr>
+      <td><a href="/position/${r.id}" style="color:var(--blue);text-decoration:none">#${r.id}</a></td>
+      <td><strong style="color:var(--red)">${r.team}</strong></td>
+      <td style="color:var(--muted)">${r.opponent}</td>
+      <td>${r.sport}</td>
+      <td>${typeStr}</td>
+      <td><span style="color:var(--muted);font-size:12px">${r.entered}</span></td>
+      <td>${gameTime}</td>
+      <td>$${r.stake.toFixed(2)}</td>
+      <td>${r.price_pct}¢</td>
+      <td>${edgeStr}</td>
+    </tr>`;
+  }).join('') + '</tbody>';
+}
+
 function renderSettledTable(rows) {
   const t = document.getElementById('settled-table');
   document.getElementById('settled-count').textContent = rows.length ? rows.length + ' bets' : '';
@@ -1415,6 +1472,7 @@ async function refresh() {
     renderCharts(d.bankroll_chart, d.pnl_chart);
     renderSportTable(d.sport_rows);
     renderOpenTable(d.open_rows);
+    renderFailedTable(d.failed_rows);
     renderSettledTable(d.settled_rows);
     renderOppTable(d.opp_rows);
     document.getElementById('last-updated').textContent =

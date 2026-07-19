@@ -265,14 +265,14 @@ def run_scan(
             _update_scan_log(scan_log, opp, "blocked", reason)
             continue
 
-        send_alert(opp, sizing, dry_run=dry_run, paper=paper)
-        alerted += 1
-
-        if not dry_run and opp_id:
+        if dry_run:
+            send_alert(opp, sizing, dry_run=True, paper=False)
+            alerted += 1
+        elif paper and opp_id:
+            # Paper mode: alert + log simulated position, skip execution
+            send_alert(opp, sizing, dry_run=False, paper=True)
+            alerted += 1
             log_alert(opp_id, sizing.recommended_dollars, bm.bankroll)
-
-        if paper and opp_id:
-            # Paper mode: log simulated position, skip execution
             add_position(
                 sport=event.sport_key,
                 home_team=event.home_team,
@@ -298,8 +298,8 @@ def run_scan(
                 "[PAPER] Position logged: %s $%.2f on Kalshi",
                 opp.team_name, sizing.recommended_dollars,
             )
-        elif not dry_run and not paper and opp_id:
-            # Live mode: execute the trade, then record the position
+        elif opp_id:
+            # Live mode: execute first — only alert + notify if the order lands
             order_id, exec_status, side = execute_trade(opp, sizing)
             add_position(
                 sport=event.sport_key,
@@ -324,6 +324,9 @@ def run_scan(
                 bookmakers_json=json.dumps(event.bookmakers),
             )
             if exec_status == "submitted":
+                send_alert(opp, sizing, dry_run=False, paper=False)
+                alerted += 1
+                log_alert(opp_id, sizing.recommended_dollars, bm.bankroll)
                 logger.info(
                     "[LIVE] Order submitted: %s $%.2f on Kalshi  (order_id=%s)",
                     opp.team_name, sizing.recommended_dollars, order_id,

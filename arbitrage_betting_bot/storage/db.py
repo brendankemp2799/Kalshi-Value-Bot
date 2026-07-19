@@ -271,7 +271,7 @@ def get_daily_stake_total(is_paper: bool = False) -> float:
     with get_connection() as conn:
         row = conn.execute(
             "SELECT COALESCE(SUM(stake), 0.0) FROM positions "
-            "WHERE entered_at LIKE ? AND is_paper = ?",
+            "WHERE entered_at LIKE ? AND is_paper = ? AND execution_status != 'failed'",
             (f"{today}%", 1 if is_paper else 0),
         ).fetchone()
         return float(row[0]) if row else 0.0
@@ -280,7 +280,8 @@ def get_daily_stake_total(is_paper: bool = False) -> float:
 def count_open_positions(is_paper: bool = False) -> int:
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT COUNT(*) FROM positions WHERE status = 'open' AND is_paper = ?",
+            "SELECT COUNT(*) FROM positions "
+            "WHERE status = 'open' AND is_paper = ? AND execution_status != 'failed'",
             (1 if is_paper else 0,),
         ).fetchone()
         return row[0] if row else 0
@@ -289,7 +290,8 @@ def count_open_positions(is_paper: bool = False) -> int:
 def get_open_positions(is_paper: bool = False) -> list[sqlite3.Row]:
     with get_connection() as conn:
         return conn.execute(
-            "SELECT * FROM positions WHERE status = 'open' AND is_paper = ?",
+            "SELECT * FROM positions "
+            "WHERE status = 'open' AND is_paper = ? AND execution_status != 'failed'",
             (1 if is_paper else 0,),
         ).fetchall()
 
