@@ -184,7 +184,7 @@ def run_scan(
     # 3. Detect value (hard filters already applied inside detect_value)
     scan_id = datetime.utcnow().isoformat()
     scan_log: list[dict] = []
-    opportunities = detect_value(matched, scan_log=scan_log)
+    opportunities = detect_value(matched, min_edge=config.MIN_EDGE, scan_log=scan_log)
     if not opportunities:
         if not dry_run:
             _finalise_scan_log(scan_log, scan_id)
@@ -491,11 +491,14 @@ def _run_variable_loop(
 
     all_events  = [e for evs in sport_events.values() for e in evs]
     all_kalshi  = [m for ms  in sport_kalshi.values()  for m in ms]
-    run_scan(
-        odds_client, kalshi_client, bm, tracker,
-        dry_run=dry_run, paper=paper,
-        _prefetched_odds=all_events, _prefetched_kalshi=all_kalshi,
-    )
+    try:
+        run_scan(
+            odds_client, kalshi_client, bm, tracker,
+            dry_run=dry_run, paper=paper,
+            _prefetched_odds=all_events, _prefetched_kalshi=all_kalshi,
+        )
+    except Exception as e:
+        logger.error("Initial scan error (continuing to loop): %s", e, exc_info=True)
     _log_sport_intervals(sport_events, logger)
 
     # ── Main tick loop ──────────────────────────────────────────────────────
@@ -533,11 +536,14 @@ def _run_variable_loop(
 
             all_events = [e for evs in sport_events.values() for e in evs]
             all_kalshi = [m for ms  in sport_kalshi.values()  for m in ms]
-            run_scan(
-                odds_client, kalshi_client, bm, tracker,
-                dry_run=dry_run, paper=paper,
-                _prefetched_odds=all_events, _prefetched_kalshi=all_kalshi,
-            )
+            try:
+                run_scan(
+                    odds_client, kalshi_client, bm, tracker,
+                    dry_run=dry_run, paper=paper,
+                    _prefetched_odds=all_events, _prefetched_kalshi=all_kalshi,
+                )
+            except Exception as e:
+                logger.error("Scan error (will retry next tick): %s", e, exc_info=True)
             _log_sport_intervals(sport_events, logger)
 
     except KeyboardInterrupt:

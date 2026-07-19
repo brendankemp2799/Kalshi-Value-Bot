@@ -1,0 +1,18 @@
+[Unit]
+Description=Arbitrage Betting Bot
+After=network.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/arbitrage-bot/arbitrage_betting_bot
+ExecStart=/usr/bin/python3.8 main.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=arbitrage-bot
+
+[Install]
+WantedBy=multi-user.target

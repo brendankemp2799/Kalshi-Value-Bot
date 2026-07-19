@@ -81,3 +81,11 @@ FUZZY_MATCH_THRESHOLD: int = 80       # Minimum rapidfuzz score (0-100)
 MIN_BOOKMAKER_COUNT: int = 2          # Consensus must come from ≥2 books
 MAX_KALSHI_SPREAD: float = 0.05       # Kalshi bid-ask spread ≤ 5¢ (ensures fillable price)
 MIN_KALSHI_VOLUME: float = 0.0        # Disabled — spread filter (MAX_KALSHI_SPREAD) is sufficient liquidity gate
+MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.02"))  # Minimum edge to surface as a value opportunity (2% default)
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+PUSHOVER_USER_KEY: str  = os.getenv("PUSHOVER_USER_KEY", "")   # From pushover.net account page
+PUSHOVER_APP_TOKEN: str = os.getenv("PUSHOVER_APP_TOKEN", "")  # From pushover.net app creation
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+DASHBOARD_PASSWORD: str = os.getenv("DASHBOARD_PASSWORD", "")  # HTTP Basic Auth; empty = no auth (local dev)

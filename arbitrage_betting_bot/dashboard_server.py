@@ -31,14 +31,33 @@ try:
 except ImportError:
     import pytz
     _PT = pytz.timezone("America/Los_Angeles")
-from flask import Flask, jsonify, render_template_string, abort
+from functools import wraps
+
+from flask import Flask, jsonify, render_template_string, abort, request, Response
 import storage.db as db
 from core.odds_converter import american_to_prob, remove_vig, _norm_team, _names_match
 from execution.auto_settle import auto_settle_positions
+import config
 import re as _re
 
 app = Flask(__name__)
 IS_PAPER = False   # set by CLI arg at startup
+
+
+def _requires_auth(f):
+    """HTTP Basic Auth guard. Skipped if DASHBOARD_PASSWORD is not set."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not config.DASHBOARD_PASSWORD:
+            return f(*args, **kwargs)
+        auth = request.authorization
+        if not auth or auth.password != config.DASHBOARD_PASSWORD:
+            return Response(
+                "Unauthorized", 401,
+                {"WWW-Authenticate": 'Basic realm="Arbitrage Dashboard"'},
+            )
+        return f(*args, **kwargs)
+    return decorated
 
 
 # ── Data helpers (same logic as dashboard.py) ────────────────────────────────
@@ -96,9 +115,11 @@ def _fmt_dt(iso: str | None) -> str:
     if not iso:
         return "—"
     try:
+        from datetime import timezone as _tz
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(_PT)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_tz.utc)  # all DB timestamps are naive UTC
+        dt = dt.astimezone(_PT)
         h = dt.hour % 12 or 12
         ampm = "AM" if dt.hour < 12 else "PM"
         return f"{dt.strftime('%b')} {dt.day}  {h}:{dt.strftime('%M')} {ampm} PT"
@@ -420,11 +441,13 @@ def _book_breakdown(bookmakers_json: str, team_name: str, bet_type: str, thresho
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/api/data")
+@_requires_auth
 def api_data():
     return jsonify(build_data())
 
 
 @app.route("/position/<int:position_id>")
+@_requires_auth
 def position_detail(position_id: int):
     p = db.get_position(position_id)
     if not p:
@@ -461,6 +484,7 @@ def position_detail(position_id: int):
 
 
 @app.route("/scan/detail/<int:entry_id>")
+@_requires_auth
 def scan_detail(entry_id: int):
     row = db.get_scan_entry(entry_id)
     if not row:
@@ -499,6 +523,7 @@ def scan_detail(entry_id: int):
 
 
 @app.route("/scan")
+@_requires_auth
 def scan_results():
     rows = db.get_last_scan()
     scanned_at = _fmt_dt(rows[0]["scanned_at"]) if rows else "No scan data yet"
@@ -531,6 +556,7 @@ def scan_results():
 
 
 @app.route("/")
+@_requires_auth
 def index():
     return render_template_string(HTML_TEMPLATE)
 

@@ -1,0 +1,18 @@
+[Unit]
+Description=Arbitrage Betting Bot Dashboard
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/arbitrage-bot/arbitrage_betting_bot
+ExecStart=/usr/bin/python3.8 dashboard_server.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=arbitrage-dashboard
+
+[Install]
+WantedBy=multi-user.target
