@@ -46,6 +46,30 @@ python3.8 -m pytest tests/ -v
 
 ---
 
+# Server Commands
+
+## Connect to Server
+```
+ssh -i ~/.ssh/id_rsa root@167.172.148.64
+```
+
+## View Live Bot Logs
+```
+journalctl -u arbitrage-bot -f
+```
+
+## Restart Bot
+```
+systemctl restart arbitrage-bot
+```
+
+## Deploy Code Update
+```
+cd /opt/arbitrage-bot && git pull && systemctl restart arbitrage-bot arbitrage-dashboard
+```
+
+---
+
 # Server Deployment (DigitalOcean)
 
 ## One-Time Setup — Pushover (phone notifications)
