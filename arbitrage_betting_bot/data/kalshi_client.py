@@ -168,6 +168,26 @@ class KalshiClient:
         resp.raise_for_status()
         return resp.json()
 
+    def fetch_balance(self) -> float:
+        """Return available trading balance in dollars from Kalshi portfolio API.
+        Falls back to config.BANKROLL if the request fails."""
+        try:
+            from data.kalshi_auth import auth_headers
+            url = "https://external-api.kalshi.com/trade-api/v2/portfolio/balance"
+            headers = auth_headers("GET", url)
+            resp = requests.get(url, headers=headers, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            bal = data.get("balance_dollars")
+            if bal is not None:
+                return float(bal)
+            cents = data.get("balance")
+            if cents is not None:
+                return float(cents) / 100.0
+        except Exception as e:
+            logger.warning("Could not fetch Kalshi balance (%s) — using config.BANKROLL", e)
+        return config.BANKROLL
+
     @staticmethod
     def _parse_price(raw: dict, field_dollars: str, field_cents: str) -> float | None:
         """Parse a price from dollar string or cents integer, returning 0.0–1.0."""

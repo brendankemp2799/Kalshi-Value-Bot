@@ -385,6 +385,13 @@ def main() -> None:
     odds_client = OddsAPIClient()
     kalshi_client = KalshiClient()
 
+    # In live mode, pull actual available balance from Kalshi instead of using config
+    if not args.paper and not args.dry_run and not args.bankroll:
+        live_balance = kalshi_client.fetch_balance()
+        logger.info("Kalshi available balance: $%.2f", live_balance)
+        bm = BankrollManager(bankroll=live_balance, is_paper=False)
+        tracker = CorrelationTracker(bankroll_manager=bm)
+
     if args.once:
         run_scan(
             odds_client, kalshi_client, bm, tracker,
