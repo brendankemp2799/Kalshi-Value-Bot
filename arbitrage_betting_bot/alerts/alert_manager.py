@@ -22,14 +22,18 @@ def _pushover(title: str, message: str) -> None:
     if not (config.PUSHOVER_USER_KEY and config.PUSHOVER_APP_TOKEN):
         return
     try:
+        payload = {
+            "token": config.PUSHOVER_APP_TOKEN,
+            "user": config.PUSHOVER_USER_KEY,
+            "title": title,
+            "message": message,
+        }
+        if config.DASHBOARD_URL:
+            payload["url"] = config.DASHBOARD_URL
+            payload["url_title"] = "Open Dashboard"
         requests.post(
             "https://api.pushover.net/1/messages.json",
-            data={
-                "token": config.PUSHOVER_APP_TOKEN,
-                "user": config.PUSHOVER_USER_KEY,
-                "title": title,
-                "message": message,
-            },
+            data=payload,
             timeout=5,
         )
     except Exception:
