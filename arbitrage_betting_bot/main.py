@@ -217,10 +217,11 @@ def run_scan(
             _update_scan_log(scan_log, opp, "kelly_no_edge",
                              "Kelly criterion: mathematical edge doesn't justify a bet")
             continue
-        if sizing.recommended_dollars < config.MIN_BET_DOLLARS:
+        min_bet = max(config.MIN_BET_DOLLARS, bm.bankroll * config.MIN_BET_PCT)
+        if sizing.recommended_dollars < min_bet:
             reason = (
                 f"Kelly bet ${sizing.recommended_dollars:.2f} below "
-                f"minimum ${config.MIN_BET_DOLLARS:.0f}"
+                f"minimum ${min_bet:.2f} (1% of ${bm.bankroll:.0f} bankroll)"
             )
             logger.debug("Skip %s — %s", opp.team_name, reason)
             _update_scan_log(scan_log, opp, "kelly_no_edge", reason)
