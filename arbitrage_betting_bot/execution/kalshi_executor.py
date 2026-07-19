@@ -1,20 +1,18 @@
 """
-Places market orders on Kalshi via the REST API v2.
+Places orders on Kalshi via the REST API v2 orders endpoint.
 
 Authentication: RSA-signed requests (KALSHI_API_KEY + KALSHI_PRIVATE_KEY_PATH).
 See data/kalshi_auth.py for signing details.
 
-Order model:
-  - type: "market"  — fill at best available price immediately
-  - action: "buy"
-  - side: "yes" or "no"
-  - count: number of contracts  (each contract costs yes_price cents)
-  - buy_max_cost: maximum total spend in cents (guards against slippage)
+Order model (v2):
+  - side:               "bid" (buy YES) or "ask" (sell YES = buy NO)
+  - price:              fixed-point dollar string, e.g. "0.4000" (YES price)
+  - count:              fixed-point contract count string, e.g. "25.00"
+  - time_in_force:      "fill_or_kill" — fill immediately or cancel (market order equivalent)
 
-Kalshi contract math:
-  price_cents = round(market_price * 100)   e.g. 0.40 → 40 cents
-  count       = floor(stake_dollars / (price_cents / 100))
-  max_cost    = stake_dollars * 100  (in cents, sets the spending cap)
+Side mapping from our internal yes/no convention:
+  yes → bid,  price = yes_ask (market_price as passed in)
+  no  → ask,  price = 1 - no_ask  (convert no price to the YES price we're selling at)
 """
 from __future__ import annotations
 
@@ -31,6 +29,8 @@ import config
 
 logger = logging.getLogger(__name__)
 
+_ORDERS_URL = "https://external-api.kalshi.com/trade-api/v2/portfolio/events/orders"
+
 
 def place_order(
     ticker: str,
@@ -39,50 +39,54 @@ def place_order(
     market_price: float,
 ) -> tuple[str, str]:
     """
-    Place a Kalshi market buy order.
+    Place a Kalshi order using the v2 orders endpoint.
 
     Args:
-        ticker:        Kalshi market ticker (e.g. "NFLWC-24-DEN")
-        side:          "yes" or "no"
+        ticker:        Kalshi market ticker
+        side:          "yes" or "no" (internal convention)
         stake_dollars: dollar amount to wager
-        market_price:  current market price as a probability (0.0 – 1.0),
-                       used to convert dollars → contract count
+        market_price:  ask price of the side we're buying (0.0 – 1.0)
 
     Returns:
-        (order_id, execution_status)
-        execution_status is "submitted" on success or "failed" on error.
+        (order_id, execution_status) — status is "submitted" or "failed"
     """
     if not config.KALSHI_API_KEY:
         logger.error("KALSHI_API_KEY not set — cannot place order")
         return "", "failed"
 
-    price_cents = max(1, min(99, round(market_price * 100)))
-    count = max(1, math.floor(stake_dollars / (price_cents / 100)))
-    buy_max_cost = math.ceil(stake_dollars * 100)   # cents, rounds up for safety
+    # Contract count based on price of the side we're buying
+    price = max(0.01, min(0.99, market_price))
+    count = max(1, math.floor(stake_dollars / price))
+
+    # v2 API uses bid/ask (YES perspective) instead of yes/no
+    if side == "yes":
+        api_side = "bid"
+        yes_price = price
+    else:
+        api_side = "ask"
+        yes_price = 1.0 - price  # convert no_ask → yes_bid (price we sell YES at)
 
     client_order_id = str(uuid.uuid4())
     payload = {
         "ticker": ticker,
         "client_order_id": client_order_id,
-        "type": "market",
-        "action": "buy",
-        "side": side,
-        "count": count,
-        "buy_max_cost": buy_max_cost,
+        "side": api_side,
+        "price": f"{yes_price:.4f}",
+        "count": f"{count:.2f}",
+        "time_in_force": "fill_or_kill",
+        "self_trade_prevention_type": "taker_at_cross",
     }
-
-    url = f"{config.KALSHI_API_BASE_URL}/portfolio/orders"
 
     try:
         from data.kalshi_auth import auth_headers
-        headers = auth_headers("POST", url)
-        resp = requests.post(url, json=payload, headers=headers, timeout=15)
+        headers = auth_headers("POST", _ORDERS_URL)
+        resp = requests.post(_ORDERS_URL, json=payload, headers=headers, timeout=15)
         resp.raise_for_status()
         data = resp.json()
         order_id = data.get("order", {}).get("order_id", client_order_id)
         logger.info(
-            "Kalshi order submitted: %s %s %d contracts @ %d¢  (order_id=%s)",
-            side.upper(), ticker, count, price_cents, order_id,
+            "Kalshi order submitted: %s %s %d contracts @ %.4f  (order_id=%s)",
+            api_side.upper(), ticker, count, yes_price, order_id,
         )
         return order_id, "submitted"
     except requests.HTTPError as e:
