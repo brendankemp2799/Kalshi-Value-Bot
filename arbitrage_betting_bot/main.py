@@ -300,7 +300,7 @@ def run_scan(
             )
         elif opp_id:
             # Live mode: execute first — only alert + notify if the order lands
-            order_id, exec_status, side = execute_trade(opp, sizing)
+            order_id, exec_status, side, failure_reason = execute_trade(opp, sizing)
             add_position(
                 sport=event.sport_key,
                 home_team=event.home_team,
@@ -322,6 +322,7 @@ def run_scan(
                 bet_type=opp.matched_event.kalshi_market.bet_type,
                 threshold=opp.matched_event.kalshi_market.threshold,
                 bookmakers_json=json.dumps(event.bookmakers),
+                failure_reason=failure_reason or None,
             )
             if exec_status == "submitted":
                 send_alert(opp, sizing, dry_run=False, paper=False)

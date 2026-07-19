@@ -37,7 +37,7 @@ def place_order(
     side: str,
     stake_dollars: float,
     market_price: float,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     """
     Place a Kalshi order using the v2 orders endpoint.
 
@@ -48,11 +48,13 @@ def place_order(
         market_price:  ask price of the side we're buying (0.0 – 1.0)
 
     Returns:
-        (order_id, execution_status) — status is "submitted" or "failed"
+        (order_id, execution_status, failure_reason)
+        execution_status: "submitted" | "failed"
+        failure_reason: empty string on success, human-readable error on failure
     """
     if not config.KALSHI_API_KEY:
         logger.error("KALSHI_API_KEY not set — cannot place order")
-        return "", "failed"
+        return "", "failed", "KALSHI_API_KEY not configured"
 
     # Contract count based on price of the side we're buying
     price = max(0.01, min(0.99, market_price))
@@ -88,11 +90,25 @@ def place_order(
             "Kalshi order submitted: %s %s %d contracts @ %.4f  (order_id=%s)",
             api_side.upper(), ticker, count, yes_price, order_id,
         )
-        return order_id, "submitted"
+        return order_id, "submitted", ""
     except requests.HTTPError as e:
+        code = e.response.status_code if e.response is not None else "?"
         body = e.response.text if e.response is not None else ""
-        logger.error("Kalshi order failed [%s]: %s", e.response.status_code if e.response else "?", body)
-        return client_order_id, "failed"
+        logger.error("Kalshi order failed [%s]: %s", code, body)
+        # Parse Kalshi error message if JSON, else use raw body (truncated)
+        reason = f"HTTP {code}"
+        try:
+            import json as _json
+            err = _json.loads(body)
+            if "message" in err:
+                reason = f"HTTP {code}: {err['message']}"
+            elif "error" in err:
+                reason = f"HTTP {code}: {err['error']}"
+        except Exception:
+            if body:
+                reason = f"HTTP {code}: {body[:200]}"
+        return client_order_id, "failed", reason
     except requests.RequestException as e:
+        reason = f"Network error: {str(e)[:200]}"
         logger.error("Kalshi order request error: %s", e)
-        return client_order_id, "failed"
+        return client_order_id, "failed", reason

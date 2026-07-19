@@ -138,7 +138,8 @@ def _migrate() -> None:
             ("commence_time",   "ALTER TABLE positions ADD COLUMN commence_time TEXT"),
             ("bet_type",        "ALTER TABLE positions ADD COLUMN bet_type TEXT NOT NULL DEFAULT 'h2h'"),
             ("threshold",       "ALTER TABLE positions ADD COLUMN threshold REAL"),
-            ("bookmakers_json", "ALTER TABLE positions ADD COLUMN bookmakers_json TEXT"),
+            ("bookmakers_json",  "ALTER TABLE positions ADD COLUMN bookmakers_json TEXT"),
+            ("failure_reason",   "ALTER TABLE positions ADD COLUMN failure_reason TEXT"),
         ]:
             if col not in existing:
                 conn.execute(ddl)
@@ -225,6 +226,7 @@ def add_position(
     bet_type: str = "h2h",
     threshold: float | None = None,
     bookmakers_json: str | None = None,
+    failure_reason: str | None = None,
 ) -> int:
     with get_connection() as conn:
         cur = conn.execute(
@@ -234,8 +236,8 @@ def add_position(
                  platform, stake, market_price, status, is_paper,
                  order_id, execution_status, market_ticker, side,
                  edge, bookmaker_count, consensus_std, kalshi_spread, commence_time,
-                 bet_type, threshold, bookmakers_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 bet_type, threshold, bookmakers_json, failure_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 datetime.utcnow().isoformat(),
@@ -253,6 +255,7 @@ def add_position(
                 bet_type,
                 threshold,
                 bookmakers_json,
+                failure_reason,
             ),
         )
         return cur.lastrowid

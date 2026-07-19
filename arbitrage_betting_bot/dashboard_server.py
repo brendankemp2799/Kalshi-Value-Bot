@@ -228,6 +228,9 @@ def build_data() -> dict:
         bet_type = p["bet_type"] if "bet_type" in p.keys() else "h2h"
         threshold = p["threshold"] if "threshold" in p.keys() else None
         if p["execution_status"] == "failed":
+            reason = None
+            if "failure_reason" in p.keys():
+                reason = p["failure_reason"]
             failed_rows.append({
                 "id": p["id"],
                 "team": p["team_name"],
@@ -240,6 +243,7 @@ def build_data() -> dict:
                 "price_pct": round(p["market_price"] * 100, 0),
                 "edge": round(p["edge"] * 100, 1) if p["edge"] is not None else None,
                 "entered": _fmt_dt(p["entered_at"]),
+                "reason": reason or "Unknown error",
             })
             continue
         stake = p["stake"]
@@ -1401,7 +1405,7 @@ function renderFailedTable(rows) {
   cnt.textContent = rows.length + ' order' + (rows.length === 1 ? '' : 's');
   t.innerHTML = `<thead><tr>
     <th>#</th><th>Bet On</th><th>Opponent</th><th>Sport</th><th>Type</th>
-    <th>Attempted At</th><th>Game Time</th><th>Stake</th><th>Entry Price</th><th>Edge</th>
+    <th>Attempted At</th><th>Game Time</th><th>Stake</th><th>Entry Price</th><th>Edge</th><th>Reason</th>
   </tr></thead><tbody>` + rows.map(r => {
     const edgeStr = r.edge != null ? `<span class="pos"><strong>${r.edge.toFixed(1)}%</strong></span>` : '<span style="color:var(--muted)">—</span>';
     const gameTime = r.game_time && r.game_time !== '—' ? r.game_time : '<span style="color:var(--muted)">—</span>';
@@ -1417,6 +1421,7 @@ function renderFailedTable(rows) {
       <td>$${r.stake.toFixed(2)}</td>
       <td>${r.price_pct}¢</td>
       <td>${edgeStr}</td>
+      <td style="color:var(--red);font-size:12px">${r.reason || '—'}</td>
     </tr>`;
   }).join('') + '</tbody>';
 }
