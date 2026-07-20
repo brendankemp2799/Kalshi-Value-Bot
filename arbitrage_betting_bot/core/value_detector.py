@@ -92,24 +92,19 @@ def _eval_edge(
     min_edge: float,
 ) -> tuple[float, bool] | None:
     """
-    Return (edge, mid_only) for the best achievable fill, or None if no edge.
+    Return (edge, maker_only) where edge is net of Kalshi taker fee, or None if no edge.
 
-    Kalshi charges 0% fee on ALL GTC orders — even those that immediately cross
-    existing liquidity. So both steps use 0% fee:
-      Step 1: GTC at mid price (ask - spread/2) — better price, slower fill
-      Step 2: GTC at ask price — same price as old IOC, but now also 0% fee
+    As of July 2026, Kalshi's retail API only supports IOC orders — GTC (resting
+    limit) orders were removed. All fills are taker fills, so the taker fee always
+    applies. maker_only is always False (kept for call-site compatibility).
 
-    mid_only=True means step-2 (GTC at ask) still lacks sufficient edge — the
-    executor must cancel and walk away if step 1 expires unfilled.
+    Taker fee formula: RATE × ask_price × (1 - ask_price) per dollar staked.
+    Net edge = consensus - ask_price - fee
     """
-    mid_price = max(0.01, ask_price - spread / 2.0)
-    mid_edge = consensus - mid_price   # GTC at mid, 0% fee
-    ask_edge = consensus - ask_price   # GTC at ask, 0% fee (Kalshi maker rule)
-
-    if mid_edge >= min_edge:
-        return mid_edge, ask_edge < min_edge  # mid_only when ask step would be sub-threshold
-    if ask_edge >= min_edge:
-        return ask_edge, False
+    fee = config.KALSHI_TAKER_FEE_RATE * ask_price * (1.0 - ask_price)
+    edge = consensus - ask_price - fee
+    if edge >= min_edge:
+        return edge, False
     return None
 
 

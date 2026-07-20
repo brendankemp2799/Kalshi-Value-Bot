@@ -226,7 +226,6 @@ def run_scan(
             market_price=opp.market_price,
             bankroll=bm.bankroll,
             consensus_std=opp.consensus_std,
-            kalshi_spread=opp.matched_event.kalshi_market.spread,
         )
         if not sizing.has_edge:
             logger.debug("Kelly says no edge for %s — skipping", opp.team_name)
