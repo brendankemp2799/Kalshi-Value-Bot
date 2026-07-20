@@ -49,6 +49,10 @@ _SPORT_TO_SERIES: dict[str, list[str]] = {
     "soccer_uefa_champs_league": ["KXUCLGAME", "KXUCLTOTAL", "KXUCLSPREAD"],
 }
 
+# Soccer H2H series have 3 outcomes (home/away/draw), so we keep each team's
+# market separately instead of deduplicating to one per event.
+SOCCER_GAME_SERIES: set[str] = {"KXMLSGAME", "KXEPLGAME", "KXUCLGAME"}
+
 # Maps Kalshi series prefix → bet type ("h2h" is default / omitted)
 _SERIES_TO_BET_TYPE: dict[str, str] = {
     "KXNBATOTAL":  "totals",
@@ -465,13 +469,19 @@ class KalshiClient:
             )
 
             if bet_type == "h2h":
-                # H2H deduplication: TIE markets separate, team markets one per event
+                # H2H deduplication: TIE markets separate, team markets per sport.
+                # Soccer has 3 outcomes (home/away/draw) — keep each team's market
+                # individually (keyed by ticker). Non-soccer (2-outcome) keeps one
+                # market per game; the detector evaluates both YES and NO sides.
                 if yes_team.lower() == "tie":
                     tie_key = f"tie:{event_ticker}"
                     if tie_key not in by_event:
                         by_event[tie_key] = km
                 else:
-                    if event_ticker not in by_event or (yes_team and not by_event[event_ticker].yes_team):
+                    series_pfx = event_ticker.split("-")[0].upper() if event_ticker else series_ticker.upper()
+                    if series_pfx in SOCCER_GAME_SERIES:
+                        by_event[km.ticker] = km  # keep all team markets
+                    elif event_ticker not in by_event or (yes_team and not by_event[event_ticker].yes_team):
                         by_event[event_ticker] = km
             else:
                 # Non-H2H: keep each market (each threshold/direction is distinct)

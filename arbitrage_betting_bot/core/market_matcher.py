@@ -231,13 +231,16 @@ def match_events(
     results: list[MatchedEvent] = []
     matched_tickers: set[str] = set()
 
-    # ── H2H matching (existing logic) ────────────────────────────────────────
+    # ── H2H matching ─────────────────────────────────────────────────────────
+    # Collect ALL qualifying Kalshi H2H markets per sportsbook event.
+    # Soccer has a separate market per team (home wins / away wins / draw), so
+    # keeping only the best-scoring market would drop the other team's market.
+    # Non-soccer (2-outcome) typically has one market per game; the detector
+    # evaluates both YES and NO sides from that single market.
     for event in odds_events:
         allowed_series = set(_SPORT_TO_SERIES.get(event.sport_key, []))
 
-        best_km: KalshiMarket | None = None
-        best_outcome: str = "yes"
-        best_score: int = 0
+        event_matches: list[tuple[KalshiMarket, str, int]] = []  # (market, outcome, score)
 
         for km in h2h_team_markets:
             event_series = km.event_ticker.split("-")[0] if km.event_ticker else ""
@@ -258,7 +261,7 @@ def match_events(
             home_score = _team_score(event.home_team, km.yes_team)
             away_score = _team_score(event.away_team, km.yes_team)
 
-            if home_score >= threshold and home_score > best_score:
+            if home_score >= threshold and home_score >= away_score:
                 if km.no_team:
                     cross = _team_score(event.away_team, km.no_team)
                     if cross < threshold:
@@ -267,11 +270,8 @@ def match_events(
                             km.ticker, event.away_team, km.no_team, cross,
                         )
                         continue
-                best_km = km
-                best_outcome = "yes"
-                best_score = home_score
-
-            if away_score >= threshold and away_score > best_score:
+                event_matches.append((km, "yes", home_score))
+            elif away_score >= threshold:
                 if km.no_team:
                     cross = _team_score(event.home_team, km.no_team)
                     if cross < threshold:
@@ -280,35 +280,30 @@ def match_events(
                             km.ticker, event.home_team, km.no_team, cross,
                         )
                         continue
-                best_km = km
-                best_outcome = "no"
-                best_score = away_score
+                event_matches.append((km, "no", away_score))
 
-        if best_km:
-            matched_tickers.add(best_km.ticker)
+        first_event_ticker: str | None = None
+        for km, outcome, score in sorted(event_matches, key=lambda x: -x[2]):
+            if km.ticker in matched_tickers:
+                continue
+            matched_tickers.add(km.ticker)
             results.append(
-                MatchedEvent(
-                    odds_event=event,
-                    kalshi_market=best_km,
-                    kalshi_outcome=best_outcome,
-                )
+                MatchedEvent(odds_event=event, kalshi_market=km, kalshi_outcome=outcome)
             )
+            if first_event_ticker is None:
+                first_event_ticker = km.event_ticker
             logger.debug(
                 "Matched H2H: %s vs %s → Kalshi %s (yes_team=%s, outcome=%s, score=%d)",
-                event.home_team, event.away_team,
-                best_km.ticker, best_km.yes_team, best_outcome, best_score,
+                event.home_team, event.away_team, km.ticker, km.yes_team, outcome, score,
             )
 
-            # For 3-way markets (soccer), also attach the TIE market if one exists
-            tie_km = tie_by_event.get(best_km.event_ticker)
+        # For 3-way markets (soccer), also attach the TIE market if one exists
+        if first_event_ticker:
+            tie_km = tie_by_event.get(first_event_ticker)
             if tie_km and tie_km.ticker not in matched_tickers:
                 matched_tickers.add(tie_km.ticker)
                 results.append(
-                    MatchedEvent(
-                        odds_event=event,
-                        kalshi_market=tie_km,
-                        kalshi_outcome="tie",
-                    )
+                    MatchedEvent(odds_event=event, kalshi_market=tie_km, kalshi_outcome="tie")
                 )
                 logger.debug(
                     "Matched TIE: %s vs %s → %s",
