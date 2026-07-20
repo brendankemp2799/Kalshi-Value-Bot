@@ -325,6 +325,7 @@ def build_data() -> dict:
             "open_count": open_count,
             "failed_count": failed_count,
             "total_bets": len(positions),
+        "bankroll": config.BANKROLL,
         },
         "api_credits": api_credits,
         "bankroll_chart": {"labels": bk_labels, "bankroll": bk_values, "at_risk": bk_at_risk},
@@ -1380,6 +1381,10 @@ function renderCards(s, mode, credits) {
     ? `<span class="${pnlClass(s.total_pnl)}">${s.total_pnl >= 0 ? '+' : ''}$${Math.abs(s.total_pnl).toFixed(2)}</span>`
     : '<span class="neutral">—</span>';
 
+  const pnlPctNote = (s.total_pnl !== null && s.bankroll > 0)
+    ? `<span class="${pnlClass(s.total_pnl)}" style="font-size:11px">${s.total_pnl >= 0 ? '+' : ''}${(s.total_pnl / s.bankroll * 100).toFixed(1)}% of $${s.bankroll.toLocaleString()}</span>`
+    : '';
+
   const wrVal = s.win_rate !== null
     ? `<span class="${s.win_rate >= 50 ? 'pos' : 'neg'}">${s.win_rate.toFixed(1)}%</span>`
     : '<span class="neutral">—</span>';
@@ -1403,7 +1408,7 @@ function renderCards(s, mode, credits) {
   }
 
   document.getElementById('cards').innerHTML = `
-    <div class="card"><div class="card-label">Total P&L</div><div class="card-value">${pnlVal}</div><div class="card-sub">${s.settled} settled bets</div></div>
+    <div class="card"><div class="card-label">Total P&L</div><div class="card-value">${pnlVal}</div><div class="card-sub">${s.settled} settled bets${pnlPctNote ? ' · ' + pnlPctNote : ''}</div></div>
     <div class="card"><div class="card-label">Win Rate</div><div class="card-value">${wrVal}</div><div class="card-sub">${s.wins}W / ${s.losses}L</div></div>
     <div class="card"><div class="card-label">ROI</div><div class="card-value">${roiVal}</div><div class="card-sub">on $${s.total_staked.toFixed(2)} staked</div></div>
     <div class="card"><div class="card-label">Open</div><div class="card-value"><span class="neutral">${s.open_count}</span></div><div class="card-sub">${s.total_bets} total bets</div></div>
