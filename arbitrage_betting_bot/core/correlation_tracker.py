@@ -25,34 +25,45 @@ class CorrelationTracker:
         self.bm = bankroll_manager
 
     def is_allowed(
-        self, opp: ValueOpportunity, recommended_dollars: float
+        self,
+        opp: ValueOpportunity,
+        recommended_dollars: float,
+        arb_game_keys: set[tuple[str, str]] | None = None,
     ) -> tuple[bool, str]:
         """
         Returns (allowed, reason).
         If allowed is False, reason explains why the bet was blocked.
+
+        arb_game_keys: set of (home_team, away_team) tuples for games where both
+        sides have positive edge in the current scan (true arbitrage). The same-game
+        and same-team correlation blocks are relaxed for these pairs so both legs
+        can be placed simultaneously.
         """
         event = opp.matched_event.odds_event
         home = event.home_team
         away = event.away_team
         sport = event.sport_key
+        is_arb = arb_game_keys is not None and (home, away) in arb_game_keys
 
         open_positions = db.get_open_positions(self.bm.is_paper)
 
-        # Rule 1: same game
-        for pos in open_positions:
-            if pos["home_team"] == home and pos["away_team"] == away:
-                return False, f"Already have an open position on {home} vs {away}"
+        # Rule 1: same game — skip for arb pairs (both legs placed in same scan)
+        if not is_arb:
+            for pos in open_positions:
+                if pos["home_team"] == home and pos["away_team"] == away:
+                    return False, f"Already have an open position on {home} vs {away}"
 
-        # Rule 2: same team
-        for pos in open_positions:
-            if pos["home_team"] in (home, away) or pos["away_team"] in (home, away):
-                return (
-                    False,
-                    f"Correlated bet blocked — already exposed to "
-                    f"{pos['home_team']} or {pos['away_team']}",
-                )
+        # Rule 2: same team — skip for arb pairs
+        if not is_arb:
+            for pos in open_positions:
+                if pos["home_team"] in (home, away) or pos["away_team"] in (home, away):
+                    return (
+                        False,
+                        f"Correlated bet blocked — already exposed to "
+                        f"{pos['home_team']} or {pos['away_team']}",
+                    )
 
-        # Rule 3: bankroll exposure
+        # Rule 3: bankroll exposure (always enforced, even for arb)
         allowed, reason = self.bm.can_add_exposure(recommended_dollars, sport)
         if not allowed:
             return False, reason

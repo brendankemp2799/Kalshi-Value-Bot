@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BetSizing:
-    full_kelly_fraction: float    # raw Kelly fraction (as % of bankroll)
-    fractional_kelly: float       # after applying KELLY_FRACTION multiplier
+    full_kelly_fraction: float    # raw Kelly fraction (as % of bankroll), fee-adjusted
+    fractional_kelly: float       # after applying KELLY_FRACTION and uncertainty discount
     recommended_dollars: float    # final recommended bet size
     bankroll: float
     has_edge: bool                # False = no bet recommended
@@ -48,18 +48,22 @@ def calculate_kelly(
     kelly_fraction: float = config.KELLY_FRACTION,
     max_bet_dollars: float = config.MAX_BET_DOLLARS,
     max_pct_bankroll: float = config.MAX_PCT_BANKROLL,
+    consensus_std: float = 0.0,
 ) -> BetSizing:
     """
     Calculate recommended bet size using fractional Kelly Criterion.
 
     consensus_prob: estimated true probability (from de-vigged sportsbooks)
     market_price:   the prediction market's current price (0-1)
+    consensus_std:  weighted std dev across books — used to discount bet size
+                    when books disagree (higher uncertainty = smaller fraction)
     """
     p = consensus_prob
     q = 1.0 - p
 
-    # b = decimal net odds (what you win per $1 wagered)
-    # At price 0.40, you risk $0.40 to win $0.60 → net odds = 0.60/0.40 = 1.5
+    # b_net = net odds per unit after Kalshi's settlement fee.
+    # Kalshi charges ~KALSHI_FEE_RATE of gross profit, so effective payout is
+    # (1 - market_price) * (1 - fee_rate) per dollar staked.
     if market_price <= 0 or market_price >= 1:
         return BetSizing(
             full_kelly_fraction=0.0,
@@ -69,14 +73,15 @@ def calculate_kelly(
             has_edge=False,
         )
 
-    b = (1.0 - market_price) / market_price  # net odds per unit
+    b_gross = (1.0 - market_price) / market_price
+    b = b_gross * (1.0 - config.KALSHI_FEE_RATE)  # fee-adjusted net odds
 
     full_kelly = (b * p - q) / b
 
     if full_kelly <= 0:
         logger.debug(
-            "Kelly ≤ 0 (%.4f) — no edge. consensus=%.3f market=%.3f",
-            full_kelly, consensus_prob, market_price,
+            "Kelly ≤ 0 (%.4f) after fee adjustment — no edge. consensus=%.3f market=%.3f fee_rate=%.2f",
+            full_kelly, consensus_prob, market_price, config.KALSHI_FEE_RATE,
         )
         return BetSizing(
             full_kelly_fraction=full_kelly,
@@ -86,7 +91,13 @@ def calculate_kelly(
             has_edge=False,
         )
 
-    frac_kelly = full_kelly * kelly_fraction
+    # Discount the Kelly fraction when books disagree.
+    # Each 0.01 of std_dev costs 20% of the base fraction, floored at 50%.
+    # e.g. std_dev=0.03 → factor=0.70; std_dev=0.05+ → factor=0.50
+    uncertainty_factor = max(0.5, 1.0 - (consensus_std / 0.05) * 0.5)
+    adjusted_fraction = kelly_fraction * uncertainty_factor
+
+    frac_kelly = full_kelly * adjusted_fraction
 
     # Dollar size before caps
     raw_dollars = frac_kelly * bankroll
@@ -97,8 +108,8 @@ def calculate_kelly(
     recommended = max(recommended, 0.0)
 
     logger.debug(
-        "Kelly: full=%.3f frac=%.3f raw=$%.2f capped=$%.2f",
-        full_kelly, frac_kelly, raw_dollars, recommended,
+        "Kelly: full=%.3f unc_factor=%.2f frac=%.3f raw=$%.2f capped=$%.2f (std=%.3f)",
+        full_kelly, uncertainty_factor, frac_kelly, raw_dollars, recommended, consensus_std,
     )
 
     return BetSizing(

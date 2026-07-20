@@ -202,6 +202,12 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
                  "spread_too_wide", reason)
             continue
 
+        if std_dev > 0.04 and book_count < 4:
+            reason = f"High uncertainty: std_dev {std_dev:.3f} with only {book_count} books"
+            _log(scan_log, me, team, None, consensus, book_count, std_dev, None,
+                 "high_uncertainty", reason)
+            continue
+
         if outcome == Outcome.HOME:
             kalshi_price = km.yes_ask if me.kalshi_outcome == "yes" else (1.0 - km.yes_bid) if km.yes_bid > 0 else km.no_price
         else:
@@ -253,6 +259,11 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log):
         reason = f"Kalshi spread {km.spread*100:.1f}¢ > max {config.MAX_KALSHI_SPREAD*100:.0f}¢"
         _log(scan_log, me, "Draw", None, consensus, book_count, std_dev, None,
              "spread_too_wide", reason)
+        return
+    if std_dev > 0.04 and book_count < 4:
+        reason = f"High uncertainty: std_dev {std_dev:.3f} with only {book_count} books"
+        _log(scan_log, me, "Draw", None, consensus, book_count, std_dev, None,
+             "high_uncertainty", reason)
         return
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
     edge = consensus - kalshi_price
@@ -323,6 +334,11 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
         reason = f"Kalshi spread {km.spread*100:.1f}¢ > max {config.MAX_KALSHI_SPREAD*100:.0f}¢"
         _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
              "spread_too_wide", reason)
+        return
+    if std_dev > 0.04 and book_count < 4:
+        reason = f"High uncertainty: std_dev {std_dev:.3f} with only {book_count} books"
+        _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
+             "high_uncertainty", reason)
         return
 
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
@@ -429,6 +445,11 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log):
         reason = f"Kalshi spread {km.spread*100:.1f}¢ > max {config.MAX_KALSHI_SPREAD*100:.0f}¢"
         _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
              "spread_too_wide", reason)
+        return
+    if std_dev > 0.04 and book_count < 4:
+        reason = f"High uncertainty: std_dev {std_dev:.3f} with only {book_count} books"
+        _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
+             "high_uncertainty", reason)
         return
 
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price

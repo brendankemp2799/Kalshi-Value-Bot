@@ -43,7 +43,7 @@ from execution.trade_executor import execute_trade, resolve_side
 from data.odds_fetcher import OddsAPIClient, _in_season
 from data.kalshi_client import KalshiClient
 from core.market_matcher import match_events
-from core.value_detector import detect_value
+from core.value_detector import detect_value, Outcome
 from core.kelly_calculator import calculate_kelly
 from core.bankroll_manager import BankrollManager
 from core.correlation_tracker import CorrelationTracker
@@ -108,6 +108,7 @@ def run_scan(
     paper: bool = False,
     _prefetched_odds: list | None = None,
     _prefetched_kalshi: list | None = None,
+    refresh_balance: bool = False,
 ) -> None:
     """
     Run one scan cycle.
@@ -118,6 +119,16 @@ def run_scan(
     """
     logger = logging.getLogger(__name__)
     mode = "PAPER" if paper else "DRY RUN" if dry_run else "LIVE"
+
+    # Refresh live Kalshi balance so Kelly sizing tracks actual account changes
+    if refresh_balance and not paper and not dry_run:
+        try:
+            live_balance = kalshi_client.fetch_balance()
+            if live_balance > 0:
+                bm.bankroll = live_balance
+        except Exception:
+            pass  # keep existing bankroll on failure
+
     logger.info("Starting scan... [%s] (bankroll: $%.2f)", mode, bm.bankroll)
 
     # 0. Check hard limits before spending any API credits
@@ -196,15 +207,17 @@ def run_scan(
     # 4a. Score every opportunity (requires Kelly, so must happen here not in value_detector)
     def _composite_score(opp: object, sz: object) -> float:
         """
-        Composite quality score for ranking opportunities.
-          edge             — primary signal (how mispriced is Kalshi vs consensus)
-          full_kelly       — math-backed confidence (higher = stronger edge relative to odds)
-          book_confidence  — reliability of consensus (capped at 1.0 for 10+ books)
-          agreement        — penalises high std dev across books (books disagreeing = noise)
+        Normalized weighted-sum scorer [0–1 range per component]:
+          edge      (40%) — primary signal; normalized to 20% gross edge = 1.0
+          kelly     (30%) — math confidence; normalized to 50% full-Kelly = 1.0
+          books     (15%) — consensus reliability; 8+ books = 1.0
+          agreement (15%) — low std dev across books; 0 std = 1.0, ≥5% std = 0
         """
-        book_confidence = min(opp.bookmaker_count / 10.0, 1.0)
-        agreement = max(0.0, 1.0 - opp.consensus_std * 10)
-        return opp.edge * sz.full_kelly_fraction * book_confidence * agreement
+        edge_norm  = min(opp.edge / 0.20, 1.0)
+        kelly_norm = min(sz.full_kelly_fraction / 0.50, 1.0)
+        book_norm  = min(opp.bookmaker_count / 8.0, 1.0)
+        agree_norm = max(0.0, 1.0 - opp.consensus_std / 0.05)
+        return 0.40 * edge_norm + 0.30 * kelly_norm + 0.15 * book_norm + 0.15 * agree_norm
 
     scored = []
     for opp in opportunities:
@@ -212,6 +225,7 @@ def run_scan(
             consensus_prob=opp.consensus_prob,
             market_price=opp.market_price,
             bankroll=bm.bankroll,
+            consensus_std=opp.consensus_std,
         )
         if not sizing.has_edge:
             logger.debug("Kelly says no edge for %s — skipping", opp.team_name)
@@ -233,6 +247,37 @@ def run_scan(
     # Sort by composite score descending — best opportunities first
     scored.sort(key=lambda t: t[0], reverse=True)
 
+    # Detect true arb pairs: both HOME and AWAY of the same non-soccer 2-way game
+    # appear in scored with positive edge. Both sides can be bet simultaneously for
+    # a near-guaranteed profit (YES_home_ask + YES_away_ask < 1.0).
+    arb_game_keys: set[tuple[str, str]] = set()
+    _game_outcomes: dict[tuple[str, str], set] = {}
+    for _, opp, _ in scored:
+        ev = opp.matched_event.odds_event
+        if "soccer" in ev.sport_key:
+            continue  # soccer is 3-way; can't guarantee payout on both YES sides
+        game_key = (ev.home_team, ev.away_team)
+        _game_outcomes.setdefault(game_key, set()).add(opp.outcome)
+    for game_key, outcomes in _game_outcomes.items():
+        if Outcome.HOME in outcomes and Outcome.AWAY in outcomes:
+            home_ask = next(
+                (opp.market_price for _, opp, _ in scored
+                 if opp.matched_event.odds_event.home_team == game_key[0]
+                 and opp.outcome == Outcome.HOME), None
+            )
+            away_ask = next(
+                (opp.market_price for _, opp, _ in scored
+                 if opp.matched_event.odds_event.home_team == game_key[0]
+                 and opp.outcome == Outcome.AWAY), None
+            )
+            if home_ask is not None and away_ask is not None and (home_ask + away_ask) < 1.0:
+                arb_game_keys.add(game_key)
+                logger.info(
+                    "[ARB] True arbitrage detected: %s vs %s "
+                    "(HOME ask=%.3f + AWAY ask=%.3f = %.3f < 1.0, guaranteed profit)",
+                    game_key[0], game_key[1], home_ask, away_ask, home_ask + away_ask,
+                )
+
     if not scored:
         if not dry_run:
             _finalise_scan_log(scan_log, scan_id)
@@ -243,7 +288,7 @@ def run_scan(
     # 4b. Iterate in ranked order; correlation/exposure checks unchanged
     alerted = 0
     for _score, opp, sizing in scored:
-        allowed, reason = tracker.is_allowed(opp, sizing.recommended_dollars)
+        allowed, reason = tracker.is_allowed(opp, sizing.recommended_dollars, arb_game_keys=arb_game_keys)
 
         event = opp.matched_event.odds_event
         opp_id = None
@@ -557,6 +602,7 @@ def _run_variable_loop(
                     odds_client, kalshi_client, bm, tracker,
                     dry_run=dry_run, paper=paper,
                     _prefetched_odds=all_events, _prefetched_kalshi=all_kalshi,
+                    refresh_balance=True,
                 )
             except Exception as e:
                 logger.error("Scan error (will retry next tick): %s", e, exc_info=True)

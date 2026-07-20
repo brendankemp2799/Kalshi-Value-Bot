@@ -54,5 +54,6 @@ def execute_trade(opp: ValueOpportunity, sizing: BetSizing) -> tuple[str, str, s
         side=side,
         stake_dollars=sizing.recommended_dollars,
         market_price=opp.market_price,
+        kalshi_spread=km.spread,
     )
     return order_id, status, side, reason, actual_stake

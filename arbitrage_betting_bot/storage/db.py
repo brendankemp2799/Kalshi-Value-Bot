@@ -11,8 +11,13 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import sys
+import os
 from datetime import date, datetime
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -348,7 +353,9 @@ def settle_position(position_id: int, result: str) -> float:
         stake: float = row["stake"]
         price: float = row["market_price"]
         if result == "won":
-            pnl = stake * (1.0 - price) / price
+            gross_profit = stake * (1.0 - price) / price
+            fee = gross_profit * config.KALSHI_FEE_RATE
+            pnl = gross_profit - fee
         elif result == "lost":
             pnl = -stake
         else:  # void

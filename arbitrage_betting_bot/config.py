@@ -80,8 +80,11 @@ FUZZY_MATCH_THRESHOLD: int = 80       # Minimum rapidfuzz score (0-100)
 # ── Opportunity Quality Filters ───────────────────────────────────────────────
 MIN_BOOKMAKER_COUNT: int = 2          # Consensus must come from ≥2 books
 MAX_KALSHI_SPREAD: float = 0.05       # Kalshi bid-ask spread ≤ 5¢ (ensures fillable price)
+LIMIT_ORDER_SPREAD_THRESHOLD: float = 0.02   # Try mid-price limit order when spread exceeds 2¢
+LIMIT_ORDER_TIMEOUT_SECONDS: int = 30        # Seconds to wait for limit order fill before falling back to IOC
 MIN_KALSHI_VOLUME: float = 0.0        # Disabled — spread filter (MAX_KALSHI_SPREAD) is sufficient liquidity gate
-MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.02"))  # Minimum edge to surface as a value opportunity (2% default)
+MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.04"))  # Minimum GROSS edge before fees (4% — net ~3% after Kalshi fee)
+KALSHI_FEE_RATE: float = 0.03         # Kalshi charges ~3% of gross profit at settlement
 
 # ── Notifications ─────────────────────────────────────────────────────────────
 PUSHOVER_USER_KEY: str  = os.getenv("PUSHOVER_USER_KEY", "")   # From pushover.net account page

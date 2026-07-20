@@ -25,12 +25,19 @@ from datetime import datetime, timezone
 
 import requests
 
+import time
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 
 logger = logging.getLogger(__name__)
+
+# Per-series market cache: series_ticker → (fetched_at_unix, raw_markets_list)
+# Used to serve stale data when a Kalshi API fetch fails, preventing the scan
+# from running with zero markets for that series and producing phantom edges.
+_series_cache: dict[str, tuple[float, list[dict]]] = {}
+_SERIES_CACHE_TTL = 900  # 15 minutes — discard stale cache older than this
 
 # Maps Odds API sport keys → list of Kalshi series tickers (H2H first, then non-H2H)
 _SPORT_TO_SERIES: dict[str, list[str]] = {
@@ -263,9 +270,16 @@ class KalshiClient:
         return None
 
     def _fetch_series_markets(self, series_ticker: str) -> list[dict]:
-        """Fetch all open markets for one Kalshi series (paginated)."""
+        """
+        Fetch all open markets for one Kalshi series (paginated).
+
+        On success, updates the module-level cache for this series.
+        On failure, returns cached data if it's within _SERIES_CACHE_TTL seconds,
+        preventing stale-price phantom edges from running against fresh sportsbook data.
+        """
         results: list[dict] = []
         cursor = None
+        fetch_ok = True
         while True:
             params: dict = {
                 "limit": 200,
@@ -279,15 +293,37 @@ class KalshiClient:
             except requests.HTTPError as e:
                 status = e.response.status_code if e.response is not None else "?"
                 logger.error("Kalshi HTTP %s fetching series %s", status, series_ticker)
+                fetch_ok = False
                 break
             except requests.RequestException as e:
                 logger.error("Kalshi request failed for series %s: %s", series_ticker, e)
+                fetch_ok = False
                 break
             results.extend(data.get("markets", []))
             cursor = data.get("cursor")
             if not cursor:
                 break
-        return results
+
+        if fetch_ok:
+            _series_cache[series_ticker] = (time.time(), results)
+            return results
+
+        # Fetch failed — try the cache before returning empty
+        cached = _series_cache.get(series_ticker)
+        if cached:
+            cached_at, cached_markets = cached
+            age = time.time() - cached_at
+            if age <= _SERIES_CACHE_TTL:
+                logger.warning(
+                    "Using cached Kalshi data for %s (%.0f s old) — live fetch failed",
+                    series_ticker, age,
+                )
+                return cached_markets
+            logger.warning(
+                "Kalshi cache for %s is stale (%.0f s > %d s TTL) — skipping series",
+                series_ticker, age, _SERIES_CACHE_TTL,
+            )
+        return []
 
     def fetch_sports_markets(
         self,
