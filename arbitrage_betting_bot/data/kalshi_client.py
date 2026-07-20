@@ -188,6 +188,63 @@ class KalshiClient:
             logger.warning("Could not fetch Kalshi balance (%s) — using config.BANKROLL", e)
         return config.BANKROLL
 
+    def fetch_total_deposited(self) -> float | None:
+        """
+        Derive total amount ever deposited by computing:
+          deposit = balance + open_position_cost + open_fees_paid - realized_pnl_from_kalshi
+
+        Uses Kalshi's /portfolio/balance, /portfolio/positions, and
+        /portfolio/settlements endpoints — all authoritative Kalshi data, no DB.
+        Returns None if any API call fails.
+        """
+        try:
+            from data.kalshi_auth import auth_headers
+
+            # 1. Current cash balance
+            bal_url = "https://external-api.kalshi.com/trade-api/v2/portfolio/balance"
+            headers = auth_headers("GET", bal_url)
+            bal_resp = requests.get(bal_url, headers=headers, timeout=10)
+            bal_resp.raise_for_status()
+            bal_data = bal_resp.json()
+            balance = float(bal_data.get("balance_dollars") or float(bal_data.get("balance", 0)) / 100.0)
+
+            # 2. Open position cost + fees (deducted from balance when trades were placed)
+            pos_url = "https://external-api.kalshi.com/trade-api/v2/portfolio/positions"
+            headers = auth_headers("GET", pos_url)
+            pos_resp = requests.get(pos_url, headers=headers, timeout=10)
+            pos_resp.raise_for_status()
+            market_positions = pos_resp.json().get("market_positions", [])
+            open_cost = sum(float(p.get("total_traded_dollars", 0)) for p in market_positions)
+            open_fees = sum(float(p.get("fees_paid_dollars", 0)) for p in market_positions)
+
+            # 3. Realized P&L from all settlements (paginated)
+            sett_url = "https://external-api.kalshi.com/trade-api/v2/portfolio/settlements"
+            realized_pnl = 0.0
+            cursor = None
+            while True:
+                params: dict = {"limit": 100}
+                if cursor:
+                    params["cursor"] = cursor
+                headers = auth_headers("GET", sett_url)
+                sett_resp = requests.get(sett_url, headers=headers, params=params, timeout=10)
+                sett_resp.raise_for_status()
+                sett_data = sett_resp.json()
+                for s in sett_data.get("settlements", []):
+                    realized_pnl += (
+                        float(s.get("revenue", 0)) / 100.0
+                        - float(s.get("yes_total_cost_dollars", 0))
+                        - float(s.get("no_total_cost_dollars", 0))
+                        - float(s.get("fee_cost", 0))
+                    )
+                cursor = sett_data.get("cursor", "")
+                if not cursor or not sett_data.get("settlements"):
+                    break
+
+            return round(balance + open_cost + open_fees - realized_pnl, 2)
+        except Exception as e:
+            logger.warning("Could not compute total deposited (%s)", e)
+            return None
+
     @staticmethod
     def _parse_price(raw: dict, field_dollars: str, field_cents: str) -> float | None:
         """Parse a price from dollar string or cents integer, returning 0.0–1.0."""

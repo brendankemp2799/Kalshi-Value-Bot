@@ -144,7 +144,6 @@ def build_data() -> dict:
     # ── Summary stats ────────────────────────────────────────────────────────
     total_staked = 0.0
     total_pnl = 0.0
-    open_stakes = 0.0
     wins = losses = settled = open_count = failed_count = 0
     by_sport: dict[str, dict] = defaultdict(
         lambda: {"staked": 0.0, "pnl": 0.0, "wins": 0, "losses": 0, "open": 0}
@@ -161,7 +160,6 @@ def build_data() -> dict:
 
         if p["status"] == "open":
             open_count += 1
-            open_stakes += stake
             by_sport[sport]["open"] += 1
         else:
             pnl = p["pnl"]
@@ -315,11 +313,9 @@ def build_data() -> dict:
             "recorded_at":    _fmt_dt(credits_row["recorded_at"]),
         }
 
-    # Infer total deposited: balance + open_stakes - realized_pnl = total_deposited
-    # This holds because: balance + open_stakes = deposited + realized_pnl at all times
+    # Compute total deposited from Kalshi's own API data (balance + open costs + fees - settled pnl)
     try:
-        current_balance = KalshiClient().fetch_balance()
-        total_deposited = round(current_balance + open_stakes - total_pnl, 2)
+        total_deposited = KalshiClient().fetch_total_deposited()
     except Exception:
         total_deposited = None
 
