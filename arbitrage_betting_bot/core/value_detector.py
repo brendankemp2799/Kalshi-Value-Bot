@@ -225,7 +225,8 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
             else:
                 kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
 
-        edge = consensus - kalshi_price
+        gross_edge = consensus - kalshi_price
+        edge = gross_edge - config.KALSHI_TAKER_FEE_RATE * kalshi_price * (1.0 - kalshi_price)
 
         if edge >= min_edge:
             opportunities.append(ValueOpportunity(
@@ -236,10 +237,10 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
             ))
             _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
                  edge, "value", "Edge found — bet placed")
-            logger.debug("VALUE H2H: %s — edge %.1f%%  (consensus %.1f%% vs price %.1f%%, books=%d, std=%.3f)",
+            logger.debug("VALUE H2H: %s — edge %.1f%% net  (consensus %.1f%% vs price %.1f%%, books=%d, std=%.3f)",
                         team, edge*100, consensus*100, kalshi_price*100, book_count, std_dev)
         else:
-            reason = f"Edge {edge*100:.1f}% below minimum {min_edge*100:.0f}%"
+            reason = f"Edge {edge*100:.1f}% net below minimum {min_edge*100:.0f}%"
             _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
                  edge, "no_edge", reason)
 
@@ -266,7 +267,8 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log):
              "high_uncertainty", reason)
         return
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
-    edge = consensus - kalshi_price
+    gross_edge = consensus - kalshi_price
+    edge = gross_edge - config.KALSHI_TAKER_FEE_RATE * kalshi_price * (1.0 - kalshi_price)
     if edge >= min_edge:
         opportunities.append(ValueOpportunity(
             matched_event=me, outcome=Outcome.DRAW, team_name="Draw",
@@ -276,10 +278,10 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log):
         ))
         _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
              edge, "value", "Edge found — bet placed")
-        logger.debug("VALUE DRAW: %s vs %s — edge %.1f%%",
+        logger.debug("VALUE DRAW: %s vs %s — edge %.1f%% net",
                     event.home_team, event.away_team, edge*100)
     else:
-        reason = f"Edge {edge*100:.1f}% below minimum {min_edge*100:.0f}%"
+        reason = f"Edge {edge*100:.1f}% net below minimum {min_edge*100:.0f}%"
         _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
              edge, "no_edge", reason)
 
@@ -342,7 +344,8 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
         return
 
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
-    edge = consensus - kalshi_price
+    gross_edge = consensus - kalshi_price
+    edge = gross_edge - config.KALSHI_TAKER_FEE_RATE * kalshi_price * (1.0 - kalshi_price)
 
     if edge >= min_edge:
         opportunities.append(ValueOpportunity(
@@ -353,10 +356,10 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
         ))
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              edge, "value", "Edge found — bet placed")
-        logger.debug("VALUE TOTALS: %s (%s vs %s) — edge %.1f%%",
+        logger.debug("VALUE TOTALS: %s (%s vs %s) — edge %.1f%% net",
                     label, event.home_team, event.away_team, edge*100)
     else:
-        reason = f"Edge {edge*100:.1f}% below minimum {min_edge*100:.0f}%"
+        reason = f"Edge {edge*100:.1f}% net below minimum {min_edge*100:.0f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              edge, "no_edge", reason)
 
@@ -370,7 +373,8 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
         no_label = f"Under {km.threshold}"
         no_consensus = 1.0 - consensus
         no_price = (1.0 - km.yes_bid) if km.yes_bid > 0 else (1.0 - km.yes_price)
-        no_edge = no_consensus - no_price
+        no_gross_edge = no_consensus - no_price
+        no_edge = no_gross_edge - config.KALSHI_TAKER_FEE_RATE * no_price * (1.0 - no_price)
 
         if no_edge >= min_edge:
             opportunities.append(ValueOpportunity(
@@ -381,10 +385,10 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
             ))
             _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
                  no_edge, "value", "Edge found on NO side — bet placed")
-            logger.debug("VALUE TOTALS (NO/Under): %s (%s vs %s) — edge %.1f%%",
+            logger.debug("VALUE TOTALS (NO/Under): %s (%s vs %s) — edge %.1f%% net",
                         no_label, event.home_team, event.away_team, no_edge*100)
         else:
-            reason = f"Edge {no_edge*100:.1f}% below minimum {min_edge*100:.0f}%"
+            reason = f"Edge {no_edge*100:.1f}% net below minimum {min_edge*100:.0f}%"
             _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
                  no_edge, "no_edge", reason)
 
@@ -453,7 +457,8 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log):
         return
 
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
-    edge = consensus - kalshi_price
+    gross_edge = consensus - kalshi_price
+    edge = gross_edge - config.KALSHI_TAKER_FEE_RATE * kalshi_price * (1.0 - kalshi_price)
 
     if edge >= min_edge:
         opportunities.append(ValueOpportunity(
@@ -464,10 +469,10 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log):
         ))
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              edge, "value", "Edge found — bet placed")
-        logger.debug("VALUE SPREAD: %s (%s vs %s) — edge %.1f%%",
+        logger.debug("VALUE SPREAD: %s (%s vs %s) — edge %.1f%% net",
                     label, event.home_team, event.away_team, edge*100)
     else:
-        reason = f"Edge {edge*100:.1f}% below minimum {min_edge*100:.0f}%"
+        reason = f"Edge {edge*100:.1f}% net below minimum {min_edge*100:.0f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              edge, "no_edge", reason)
 

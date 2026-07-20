@@ -83,7 +83,7 @@ MAX_KALSHI_SPREAD: float = 0.05       # Kalshi bid-ask spread ≤ 5¢ (ensures f
 LIMIT_ORDER_SPREAD_THRESHOLD: float = 0.02   # Try mid-price limit order when spread exceeds 2¢
 LIMIT_ORDER_TIMEOUT_SECONDS: int = 30        # Seconds to wait for limit order fill before falling back to IOC
 MIN_KALSHI_VOLUME: float = 0.0        # Disabled — spread filter (MAX_KALSHI_SPREAD) is sufficient liquidity gate
-MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.02"))  # Minimum GROSS edge before fees
+MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.02"))  # Minimum NET edge after Kalshi taker fee
 # Kalshi settlement fee: quadratic in price — fee = RATE × price × (1-price) × contracts
 # Taker (IOC fills): 7¢ per contract at max (price=0.5); simplifies to RATE×(1-price)×stake
 # Maker (limit fills): no fee currently charged
