@@ -248,10 +248,10 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
 
         result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
         if result is None:
-            mid = max(0.01, kalshi_price - km.spread / 2.0)
-            reason = f"No edge at maker ({(consensus-mid)*100:.1f}¢) or taker price"
+            best_edge = consensus - max(0.01, kalshi_price - km.spread / 2.0)
+            reason = f"Edge {best_edge*100:.1f}% net below minimum {min_edge*100:.0f}%"
             _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
-                 None, "no_edge", reason)
+                 best_edge, "no_edge", reason)
             continue
         edge, maker_only = result
         opportunities.append(ValueOpportunity(
@@ -291,9 +291,10 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log):
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
     result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if result is None:
-        reason = f"No edge at maker or taker price"
+        best_edge = consensus - max(0.01, kalshi_price - km.spread / 2.0)
+        reason = f"Edge {best_edge*100:.1f}% net below minimum {min_edge*100:.0f}%"
         _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
-             None, "no_edge", reason)
+             best_edge, "no_edge", reason)
         return
     edge, maker_only = result
     opportunities.append(ValueOpportunity(
@@ -369,9 +370,10 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
     result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if result is None:
-        reason = f"No edge at maker or taker price"
+        best_edge = consensus - max(0.01, kalshi_price - km.spread / 2.0)
+        reason = f"Edge {best_edge*100:.1f}% net below minimum {min_edge*100:.0f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-             None, "no_edge", reason)
+             best_edge, "no_edge", reason)
     else:
         edge, maker_only = result
         opportunities.append(ValueOpportunity(
@@ -398,9 +400,10 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
         no_price = (1.0 - km.yes_bid) if km.yes_bid > 0 else (1.0 - km.yes_price)
         no_result = _eval_edge(no_consensus, no_price, km.spread, min_edge)
         if no_result is None:
-            reason = f"No edge at maker or taker price"
+            no_best = no_consensus - max(0.01, no_price - km.spread / 2.0)
+            reason = f"Edge {no_best*100:.1f}% net below minimum {min_edge*100:.0f}%"
             _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
-                 None, "no_edge", reason)
+                 no_best, "no_edge", reason)
         else:
             no_edge, no_maker_only = no_result
             opportunities.append(ValueOpportunity(
@@ -482,9 +485,10 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log):
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
     result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if result is None:
-        reason = f"No edge at maker or taker price"
+        best_edge = consensus - max(0.01, kalshi_price - km.spread / 2.0)
+        reason = f"Edge {best_edge*100:.1f}% net below minimum {min_edge*100:.0f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-             None, "no_edge", reason)
+             best_edge, "no_edge", reason)
         return
     edge, maker_only = result
     opportunities.append(ValueOpportunity(
