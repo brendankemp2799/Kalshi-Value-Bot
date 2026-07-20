@@ -122,6 +122,7 @@ def _log(
     edge: float | None,
     status: str,
     reason: str,
+    maker_only: bool = False,
 ) -> None:
     """Append one candidate record to scan_log if provided."""
     if scan_log is None:
@@ -129,6 +130,10 @@ def _log(
     import json as _json
     km = me.kalshi_market
     event = me.odds_event
+    limit_price = (
+        round(max(0.01, kalshi_price - km.spread / 2.0), 4)
+        if kalshi_price is not None else None
+    )
     scan_log.append({
         "scanned_at":      "",          # filled in by caller (main.py)
         "sport":           event.sport_key,
@@ -141,12 +146,14 @@ def _log(
         "kalshi_spread":   round(km.spread, 4),
         "kalshi_volume":   round(km.volume, 0),
         "kalshi_price":    round(kalshi_price, 4) if kalshi_price is not None else None,
+        "limit_price":     limit_price,
         "consensus_prob":  round(consensus_prob, 4) if consensus_prob is not None else None,
         "bookmaker_count": bookmaker_count,
         "consensus_std":   round(consensus_std, 6),
         "edge":            round(edge, 4) if edge is not None else None,
         "status":          status,
         "reason":          reason,
+        "maker_only":      1 if maker_only else 0,
         "commence_time":   event.commence_time.isoformat(),
         "bookmakers_json": _json.dumps(event.bookmakers),
     })
@@ -262,7 +269,7 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
             maker_only=maker_only,
         ))
         _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
-             edge, "value", "Edge found — bet placed")
+             edge, "value", "Edge found — bet placed", maker_only=maker_only)
         logger.debug("VALUE H2H: %s — edge %.1f%% net  (consensus %.1f%% vs price %.1f%%, maker_only=%s, books=%d)",
                     team, edge*100, consensus*100, kalshi_price*100, maker_only, book_count)
 
@@ -305,7 +312,7 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log):
         maker_only=maker_only,
     ))
     _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
-         edge, "value", "Edge found — bet placed")
+         edge, "value", "Edge found — bet placed", maker_only=maker_only)
     logger.debug("VALUE DRAW: %s vs %s — edge %.1f%% net (maker_only=%s)",
                 event.home_team, event.away_team, edge*100, maker_only)
 
@@ -384,7 +391,7 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
             maker_only=maker_only,
         ))
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-             edge, "value", "Edge found — bet placed")
+             edge, "value", "Edge found — bet placed", maker_only=maker_only)
         logger.debug("VALUE TOTALS: %s (%s vs %s) — edge %.1f%% net (maker_only=%s)",
                     label, event.home_team, event.away_team, edge*100, maker_only)
 
@@ -414,7 +421,7 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
                 maker_only=no_maker_only,
             ))
             _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
-                 no_edge, "value", "Edge found on NO side — bet placed")
+                 no_edge, "value", "Edge found on NO side — bet placed", maker_only=no_maker_only)
             logger.debug("VALUE TOTALS (NO/Under): %s (%s vs %s) — edge %.1f%% net (maker_only=%s)",
                         no_label, event.home_team, event.away_team, no_edge*100, no_maker_only)
 
@@ -499,7 +506,7 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log):
         maker_only=maker_only,
     ))
     _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-         edge, "value", "Edge found — bet placed")
+         edge, "value", "Edge found — bet placed", maker_only=maker_only)
     logger.debug("VALUE SPREAD: %s (%s vs %s) — edge %.1f%% net (maker_only=%s)",
                 label, event.home_team, event.away_team, edge*100, maker_only)
 

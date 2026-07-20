@@ -575,12 +575,14 @@ def scan_results():
             "threshold":   threshold,
             "ticker":      r["kalshi_ticker"] or "",
             "price":       round(r["kalshi_price"] * 100, 1) if r["kalshi_price"] is not None else None,
+            "limit_price": round(r["limit_price"] * 100, 1) if r.get("limit_price") is not None else None,
             "consensus":   round(r["consensus_prob"] * 100, 1) if r["consensus_prob"] is not None else None,
             "edge":        round(r["edge"] * 100, 1) if r["edge"] is not None else None,
             "books":       r["bookmaker_count"],
             "spread":      round(r["kalshi_spread"] * 100, 1) if r["kalshi_spread"] is not None else None,
             "volume":      int(r["kalshi_volume"]) if r["kalshi_volume"] is not None else None,
             "status":      r["status"],
+            "maker_only":  bool(r.get("maker_only")),
             "reason":      r["reason"] or "",
             "game_time":   _fmt_dt(r["commence_time"]),
         })
@@ -718,13 +720,15 @@ SCAN_TEMPLATE = """<!DOCTYPE html>
       <option value="2">Bet</option>
       <option value="3">Type</option>
       <option value="4">Game Time</option>
-      <option value="5">Kalshi Price</option>
-      <option value="6">Consensus</option>
-      <option value="7">Edge</option>
-      <option value="8">Books</option>
-      <option value="9">Spread</option>
-      <option value="10">Status</option>
-      <option value="11">Reason</option>
+      <option value="5">Ask Price</option>
+      <option value="6">Limit Price</option>
+      <option value="7">Consensus</option>
+      <option value="8">Edge</option>
+      <option value="9">Books</option>
+      <option value="10">Spread</option>
+      <option value="11">Order</option>
+      <option value="12">Status</option>
+      <option value="13">Reason</option>
     </select>
     <span class="visible-count" id="visible-count"></span>
   </div>
@@ -746,12 +750,12 @@ SCAN_TEMPLATE = """<!DOCTYPE html>
       <table id="scan-table">
         <thead><tr>
           <th>Sport</th><th>Matchup</th><th>Bet</th><th>Type</th>
-          <th>Game Time</th><th>Kalshi Price</th><th>Consensus</th>
-          <th>Edge</th><th>Books</th><th>Spread</th><th>Status</th><th>Reason</th>
+          <th>Game Time</th><th>Ask Price</th><th>Limit Price</th><th>Consensus</th>
+          <th>Edge</th><th>Books</th><th>Spread</th><th>Order</th><th>Status</th><th>Reason</th>
         </tr></thead>
         <tbody id="scan-body">
           {% if not entries %}
-          <tr><td colspan="12" class="empty">No scan data yet — run the bot first.</td></tr>
+          <tr><td colspan="14" class="empty">No scan data yet — run the bot first.</td></tr>
           {% else %}
           {% for r in entries %}
           <tr data-status="{{ r.status }}">
@@ -760,7 +764,8 @@ SCAN_TEMPLATE = """<!DOCTYPE html>
             <td data-label="Bet"><a href="/scan/detail/{{ r.id }}" style="color:var(--text);text-decoration:none"><strong>{{ r.team }}</strong> <span style="font-size:10px;color:var(--blue)">↗</span></a></td>
             <td data-label="Type"><span style="color:var(--blue)">{{ r.bet_type }}</span></td>
             <td data-label="Game Time" style="color:var(--muted)">{{ r.game_time }}</td>
-            <td data-label="Price">{% if r.price is not none %}{{ r.price }}¢{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td data-label="Ask Price">{% if r.price is not none %}{{ r.price }}¢{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td data-label="Limit Price">{% if r.limit_price is not none %}<span style="color:var(--blue)">{{ r.limit_price }}¢</span>{% else %}<span class="muted">—</span>{% endif %}</td>
             <td data-label="Consensus">{% if r.consensus is not none %}<strong>{{ r.consensus }}%</strong>{% else %}<span class="muted">—</span>{% endif %}</td>
             <td data-label="Edge">
               {% if r.edge is not none %}
@@ -769,6 +774,12 @@ SCAN_TEMPLATE = """<!DOCTYPE html>
             </td>
             <td data-label="Books">{% if r.books is not none %}{{ r.books }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td data-label="Spread">{% if r.spread is not none %}{{ r.spread }}¢{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td data-label="Order">
+              {% if r.status == 'value' %}
+                {% if r.maker_only %}<span class="badge" style="background:rgba(234,179,8,0.15);color:#eab308;font-size:10px">LIMIT ONLY</span>
+                {% else %}<span class="badge" style="background:rgba(59,130,246,0.15);color:var(--blue);font-size:10px">LIMIT→IOC</span>{% endif %}
+              {% else %}<span class="muted">—</span>{% endif %}
+            </td>
             <td data-label="Status"><span class="badge s-{{ r.status }}">{{ r.status.replace('_',' ').upper() }}</span></td>
             <td data-label="Reason" style="color:var(--muted);font-size:12px">{{ r.reason }}</td>
           </tr>

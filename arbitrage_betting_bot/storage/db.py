@@ -49,12 +49,14 @@ def init_db() -> None:
                 kalshi_spread   REAL,
                 kalshi_volume   REAL,
                 kalshi_price    REAL,
+                limit_price     REAL,
                 consensus_prob  REAL,
                 bookmaker_count INTEGER,
                 consensus_std   REAL,
                 edge            REAL,
                 status          TEXT NOT NULL,
                 reason          TEXT,
+                maker_only      INTEGER NOT NULL DEFAULT 0,
                 commence_time   TEXT,
                 bookmakers_json TEXT
             );
@@ -125,6 +127,8 @@ def _migrate() -> None:
         scan_existing = {row[1] for row in conn.execute("PRAGMA table_info(scan_log)").fetchall()}
         for col, ddl in [
             ("bookmakers_json", "ALTER TABLE scan_log ADD COLUMN bookmakers_json TEXT"),
+            ("limit_price",     "ALTER TABLE scan_log ADD COLUMN limit_price REAL"),
+            ("maker_only",      "ALTER TABLE scan_log ADD COLUMN maker_only INTEGER NOT NULL DEFAULT 0"),
         ]:
             if col not in scan_existing:
                 conn.execute(ddl)
@@ -409,13 +413,13 @@ def log_scan_results(scan_id: str, entries: list[dict]) -> None:
             INSERT INTO scan_log
                 (scan_id, scanned_at, sport, home_team, away_team, team_name,
                  bet_type, threshold, kalshi_ticker, kalshi_spread, kalshi_volume,
-                 kalshi_price, consensus_prob, bookmaker_count, consensus_std,
-                 edge, status, reason, commence_time, bookmakers_json)
+                 kalshi_price, limit_price, consensus_prob, bookmaker_count, consensus_std,
+                 edge, status, reason, maker_only, commence_time, bookmakers_json)
             VALUES
                 (:scan_id, :scanned_at, :sport, :home_team, :away_team, :team_name,
                  :bet_type, :threshold, :kalshi_ticker, :kalshi_spread, :kalshi_volume,
-                 :kalshi_price, :consensus_prob, :bookmaker_count, :consensus_std,
-                 :edge, :status, :reason, :commence_time, :bookmakers_json)
+                 :kalshi_price, :limit_price, :consensus_prob, :bookmaker_count, :consensus_std,
+                 :edge, :status, :reason, :maker_only, :commence_time, :bookmakers_json)
             """,
             [{**e, "scan_id": scan_id, "bookmakers_json": e.get("bookmakers_json")} for e in entries],
         )
