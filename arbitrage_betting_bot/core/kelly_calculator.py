@@ -49,22 +49,26 @@ def calculate_kelly(
     max_bet_dollars: float = config.MAX_BET_DOLLARS,
     max_pct_bankroll: float = config.MAX_PCT_BANKROLL,
     consensus_std: float = 0.0,
+    kalshi_spread: float = 0.0,
 ) -> BetSizing:
     """
     Calculate recommended bet size using fractional Kelly Criterion.
 
     consensus_prob: estimated true probability (from de-vigged sportsbooks)
     market_price:   the prediction market's ask price (0-1)
+    kalshi_spread:  bid-ask spread; Kelly is computed at mid price (0% maker fee)
     consensus_std:  weighted std dev across books — used to discount bet size
                     when books disagree (higher uncertainty = smaller fraction)
 
-    All Kalshi orders are IOC (taker) as of July 2026 — GTC removed from retail API.
-    Net odds account for the taker fee: b = b_gross × (1 - RATE × price).
+    All orders are GTC (0% maker fee). Kelly uses mid price = ask - spread/2.
     """
     p = consensus_prob
     q = 1.0 - p
 
-    if market_price <= 0 or market_price >= 1:
+    # GTC orders fill at mid price with 0% maker fee
+    effective_price = max(0.01, market_price - kalshi_spread / 2.0)
+
+    if effective_price <= 0 or effective_price >= 1:
         return BetSizing(
             full_kelly_fraction=0.0,
             fractional_kelly=0.0,
@@ -73,17 +77,15 @@ def calculate_kelly(
             has_edge=False,
         )
 
-    b_gross = (1.0 - market_price) / market_price
-    # Taker fee: RATE×price×(1-price) per contract = RATE×(1-price) per dollar staked
-    # Net odds per dollar = b_gross × (1 - RATE × price)
-    b = b_gross * (1.0 - config.KALSHI_TAKER_FEE_RATE * market_price)
+    b_gross = (1.0 - effective_price) / effective_price
+    b = b_gross  # 0% maker fee on all GTC orders
 
     full_kelly = (b * p - q) / b
 
     if full_kelly <= 0:
         logger.debug(
-            "Kelly ≤ 0 (%.4f) — no edge. consensus=%.3f market=%.3f taker_fee_rate=%.2f",
-            full_kelly, consensus_prob, market_price, config.KALSHI_TAKER_FEE_RATE,
+            "Kelly ≤ 0 (%.4f) — no edge. consensus=%.3f ask=%.3f mid=%.3f",
+            full_kelly, consensus_prob, market_price, effective_price,
         )
         return BetSizing(
             full_kelly_fraction=full_kelly,
@@ -110,8 +112,8 @@ def calculate_kelly(
     recommended = max(recommended, 0.0)
 
     logger.debug(
-        "Kelly: full=%.3f unc_factor=%.2f frac=%.3f raw=$%.2f capped=$%.2f (std=%.3f)",
-        full_kelly, uncertainty_factor, frac_kelly, raw_dollars, recommended, consensus_std,
+        "Kelly: full=%.3f unc_factor=%.2f frac=%.3f raw=$%.2f capped=$%.2f (std=%.3f mid=%.3f)",
+        full_kelly, uncertainty_factor, frac_kelly, raw_dollars, recommended, consensus_std, effective_price,
     )
 
     return BetSizing(
