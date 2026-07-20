@@ -44,6 +44,7 @@ class ValueOpportunity:
     market_url: str
     bookmaker_count: int
     consensus_std: float
+    maker_only: bool = False  # True when edge was evaluated at mid/maker price — skip IOC fallback
 
     @property
     def edge_pct(self) -> str:
@@ -209,12 +210,6 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
             continue
 
         if outcome == Outcome.HOME:
-            kalshi_price = km.yes_ask if me.kalshi_outcome == "yes" else (1.0 - km.yes_bid) if km.yes_bid > 0 else km.no_price
-        else:
-            kalshi_price = (1.0 - km.yes_bid) if me.kalshi_outcome == "yes" and km.yes_bid > 0 else km.yes_ask if me.kalshi_outcome != "yes" else km.no_price
-
-        # Recalculate cleanly
-        if outcome == Outcome.HOME:
             if me.kalshi_outcome == "yes":
                 kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
             else:
@@ -225,8 +220,18 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
             else:
                 kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
 
-        gross_edge = consensus - kalshi_price
-        edge = gross_edge - config.KALSHI_TAKER_FEE_RATE * kalshi_price * (1.0 - kalshi_price)
+        # When spread is wide enough to trigger a limit order, evaluate at mid price
+        # with the maker fee (currently 0%). The executor bids at mid, not at the ask.
+        use_limit = km.spread >= config.LIMIT_ORDER_SPREAD_THRESHOLD
+        if use_limit:
+            eval_price = max(0.01, kalshi_price - km.spread / 2.0)
+            fee_rate = config.KALSHI_MAKER_FEE_RATE
+        else:
+            eval_price = kalshi_price
+            fee_rate = config.KALSHI_TAKER_FEE_RATE
+
+        gross_edge = consensus - eval_price
+        edge = gross_edge - fee_rate * eval_price * (1.0 - eval_price)
 
         if edge >= min_edge:
             opportunities.append(ValueOpportunity(
@@ -234,11 +239,12 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
                 consensus_prob=consensus, market_price=kalshi_price, edge=edge,
                 market_url=_kalshi_url(km.ticker, km.event_ticker),
                 bookmaker_count=book_count, consensus_std=std_dev,
+                maker_only=use_limit,
             ))
             _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
                  edge, "value", "Edge found — bet placed")
             logger.debug("VALUE H2H: %s — edge %.1f%% net  (consensus %.1f%% vs price %.1f%%, books=%d, std=%.3f)",
-                        team, edge*100, consensus*100, kalshi_price*100, book_count, std_dev)
+                        team, edge*100, consensus*100, eval_price*100, book_count, std_dev)
         else:
             reason = f"Edge {edge*100:.1f}% net below minimum {min_edge*100:.0f}%"
             _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
@@ -267,14 +273,22 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log):
              "high_uncertainty", reason)
         return
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
-    gross_edge = consensus - kalshi_price
-    edge = gross_edge - config.KALSHI_TAKER_FEE_RATE * kalshi_price * (1.0 - kalshi_price)
+    use_limit = km.spread >= config.LIMIT_ORDER_SPREAD_THRESHOLD
+    if use_limit:
+        eval_price = max(0.01, kalshi_price - km.spread / 2.0)
+        fee_rate = config.KALSHI_MAKER_FEE_RATE
+    else:
+        eval_price = kalshi_price
+        fee_rate = config.KALSHI_TAKER_FEE_RATE
+    gross_edge = consensus - eval_price
+    edge = gross_edge - fee_rate * eval_price * (1.0 - eval_price)
     if edge >= min_edge:
         opportunities.append(ValueOpportunity(
             matched_event=me, outcome=Outcome.DRAW, team_name="Draw",
             consensus_prob=consensus, market_price=kalshi_price, edge=edge,
             market_url=_kalshi_url(km.ticker, km.event_ticker),
             bookmaker_count=book_count, consensus_std=std_dev,
+            maker_only=use_limit,
         ))
         _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
              edge, "value", "Edge found — bet placed")
@@ -344,8 +358,15 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
         return
 
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
-    gross_edge = consensus - kalshi_price
-    edge = gross_edge - config.KALSHI_TAKER_FEE_RATE * kalshi_price * (1.0 - kalshi_price)
+    use_limit = km.spread >= config.LIMIT_ORDER_SPREAD_THRESHOLD
+    if use_limit:
+        eval_price = max(0.01, kalshi_price - km.spread / 2.0)
+        fee_rate = config.KALSHI_MAKER_FEE_RATE
+    else:
+        eval_price = kalshi_price
+        fee_rate = config.KALSHI_TAKER_FEE_RATE
+    gross_edge = consensus - eval_price
+    edge = gross_edge - fee_rate * eval_price * (1.0 - eval_price)
 
     if edge >= min_edge:
         opportunities.append(ValueOpportunity(
@@ -353,6 +374,7 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
             consensus_prob=consensus, market_price=kalshi_price, edge=edge,
             market_url=_kalshi_url(km.ticker, km.event_ticker),
             bookmaker_count=book_count, consensus_std=std_dev,
+            maker_only=use_limit,
         ))
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              edge, "value", "Edge found — bet placed")
@@ -373,8 +395,14 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
         no_label = f"Under {km.threshold}"
         no_consensus = 1.0 - consensus
         no_price = (1.0 - km.yes_bid) if km.yes_bid > 0 else (1.0 - km.yes_price)
-        no_gross_edge = no_consensus - no_price
-        no_edge = no_gross_edge - config.KALSHI_TAKER_FEE_RATE * no_price * (1.0 - no_price)
+        if km.spread >= config.LIMIT_ORDER_SPREAD_THRESHOLD:
+            no_eval_price = min(0.99, no_price - km.spread / 2.0)
+            no_fee_rate = config.KALSHI_MAKER_FEE_RATE
+        else:
+            no_eval_price = no_price
+            no_fee_rate = config.KALSHI_TAKER_FEE_RATE
+        no_gross_edge = no_consensus - no_eval_price
+        no_edge = no_gross_edge - no_fee_rate * no_eval_price * (1.0 - no_eval_price)
 
         if no_edge >= min_edge:
             opportunities.append(ValueOpportunity(
@@ -382,6 +410,7 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
                 consensus_prob=no_consensus, market_price=no_price, edge=no_edge,
                 market_url=_kalshi_url(km.ticker, km.event_ticker),
                 bookmaker_count=book_count, consensus_std=std_dev,
+                maker_only=use_limit,
             ))
             _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
                  no_edge, "value", "Edge found on NO side — bet placed")
@@ -457,8 +486,15 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log):
         return
 
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
-    gross_edge = consensus - kalshi_price
-    edge = gross_edge - config.KALSHI_TAKER_FEE_RATE * kalshi_price * (1.0 - kalshi_price)
+    use_limit = km.spread >= config.LIMIT_ORDER_SPREAD_THRESHOLD
+    if use_limit:
+        eval_price = max(0.01, kalshi_price - km.spread / 2.0)
+        fee_rate = config.KALSHI_MAKER_FEE_RATE
+    else:
+        eval_price = kalshi_price
+        fee_rate = config.KALSHI_TAKER_FEE_RATE
+    gross_edge = consensus - eval_price
+    edge = gross_edge - fee_rate * eval_price * (1.0 - eval_price)
 
     if edge >= min_edge:
         opportunities.append(ValueOpportunity(
@@ -466,6 +502,7 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log):
             consensus_prob=consensus, market_price=kalshi_price, edge=edge,
             market_url=_kalshi_url(km.ticker, km.event_ticker),
             bookmaker_count=book_count, consensus_std=std_dev,
+            maker_only=use_limit,
         ))
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              edge, "value", "Edge found — bet placed")

@@ -20,6 +20,7 @@ import logging
 import math
 import time
 import uuid
+from datetime import datetime, timezone
 
 import requests
 
@@ -85,12 +86,29 @@ def _place_raw_order(
     return resp.json()
 
 
+def _limit_timeout(commence_time: datetime | None) -> int:
+    """Return the appropriate GTC limit-order timeout in seconds based on time to game."""
+    if commence_time is None:
+        return config.LIMIT_ORDER_TIMEOUT_DEFAULT_SECONDS
+    now = datetime.now(timezone.utc)
+    if commence_time.tzinfo is None:
+        commence_time = commence_time.replace(tzinfo=timezone.utc)
+    minutes_to_game = (commence_time - now).total_seconds() / 60.0
+    if minutes_to_game <= config.NEAR_GAME_THRESHOLD_MINUTES:
+        return config.LIMIT_ORDER_TIMEOUT_NEAR_GAME_SECONDS
+    if minutes_to_game <= config.PRE_GAME_THRESHOLD_HOURS * 60:
+        return config.LIMIT_ORDER_TIMEOUT_PRE_GAME_SECONDS
+    return config.LIMIT_ORDER_TIMEOUT_DEFAULT_SECONDS
+
+
 def place_order(
     ticker: str,
     side: str,
     stake_dollars: float,
     market_price: float,
     kalshi_spread: float = 0.0,
+    maker_only: bool = False,
+    commence_time: datetime | None = None,
 ) -> tuple[str, str, str, float, str]:
     """
     Place a Kalshi order using the v2 orders endpoint.
@@ -101,6 +119,8 @@ def place_order(
         stake_dollars:  dollar amount to wager
         market_price:   ask price of the side we're buying (0.0 – 1.0)
         kalshi_spread:  bid-ask spread in dollars (used to decide limit vs IOC)
+        maker_only:     if True, do not fall back to IOC when limit order expires unfilled
+        commence_time:  game start time (UTC) — used to compute adaptive limit timeout
 
     Returns:
         (order_id, execution_status, failure_reason, actual_stake, fill_type)
@@ -111,8 +131,10 @@ def place_order(
 
     Execution strategy:
         - If spread ≥ LIMIT_ORDER_SPREAD_THRESHOLD: post a GTC limit at mid price,
-          wait up to LIMIT_ORDER_TIMEOUT_SECONDS for fill, then cancel and fall back to IOC.
-        - Otherwise: place an IOC order at the ask (existing behaviour).
+          wait up to an adaptive timeout (based on time to game), then cancel.
+          If maker_only=True, stop here (no IOC fallback).
+          Otherwise fall back to IOC at the ask.
+        - Otherwise: place an IOC order at the ask.
     """
     if not config.KALSHI_API_KEY:
         logger.error("KALSHI_API_KEY not set — cannot place order")
@@ -134,6 +156,7 @@ def place_order(
     # ── Try limit order at mid price when spread is wide enough to save money ─
     use_limit = kalshi_spread >= config.LIMIT_ORDER_SPREAD_THRESHOLD
     if use_limit:
+        timeout = _limit_timeout(commence_time)
         client_order_id = str(uuid.uuid4())
         try:
             data = _place_raw_order(ticker, api_side, yes_price_mid, count, "gtc", client_order_id)
@@ -150,8 +173,8 @@ def place_order(
                 )
                 return order_id, "submitted", "", actual_stake, "maker"
 
-            # Poll for fill up to timeout
-            deadline = time.time() + config.LIMIT_ORDER_TIMEOUT_SECONDS
+            # Poll for fill up to adaptive timeout
+            deadline = time.time() + timeout
             while time.time() < deadline and filled < count:
                 time.sleep(5)
                 status = _get_order_status(order_id)
@@ -171,11 +194,15 @@ def place_order(
                 _cancel_order(order_id)
                 return order_id, "submitted", "", actual_stake, "maker"
 
-            # No fill — cancel and fall through to IOC at ask
+            # No fill — cancel limit order
             _cancel_order(order_id)
+            if maker_only:
+                reason = f"Limit order unfilled after {timeout}s — skipping IOC (maker-only opportunity)"
+                logger.info("Kalshi limit unfilled for %s — not falling back to IOC (maker_only)", ticker)
+                return order_id, "failed", reason, 0.0, ""
             logger.info(
                 "Kalshi limit order unfilled after %ds — falling back to IOC at ask for %s",
-                config.LIMIT_ORDER_TIMEOUT_SECONDS, ticker,
+                timeout, ticker,
             )
         except requests.HTTPError as e:
             code = e.response.status_code if e.response is not None else "?"
