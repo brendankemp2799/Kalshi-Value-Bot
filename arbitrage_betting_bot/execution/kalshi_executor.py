@@ -130,11 +130,11 @@ def place_order(
         fill_type: "taker" (IOC fill) | "maker" (limit fill) | "" on failure
 
     Execution strategy:
-        - If spread ≥ LIMIT_ORDER_SPREAD_THRESHOLD: post a GTC limit at mid price,
-          wait up to an adaptive timeout (based on time to game), then cancel.
-          If maker_only=True, stop here (no IOC fallback).
-          Otherwise fall back to IOC at the ask.
-        - Otherwise: place an IOC order at the ask.
+        Always posts a GTC limit at mid price first. Waits up to an adaptive
+        timeout (based on time to game), then cancels.
+        If maker_only=True: stops here — no IOC fallback (the edge only exists at
+        maker price; an IOC fill would be below threshold).
+        If maker_only=False: falls back to IOC at the ask if the limit expires.
     """
     if not config.KALSHI_API_KEY:
         logger.error("KALSHI_API_KEY not set — cannot place order")
@@ -153,62 +153,64 @@ def place_order(
         yes_price_ask = 1.0 - price
         yes_price_mid = min(0.99, yes_price_ask + kalshi_spread / 2.0)
 
-    # ── Try limit order at mid price when spread is wide enough to save money ─
-    use_limit = kalshi_spread >= config.LIMIT_ORDER_SPREAD_THRESHOLD
-    if use_limit:
-        timeout = _limit_timeout(commence_time)
-        client_order_id = str(uuid.uuid4())
-        try:
-            data = _place_raw_order(ticker, api_side, yes_price_mid, count, "gtc", client_order_id)
-            order = data.get("order", {})
-            order_id = order.get("order_id", client_order_id)
-            filled = float(order.get("filled_count", 0) or 0)
+    # ── Try limit order at mid price first — saves taker fee and gets better fill ─
+    timeout = _limit_timeout(commence_time)
+    client_order_id = str(uuid.uuid4())
+    limit_attempted = False
+    try:
+        data = _place_raw_order(ticker, api_side, yes_price_mid, count, "gtc", client_order_id)
+        limit_attempted = True
+        order = data.get("order", {})
+        order_id = order.get("order_id", client_order_id)
+        filled = float(order.get("filled_count", 0) or 0)
 
-            if filled >= count:
-                # Immediate full fill at mid price
-                actual_stake = round(filled * price, 2)
-                logger.info(
-                    "Kalshi limit fill (immediate): %s %s %g contracts @ %.4f mid  actual_stake=$%.2f",
-                    api_side.upper(), ticker, filled, yes_price_mid, actual_stake,
-                )
-                return order_id, "submitted", "", actual_stake, "maker"
-
-            # Poll for fill up to adaptive timeout
-            deadline = time.time() + timeout
-            while time.time() < deadline and filled < count:
-                time.sleep(5)
-                status = _get_order_status(order_id)
-                if status:
-                    filled = float(status.get("filled_count", 0) or 0)
-                    if filled >= count:
-                        break
-
-            if filled > 0:
-                # Partial or full fill achieved
-                actual_stake = round(filled * price, 2)
-                logger.info(
-                    "Kalshi limit fill: %s %s %g/%d contracts @ %.4f mid  actual_stake=$%.2f (order_id=%s)",
-                    api_side.upper(), ticker, filled, count, yes_price_mid, actual_stake, order_id,
-                )
-                # Cancel any remaining resting quantity
-                _cancel_order(order_id)
-                return order_id, "submitted", "", actual_stake, "maker"
-
-            # No fill — cancel limit order
-            _cancel_order(order_id)
-            if maker_only:
-                reason = f"Limit order unfilled after {timeout}s — skipping IOC (maker-only opportunity)"
-                logger.info("Kalshi limit unfilled for %s — not falling back to IOC (maker_only)", ticker)
-                return order_id, "failed", reason, 0.0, ""
+        if filled >= count:
+            actual_stake = round(filled * price, 2)
             logger.info(
-                "Kalshi limit order unfilled after %ds — falling back to IOC at ask for %s",
-                timeout, ticker,
+                "Kalshi limit fill (immediate): %s %s %g contracts @ %.4f mid  actual_stake=$%.2f",
+                api_side.upper(), ticker, filled, yes_price_mid, actual_stake,
             )
-        except requests.HTTPError as e:
-            code = e.response.status_code if e.response is not None else "?"
-            logger.warning("Kalshi limit order failed [%s] — falling back to IOC for %s", code, ticker)
-        except requests.RequestException as e:
-            logger.warning("Limit order request error — falling back to IOC for %s: %s", ticker, e)
+            return order_id, "submitted", "", actual_stake, "maker"
+
+        # Poll for fill up to adaptive timeout
+        deadline = time.time() + timeout
+        while time.time() < deadline and filled < count:
+            time.sleep(5)
+            status = _get_order_status(order_id)
+            if status:
+                filled = float(status.get("filled_count", 0) or 0)
+                if filled >= count:
+                    break
+
+        if filled > 0:
+            actual_stake = round(filled * price, 2)
+            logger.info(
+                "Kalshi limit fill: %s %s %g/%d contracts @ %.4f mid  actual_stake=$%.2f (order_id=%s)",
+                api_side.upper(), ticker, filled, count, yes_price_mid, actual_stake, order_id,
+            )
+            _cancel_order(order_id)
+            return order_id, "submitted", "", actual_stake, "maker"
+
+        _cancel_order(order_id)
+        if maker_only:
+            reason = f"Limit order unfilled after {timeout}s — skipping IOC (maker-only opportunity)"
+            logger.info("Kalshi limit unfilled for %s — not falling back to IOC (maker_only)", ticker)
+            return order_id, "failed", reason, 0.0, ""
+        logger.info(
+            "Kalshi limit order unfilled after %ds — falling back to IOC at ask for %s",
+            timeout, ticker,
+        )
+    except requests.HTTPError as e:
+        code = e.response.status_code if e.response is not None else "?"
+        logger.warning("Kalshi limit order failed [%s] — %s to IOC for %s",
+                       code, "not falling back" if maker_only else "falling back", ticker)
+        if maker_only:
+            return client_order_id, "failed", f"Limit order HTTP {code} — maker_only, no IOC fallback", 0.0, ""
+    except requests.RequestException as e:
+        logger.warning("Limit order request error — %s for %s: %s",
+                       "not falling back to IOC" if maker_only else "falling back to IOC", ticker, e)
+        if maker_only:
+            return client_order_id, "failed", f"Limit order network error — maker_only, no IOC fallback", 0.0, ""
 
     # ── IOC at ask (market order equivalent) ─────────────────────────────────
     client_order_id = str(uuid.uuid4())

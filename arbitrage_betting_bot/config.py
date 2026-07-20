@@ -80,7 +80,6 @@ FUZZY_MATCH_THRESHOLD: int = 80       # Minimum rapidfuzz score (0-100)
 # ── Opportunity Quality Filters ───────────────────────────────────────────────
 MIN_BOOKMAKER_COUNT: int = 2          # Consensus must come from ≥2 books
 MAX_KALSHI_SPREAD: float = 0.05       # Kalshi bid-ask spread ≤ 5¢ (ensures fillable price)
-LIMIT_ORDER_SPREAD_THRESHOLD: float = 0.02   # Try mid-price limit order when spread exceeds 2¢
 # Adaptive limit-order timeout: how long to wait for a maker fill before giving up.
 # Aligns with polling tiers — longer when the game is far away (market is stable),
 # shorter near tip-off (lines shift fast and a stale limit is a risk).
