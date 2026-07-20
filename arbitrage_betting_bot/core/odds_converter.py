@@ -162,27 +162,65 @@ def _names_match(a: str, b: str) -> bool:
 #
 # Any book not listed falls back to DEFAULT_BOOK_WEIGHT.
 BOOK_WEIGHTS: dict[str, float] = {
-    # Sharp-leaning — lowest vig, attract professional money
+    # ── Sharpest global books ─────────────────────────────────────────────────
+    "pinnacle":       1.0,   # gold standard — tightest vig, most accurate line
+    # Betting exchanges (prices set by market, not a book — highly efficient)
+    "betfair_ex_eu":  0.9,
+    "betfair_ex_uk":  0.9,
+    "matchbook":      0.85,
+    "smarkets":       0.85,
+    # Sharp-leaning US/offshore
     "lowvig":         0.9,
     "betonlineag":    0.8,
+    "betanysports":   0.7,   # reduced vig, sharp-leaning
+    "marathonbet":    0.75,  # sharp EU offshore book
     "betus":          0.7,
-    # Large US retail — very accurate due to scale and competition
+    # ── Large US retail ───────────────────────────────────────────────────────
     "draftkings":     0.7,
     "fanduel":        0.7,
-    "espnbet":        0.65,  # Penn/ESPN Bet, competitive pricing
-    # Mid-tier US retail
+    "espnbet":        0.65,
+    # ── Mid-tier US retail ────────────────────────────────────────────────────
     "betmgm":         0.55,
     "caesars":        0.55,
-    "williamhill_us": 0.55,  # same as Caesars
+    "williamhill_us": 0.55,
+    "williamhill":    0.55,
     "betrivers":      0.5,
     "unibet_us":      0.5,
     "superbook":      0.5,
     "wynnbet":        0.45,
     "betway":         0.45,
-    # Offshore / softer lines
+    # ── EU / UK sportsbooks ───────────────────────────────────────────────────
+    "winamax_fr":     0.65,  # large French book, competitive pricing
+    "winamax_de":     0.65,
+    "coolbet":        0.6,
+    "betsson":        0.55,
+    "betclic_fr":     0.5,
+    "betfair_sb_uk":  0.5,   # Betfair sportsbook (not the exchange — softer)
+    "coral":          0.5,
+    "ladbrokes_uk":   0.5,
+    "paddypower":     0.5,
+    "tipico_de":      0.5,
+    "unibet_uk":      0.5,
+    "unibet_fr":      0.5,
+    "unibet_se":      0.5,
+    "unibet_nl":      0.5,
+    "betvictor":      0.5,
+    "sport888":       0.5,
+    "nordicbet":      0.5,
+    "betano_uk":      0.5,
+    "leovegas":       0.45,
+    "leovegas_se":    0.45,
+    "everygame":      0.45,
+    "casumo":         0.4,
+    "grosvenor":      0.4,
+    "livescorebet":   0.4,
+    "virginbet":      0.4,
+    # ── Softer offshore ───────────────────────────────────────────────────────
     "bovada":         0.4,
+    "gtbets":         0.35,
     "pointsbet":      0.35,
     "mybookieag":     0.3,
+    "onexbet":        0.3,   # operates outside licensing norms — low trust
     "barstool":       0.3,   # defunct / rebranded to espnbet
     "fliff":          0.25,
 }

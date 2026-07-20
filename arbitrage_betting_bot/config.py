@@ -53,7 +53,7 @@ SPORTS: list[str] = [
 
 # ── Odds API ──────────────────────────────────────────────────────────────────
 ODDS_API_BASE_URL: str = "https://api.the-odds-api.com/v4"
-ODDS_API_REGIONS: str = "us"
+ODDS_API_REGIONS: str = "us,eu"  # eu adds Pinnacle + sharp exchanges at no extra credit cost
 ODDS_API_MARKETS: str = "h2h"          # default fallback
 ODDS_API_ODDS_FORMAT: str = "american"
 
