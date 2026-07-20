@@ -80,12 +80,13 @@ FUZZY_MATCH_THRESHOLD: int = 80       # Minimum rapidfuzz score (0-100)
 # ── Opportunity Quality Filters ───────────────────────────────────────────────
 MIN_BOOKMAKER_COUNT: int = 2          # Consensus must come from ≥2 books
 MAX_KALSHI_SPREAD: float = 0.05       # Kalshi bid-ask spread ≤ 5¢ (ensures fillable price)
-# Adaptive limit-order timeout: how long to wait for a maker fill before giving up.
-# Aligns with polling tiers — longer when the game is far away (market is stable),
-# shorter near tip-off (lines shift fast and a stale limit is a risk).
-LIMIT_ORDER_TIMEOUT_DEFAULT_SECONDS: int = 600   # 10 min — game > 1 hour away
-LIMIT_ORDER_TIMEOUT_PRE_GAME_SECONDS: int = 300  # 5 min  — within 1 hour
-LIMIT_ORDER_TIMEOUT_NEAR_GAME_SECONDS: int = 120 # 2 min  — within 30 minutes
+# Kalshi charges 0% maker fee on ALL GTC orders — even those that immediately
+# cross existing liquidity. IOC orders are therefore never used.
+# Execution is two-step: (1) GTC at mid, adaptive timeout; (2) GTC at ask, short timeout.
+LIMIT_ORDER_TIMEOUT_DEFAULT_SECONDS: int = 600   # step 1 — game > 1 hour away
+LIMIT_ORDER_TIMEOUT_PRE_GAME_SECONDS: int = 300  # step 1 — within 1 hour
+LIMIT_ORDER_TIMEOUT_NEAR_GAME_SECONDS: int = 120 # step 1 — within 30 minutes
+LIMIT_ORDER_ASK_TIMEOUT_SECONDS: int = 30        # step 2 — GTC at ask (short; ask should fill fast)
 MIN_KALSHI_VOLUME: float = 0.0        # Disabled — spread filter (MAX_KALSHI_SPREAD) is sufficient liquidity gate
 MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.02"))  # Minimum NET edge after Kalshi taker fee
 # Kalshi settlement fee: quadratic in price — fee = RATE × price × (1-price) × contracts

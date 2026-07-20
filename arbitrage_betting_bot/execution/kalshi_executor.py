@@ -129,12 +129,11 @@ def place_order(
         actual_stake: dollars actually filled (filled_count × price); 0.0 on failure
         fill_type: "taker" (IOC fill) | "maker" (limit fill) | "" on failure
 
-    Execution strategy:
-        Always posts a GTC limit at mid price first. Waits up to an adaptive
-        timeout (based on time to game), then cancels.
-        If maker_only=True: stops here — no IOC fallback (the edge only exists at
-        maker price; an IOC fill would be below threshold).
-        If maker_only=False: falls back to IOC at the ask if the limit expires.
+    Execution strategy (all orders are GTC — Kalshi charges 0% fee on all GTC):
+        Step 1: GTC at mid price, adaptive timeout (2–10 min based on game time).
+        Step 2: GTC at ask price, short timeout (30 s) — fills fast against existing
+                liquidity at 0% fee. Skipped when maker_only=True (edge is only
+                sufficient at mid price; ask price would be below threshold).
     """
     if not config.KALSHI_API_KEY:
         logger.error("KALSHI_API_KEY not set — cannot place order")
@@ -193,53 +192,69 @@ def place_order(
 
         _cancel_order(order_id)
         if maker_only:
-            reason = f"Limit order unfilled after {timeout}s — skipping IOC (maker-only opportunity)"
-            logger.info("Kalshi limit unfilled for %s — not falling back to IOC (maker_only)", ticker)
+            reason = f"GTC mid unfilled after {timeout}s — edge insufficient at ask price, giving up"
+            logger.info("Kalshi GTC mid unfilled for %s — mid_only, not trying ask step", ticker)
             return order_id, "failed", reason, 0.0, ""
         logger.info(
-            "Kalshi limit order unfilled after %ds — falling back to IOC at ask for %s",
+            "Kalshi GTC mid unfilled after %ds — trying GTC at ask for %s",
             timeout, ticker,
         )
     except requests.HTTPError as e:
         code = e.response.status_code if e.response is not None else "?"
-        logger.warning("Kalshi limit order failed [%s] — %s to IOC for %s",
-                       code, "not falling back" if maker_only else "falling back", ticker)
+        logger.warning("Kalshi GTC mid failed [%s] for %s — %s",
+                       code, ticker, "giving up (mid_only)" if maker_only else "trying ask step")
         if maker_only:
-            return client_order_id, "failed", f"Limit order HTTP {code} — maker_only, no IOC fallback", 0.0, ""
+            return client_order_id, "failed", f"GTC mid HTTP {code} — mid_only, no ask fallback", 0.0, ""
     except requests.RequestException as e:
-        logger.warning("Limit order request error — %s for %s: %s",
-                       "not falling back to IOC" if maker_only else "falling back to IOC", ticker, e)
+        logger.warning("GTC mid request error for %s — %s: %s",
+                       ticker, "giving up (mid_only)" if maker_only else "trying ask step", e)
         if maker_only:
-            return client_order_id, "failed", f"Limit order network error — maker_only, no IOC fallback", 0.0, ""
+            return client_order_id, "failed", f"GTC mid network error — mid_only, no ask fallback", 0.0, ""
 
-    # ── IOC at ask (market order equivalent) ─────────────────────────────────
+    # ── Step 2: GTC at ask — 0% maker fee, fills fast against existing liquidity ─
+    # Kalshi classifies ALL GTC orders as maker regardless of immediate crossing.
+    ask_timeout = config.LIMIT_ORDER_ASK_TIMEOUT_SECONDS
     client_order_id = str(uuid.uuid4())
     try:
-        data = _place_raw_order(ticker, api_side, yes_price_ask, count, "immediate_or_cancel", client_order_id)
+        data = _place_raw_order(ticker, api_side, yes_price_ask, count, "gtc", client_order_id)
         order = data.get("order", {})
         order_id = order.get("order_id", client_order_id)
         filled = float(order.get("filled_count", 0) or 0)
 
-        if filled == 0:
-            reason = "No resting volume — order cancelled with zero fill"
-            logger.warning("Kalshi IOC zero fill: %s %s %d contracts @ %.4f", api_side.upper(), ticker, count, yes_price_ask)
-            return order_id, "failed", reason, 0.0, ""
-
-        actual_stake = round(filled * price, 2)
-        if filled < count:
-            logger.warning(
-                "Kalshi IOC partial fill: %g/%d contracts ($%.2f of $%.2f) for %s %s @ %.4f",
-                filled, count, actual_stake, stake_dollars, ticker, api_side.upper(), yes_price_ask,
+        if filled >= count:
+            actual_stake = round(filled * price, 2)
+            logger.info(
+                "Kalshi GTC ask fill (immediate): %s %s %g contracts @ %.4f  actual_stake=$%.2f",
+                api_side.upper(), ticker, filled, yes_price_ask, actual_stake,
             )
-        logger.info(
-            "Kalshi IOC filled: %s %s %g/%d contracts @ %.4f  actual_stake=$%.2f  (order_id=%s)",
-            api_side.upper(), ticker, filled, count, yes_price_ask, actual_stake, order_id,
-        )
-        return order_id, "submitted", "", actual_stake, "taker"
+            return order_id, "submitted", "", actual_stake, "maker"
+
+        deadline = time.time() + ask_timeout
+        while time.time() < deadline and filled < count:
+            time.sleep(5)
+            status = _get_order_status(order_id)
+            if status:
+                filled = float(status.get("filled_count", 0) or 0)
+                if filled >= count:
+                    break
+
+        if filled > 0:
+            actual_stake = round(filled * price, 2)
+            logger.info(
+                "Kalshi GTC ask fill: %s %s %g/%d contracts @ %.4f  actual_stake=$%.2f (order_id=%s)",
+                api_side.upper(), ticker, filled, count, yes_price_ask, actual_stake, order_id,
+            )
+            _cancel_order(order_id)
+            return order_id, "submitted", "", actual_stake, "maker"
+
+        _cancel_order(order_id)
+        reason = f"GTC ask unfilled after {ask_timeout}s — no resting liquidity at ask"
+        logger.warning("Kalshi GTC ask zero fill for %s @ %.4f", ticker, yes_price_ask)
+        return order_id, "failed", reason, 0.0, ""
     except requests.HTTPError as e:
         code = e.response.status_code if e.response is not None else "?"
         body = e.response.text if e.response is not None else ""
-        logger.error("Kalshi order failed [%s]: %s", code, body)
+        logger.error("Kalshi GTC ask failed [%s]: %s", code, body)
         reason = f"HTTP {code}"
         try:
             import json as _json
@@ -254,5 +269,5 @@ def place_order(
         return client_order_id, "failed", reason, 0.0, ""
     except requests.RequestException as e:
         reason = f"Network error: {str(e)[:200]}"
-        logger.error("Kalshi order request error: %s", e)
+        logger.error("Kalshi GTC ask request error: %s", e)
         return client_order_id, "failed", reason, 0.0, ""

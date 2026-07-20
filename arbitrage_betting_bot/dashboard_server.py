@@ -777,7 +777,7 @@ SCAN_TEMPLATE = """<!DOCTYPE html>
             <td data-label="Order">
               {% if r.status == 'value' %}
                 {% if r.maker_only %}<span class="badge" style="background:rgba(234,179,8,0.15);color:#eab308;font-size:10px">LIMIT ONLY</span>
-                {% else %}<span class="badge" style="background:rgba(59,130,246,0.15);color:var(--blue);font-size:10px">LIMIT→IOC</span>{% endif %}
+                {% else %}<span class="badge" style="background:rgba(59,130,246,0.15);color:var(--blue);font-size:10px">LIMIT→ASK</span>{% endif %}
               {% else %}<span class="muted">—</span>{% endif %}
             </td>
             <td data-label="Status"><span class="badge s-{{ r.status }}">{{ r.status.replace('_',' ').upper() }}</span></td>
