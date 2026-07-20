@@ -91,7 +91,7 @@ def place_order(
     stake_dollars: float,
     market_price: float,
     kalshi_spread: float = 0.0,
-) -> tuple[str, str, str, float]:
+) -> tuple[str, str, str, float, str]:
     """
     Place a Kalshi order using the v2 orders endpoint.
 
@@ -103,10 +103,11 @@ def place_order(
         kalshi_spread:  bid-ask spread in dollars (used to decide limit vs IOC)
 
     Returns:
-        (order_id, execution_status, failure_reason, actual_stake)
+        (order_id, execution_status, failure_reason, actual_stake, fill_type)
         execution_status: "submitted" | "failed"
         failure_reason: empty string on success, human-readable error on failure
         actual_stake: dollars actually filled (filled_count × price); 0.0 on failure
+        fill_type: "taker" (IOC fill) | "maker" (limit fill) | "" on failure
 
     Execution strategy:
         - If spread ≥ LIMIT_ORDER_SPREAD_THRESHOLD: post a GTC limit at mid price,
@@ -115,7 +116,7 @@ def place_order(
     """
     if not config.KALSHI_API_KEY:
         logger.error("KALSHI_API_KEY not set — cannot place order")
-        return "", "failed", "KALSHI_API_KEY not configured", 0.0
+        return "", "failed", "KALSHI_API_KEY not configured", 0.0, ""
 
     price = max(0.01, min(0.99, market_price))
     count = max(1, math.floor(stake_dollars / price))
@@ -147,7 +148,7 @@ def place_order(
                     "Kalshi limit fill (immediate): %s %s %g contracts @ %.4f mid  actual_stake=$%.2f",
                     api_side.upper(), ticker, filled, yes_price_mid, actual_stake,
                 )
-                return order_id, "submitted", "", actual_stake
+                return order_id, "submitted", "", actual_stake, "maker"
 
             # Poll for fill up to timeout
             deadline = time.time() + config.LIMIT_ORDER_TIMEOUT_SECONDS
@@ -168,7 +169,7 @@ def place_order(
                 )
                 # Cancel any remaining resting quantity
                 _cancel_order(order_id)
-                return order_id, "submitted", "", actual_stake
+                return order_id, "submitted", "", actual_stake, "maker"
 
             # No fill — cancel and fall through to IOC at ask
             _cancel_order(order_id)
@@ -193,7 +194,7 @@ def place_order(
         if filled == 0:
             reason = "No resting volume — order cancelled with zero fill"
             logger.warning("Kalshi IOC zero fill: %s %s %d contracts @ %.4f", api_side.upper(), ticker, count, yes_price_ask)
-            return order_id, "failed", reason, 0.0
+            return order_id, "failed", reason, 0.0, ""
 
         actual_stake = round(filled * price, 2)
         if filled < count:
@@ -205,7 +206,7 @@ def place_order(
             "Kalshi IOC filled: %s %s %g/%d contracts @ %.4f  actual_stake=$%.2f  (order_id=%s)",
             api_side.upper(), ticker, filled, count, yes_price_ask, actual_stake, order_id,
         )
-        return order_id, "submitted", "", actual_stake
+        return order_id, "submitted", "", actual_stake, "taker"
     except requests.HTTPError as e:
         code = e.response.status_code if e.response is not None else "?"
         body = e.response.text if e.response is not None else ""
@@ -221,8 +222,8 @@ def place_order(
         except Exception:
             if body:
                 reason = f"HTTP {code}: {body[:200]}"
-        return client_order_id, "failed", reason, 0.0
+        return client_order_id, "failed", reason, 0.0, ""
     except requests.RequestException as e:
         reason = f"Network error: {str(e)[:200]}"
         logger.error("Kalshi order request error: %s", e)
-        return client_order_id, "failed", reason, 0.0
+        return client_order_id, "failed", reason, 0.0, ""

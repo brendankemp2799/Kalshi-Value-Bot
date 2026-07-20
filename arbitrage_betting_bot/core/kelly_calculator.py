@@ -61,9 +61,6 @@ def calculate_kelly(
     p = consensus_prob
     q = 1.0 - p
 
-    # b_net = net odds per unit after Kalshi's settlement fee.
-    # Kalshi charges ~KALSHI_FEE_RATE of gross profit, so effective payout is
-    # (1 - market_price) * (1 - fee_rate) per dollar staked.
     if market_price <= 0 or market_price >= 1:
         return BetSizing(
             full_kelly_fraction=0.0,
@@ -74,14 +71,16 @@ def calculate_kelly(
         )
 
     b_gross = (1.0 - market_price) / market_price
-    b = b_gross * (1.0 - config.KALSHI_FEE_RATE)  # fee-adjusted net odds
+    # Taker fee (conservative assumption): fee = RATE×price×(1-price)×count
+    # simplifies to RATE×(1-price)×stake, so net odds = b_gross × (1 - RATE×price)
+    b = b_gross * (1.0 - config.KALSHI_TAKER_FEE_RATE * market_price)
 
     full_kelly = (b * p - q) / b
 
     if full_kelly <= 0:
         logger.debug(
-            "Kelly ≤ 0 (%.4f) after fee adjustment — no edge. consensus=%.3f market=%.3f fee_rate=%.2f",
-            full_kelly, consensus_prob, market_price, config.KALSHI_FEE_RATE,
+            "Kelly ≤ 0 (%.4f) after fee adjustment — no edge. consensus=%.3f market=%.3f taker_fee_rate=%.2f",
+            full_kelly, consensus_prob, market_price, config.KALSHI_TAKER_FEE_RATE,
         )
         return BetSizing(
             full_kelly_fraction=full_kelly,

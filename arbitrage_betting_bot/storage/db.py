@@ -145,6 +145,7 @@ def _migrate() -> None:
             ("threshold",       "ALTER TABLE positions ADD COLUMN threshold REAL"),
             ("bookmakers_json",  "ALTER TABLE positions ADD COLUMN bookmakers_json TEXT"),
             ("failure_reason",   "ALTER TABLE positions ADD COLUMN failure_reason TEXT"),
+            ("fill_type",        "ALTER TABLE positions ADD COLUMN fill_type TEXT NOT NULL DEFAULT 'taker'"),
         ]:
             if col not in existing:
                 conn.execute(ddl)
@@ -232,6 +233,7 @@ def add_position(
     threshold: float | None = None,
     bookmakers_json: str | None = None,
     failure_reason: str | None = None,
+    fill_type: str = "taker",
 ) -> int:
     with get_connection() as conn:
         cur = conn.execute(
@@ -241,8 +243,8 @@ def add_position(
                  platform, stake, market_price, status, is_paper,
                  order_id, execution_status, market_ticker, side,
                  edge, bookmaker_count, consensus_std, kalshi_spread, commence_time,
-                 bet_type, threshold, bookmakers_json, failure_reason)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 bet_type, threshold, bookmakers_json, failure_reason, fill_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 datetime.utcnow().isoformat(),
@@ -261,6 +263,7 @@ def add_position(
                 threshold,
                 bookmakers_json,
                 failure_reason,
+                fill_type,
             ),
         )
         return cur.lastrowid
@@ -345,16 +348,20 @@ def settle_position(position_id: int, result: str) -> float:
         raise ValueError(f"result must be 'won', 'lost', or 'void', got: {result!r}")
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT stake, market_price FROM positions WHERE id = ?",
+            "SELECT stake, market_price, fill_type FROM positions WHERE id = ?",
             (position_id,),
         ).fetchone()
         if not row:
             raise ValueError(f"Position {position_id} not found")
         stake: float = row["stake"]
         price: float = row["market_price"]
+        fill_type: str = row["fill_type"] or "taker"
         if result == "won":
             gross_profit = stake * (1.0 - price) / price
-            fee = gross_profit * config.KALSHI_FEE_RATE
+            if fill_type == "maker":
+                fee = config.kalshi_maker_fee(price, stake)
+            else:
+                fee = config.kalshi_taker_fee(price, stake)
             pnl = gross_profit - fee
         elif result == "lost":
             pnl = -stake

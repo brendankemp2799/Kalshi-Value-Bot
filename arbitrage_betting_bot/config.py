@@ -83,8 +83,22 @@ MAX_KALSHI_SPREAD: float = 0.05       # Kalshi bid-ask spread ≤ 5¢ (ensures f
 LIMIT_ORDER_SPREAD_THRESHOLD: float = 0.02   # Try mid-price limit order when spread exceeds 2¢
 LIMIT_ORDER_TIMEOUT_SECONDS: int = 30        # Seconds to wait for limit order fill before falling back to IOC
 MIN_KALSHI_VOLUME: float = 0.0        # Disabled — spread filter (MAX_KALSHI_SPREAD) is sufficient liquidity gate
-MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.04"))  # Minimum GROSS edge before fees (4% — net ~3% after Kalshi fee)
-KALSHI_FEE_RATE: float = 0.03         # Kalshi charges ~3% of gross profit at settlement
+MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.04"))  # Minimum GROSS edge before fees
+# Kalshi settlement fee: quadratic in price — fee = RATE × price × (1-price) × contracts
+# Taker (IOC fills): 7¢ per contract at max (price=0.5); simplifies to RATE×(1-price)×stake
+# Maker (limit fills): no fee currently charged
+KALSHI_TAKER_FEE_RATE: float = 0.07
+KALSHI_MAKER_FEE_RATE: float = 0.0
+
+
+def kalshi_taker_fee(price: float, stake: float) -> float:
+    """Settlement fee for taker (IOC) orders in dollars. Quadratic formula verified from live settlements."""
+    return KALSHI_TAKER_FEE_RATE * (1.0 - price) * stake
+
+
+def kalshi_maker_fee(price: float, stake: float) -> float:
+    """Settlement fee for maker (limit) orders in dollars. Currently zero."""
+    return KALSHI_MAKER_FEE_RATE * (1.0 - price) * stake
 
 # ── Notifications ─────────────────────────────────────────────────────────────
 PUSHOVER_USER_KEY: str  = os.getenv("PUSHOVER_USER_KEY", "")   # From pushover.net account page

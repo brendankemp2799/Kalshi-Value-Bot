@@ -33,15 +33,16 @@ def resolve_side(opp: ValueOpportunity) -> str:
     return "no" if (me.kalshi_outcome or "yes") == "yes" else "yes"
 
 
-def execute_trade(opp: ValueOpportunity, sizing: BetSizing) -> tuple[str, str, str, str, float]:
+def execute_trade(opp: ValueOpportunity, sizing: BetSizing) -> tuple[str, str, str, str, float, str]:
     """
     Place a live Kalshi order for the given opportunity.
 
-    Returns (order_id, execution_status, side, failure_reason, actual_stake).
+    Returns (order_id, execution_status, side, failure_reason, actual_stake, fill_type).
     execution_status: "submitted" | "failed"
     side: "yes" | "no"
     failure_reason: empty string on success, human-readable error on failure
     actual_stake: dollars actually filled (0.0 on failure)
+    fill_type: "taker" (IOC) | "maker" (limit fill) | "" on failure
     """
     from execution import kalshi_executor
 
@@ -49,11 +50,11 @@ def execute_trade(opp: ValueOpportunity, sizing: BetSizing) -> tuple[str, str, s
     km = me.kalshi_market
     side = resolve_side(opp)
 
-    order_id, status, reason, actual_stake = kalshi_executor.place_order(
+    order_id, status, reason, actual_stake, fill_type = kalshi_executor.place_order(
         ticker=km.ticker,
         side=side,
         stake_dollars=sizing.recommended_dollars,
         market_price=opp.market_price,
         kalshi_spread=km.spread,
     )
-    return order_id, status, side, reason, actual_stake
+    return order_id, status, side, reason, actual_stake, fill_type
