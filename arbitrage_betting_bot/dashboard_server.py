@@ -586,6 +586,26 @@ def index():
     return render_template_string(HTML_TEMPLATE)
 
 
+# ── Shared mobile CSS snippet (injected into each template) ───────────────────
+
+_MOBILE_TABLE_CSS = """
+  /* ── Mobile: stacked card layout for all tables ── */
+  @media (max-width: 700px) {
+    .table-wrap { overflow-x: unset; }
+    table, tbody { display: block; width: 100%; }
+    thead { display: none; }
+    tbody tr { display: block; border: 1px solid var(--border); border-radius: 8px; margin: 0 0 8px; overflow: hidden; }
+    tbody td { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+               padding: 7px 12px; border-bottom: 1px solid rgba(42,45,58,0.6);
+               white-space: normal; word-break: break-word; font-size: 13px; }
+    tbody td:last-child { border-bottom: none; }
+    tbody td[data-label]::before { content: attr(data-label); font-size: 10px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; flex-shrink: 0; min-width: 76px; }
+    tbody td[colspan] { justify-content: center; }
+    tbody td[colspan]::before { display: none; }
+  }
+"""
+
 # ── Scan results template ─────────────────────────────────────────────────────
 
 SCAN_TEMPLATE = """<!DOCTYPE html>
@@ -601,23 +621,24 @@ SCAN_TEMPLATE = """<!DOCTYPE html>
     --yellow:#f59e0b;--orange:#f97316;--purple:#a855f7;
   }
   *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{overflow-x:hidden;}
   body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;}
-  header{display:flex;align-items:center;gap:16px;padding:14px 24px;border-bottom:1px solid var(--border);}
-  header a{color:var(--muted);text-decoration:none;font-size:13px;}
+  header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+  header a{color:var(--muted);text-decoration:none;font-size:13px;white-space:nowrap;}
   header a:hover{color:var(--text);}
   header h1{font-size:16px;font-weight:600;}
-  .meta{font-size:12px;color:var(--muted);margin-left:auto;}
-  main{padding:20px 24px;max-width:1600px;margin:0 auto;}
-  .toolbar{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center;}
+  .meta{font-size:12px;color:var(--muted);margin-left:auto;white-space:nowrap;}
+  main{padding:16px;max-width:1600px;margin:0 auto;}
+  .toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;}
   .search-input{background:var(--surface);border:1px solid var(--border);color:var(--text);
-    padding:6px 12px;border-radius:8px;font-size:13px;width:240px;outline:none;}
+    padding:6px 12px;border-radius:8px;font-size:13px;width:200px;outline:none;min-width:0;}
   .search-input:focus{border-color:var(--blue);}
   .search-input::placeholder{color:var(--muted);}
   .col-select{background:var(--surface);border:1px solid var(--border);color:var(--text);
     padding:6px 10px;border-radius:8px;font-size:12px;outline:none;cursor:pointer;}
   .filters{display:flex;gap:6px;flex-wrap:wrap;}
   .filter-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);
-    padding:4px 12px;border-radius:20px;cursor:pointer;font-size:11px;font-weight:600;}
+    padding:4px 10px;border-radius:20px;cursor:pointer;font-size:11px;font-weight:600;}
   .filter-btn.active{border-color:currentColor;}
   .filter-btn[data-status="all"].active{color:var(--text);}
   .filter-btn[data-status="value"].active{color:var(--green);}
@@ -649,6 +670,28 @@ SCAN_TEMPLATE = """<!DOCTYPE html>
   .pos{color:var(--green);} .neg{color:var(--red);} .muted{color:var(--muted);}
   .empty{padding:40px;text-align:center;color:var(--muted);}
   .count-badge{font-size:11px;color:var(--muted);margin-left:4px;}
+
+  /* ── Mobile ── */
+  @media (max-width: 700px) {
+    header { padding: 10px 14px; gap: 8px; }
+    header h1 { font-size: 14px; }
+    .meta { font-size: 11px; margin-left: 0; width: 100%; }
+    main { padding: 10px; }
+    .search-input { width: 100%; }
+    .toolbar { gap: 6px; }
+    .table-wrap { overflow-x: unset; }
+    table, tbody { display: block; width: 100%; }
+    thead { display: none; }
+    tbody tr { display: block; border: 1px solid var(--border); border-radius: 8px; margin: 0 0 8px; overflow: hidden; }
+    tbody td { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+               padding: 7px 12px; border-bottom: 1px solid rgba(42,45,58,0.6);
+               white-space: normal; word-break: break-word; }
+    tbody td:last-child { border-bottom: none; }
+    tbody td[data-label]::before { content: attr(data-label); font-size: 10px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; flex-shrink: 0; min-width: 72px; }
+    tbody td[colspan] { justify-content: center; }
+    tbody td[colspan]::before { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -659,7 +702,7 @@ SCAN_TEMPLATE = """<!DOCTYPE html>
 </header>
 <main>
   <div class="toolbar">
-    <input class="search-input" id="search" type="text" placeholder="Search any column…">
+    <input class="search-input" id="search" type="text" placeholder="Search…">
     <select class="col-select" id="col-select">
       <option value="-1">All columns</option>
       <option value="0">Sport</option>
@@ -681,7 +724,7 @@ SCAN_TEMPLATE = """<!DOCTYPE html>
     <button class="filter-btn active" data-status="all">All <span class="count-badge" id="cnt-all"></span></button>
     <button class="filter-btn" data-status="value">Value <span class="count-badge" id="cnt-value"></span></button>
     <button class="filter-btn" data-status="no_edge">No Edge <span class="count-badge" id="cnt-no_edge"></span></button>
-    <button class="filter-btn" data-status="spread_too_wide">Spread Too Wide <span class="count-badge" id="cnt-spread_too_wide"></span></button>
+    <button class="filter-btn" data-status="spread_too_wide">Wide <span class="count-badge" id="cnt-spread_too_wide"></span></button>
     <button class="filter-btn" data-status="few_books">Few Books <span class="count-badge" id="cnt-few_books"></span></button>
     <button class="filter-btn" data-status="no_consensus">No Consensus <span class="count-badge" id="cnt-no_consensus"></span></button>
     <button class="filter-btn" data-status="no_threshold">No Threshold <span class="count-badge" id="cnt-no_threshold"></span></button>
@@ -704,22 +747,22 @@ SCAN_TEMPLATE = """<!DOCTYPE html>
           {% else %}
           {% for r in entries %}
           <tr data-status="{{ r.status }}">
-            <td>{{ r.sport }}</td>
-            <td style="color:var(--muted)">{{ r.matchup }}</td>
-            <td><a href="/scan/detail/{{ r.id }}" style="color:var(--text);text-decoration:none"><strong>{{ r.team }}</strong> <span style="font-size:10px;color:var(--blue)">↗</span></a></td>
-            <td><span style="color:var(--blue)">{{ r.bet_type }}</span></td>
-            <td style="color:var(--muted)">{{ r.game_time }}</td>
-            <td>{% if r.price is not none %}{{ r.price }}¢{% else %}<span class="muted">—</span>{% endif %}</td>
-            <td>{% if r.consensus is not none %}<strong>{{ r.consensus }}%</strong>{% else %}<span class="muted">—</span>{% endif %}</td>
-            <td>
+            <td data-label="Sport">{{ r.sport }}</td>
+            <td data-label="Matchup" style="color:var(--muted)">{{ r.matchup }}</td>
+            <td data-label="Bet"><a href="/scan/detail/{{ r.id }}" style="color:var(--text);text-decoration:none"><strong>{{ r.team }}</strong> <span style="font-size:10px;color:var(--blue)">↗</span></a></td>
+            <td data-label="Type"><span style="color:var(--blue)">{{ r.bet_type }}</span></td>
+            <td data-label="Game Time" style="color:var(--muted)">{{ r.game_time }}</td>
+            <td data-label="Price">{% if r.price is not none %}{{ r.price }}¢{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td data-label="Consensus">{% if r.consensus is not none %}<strong>{{ r.consensus }}%</strong>{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td data-label="Edge">
               {% if r.edge is not none %}
                 <span class="{{ 'pos' if r.edge >= 4 else 'muted' }}"><strong>{{ r.edge }}%</strong></span>
               {% else %}<span class="muted">—</span>{% endif %}
             </td>
-            <td>{% if r.books is not none %}{{ r.books }}{% else %}<span class="muted">—</span>{% endif %}</td>
-            <td>{% if r.spread is not none %}{{ r.spread }}¢{% else %}<span class="muted">—</span>{% endif %}</td>
-            <td><span class="badge s-{{ r.status }}">{{ r.status.replace('_',' ').upper() }}</span></td>
-            <td style="color:var(--muted);font-size:12px">{{ r.reason }}</td>
+            <td data-label="Books">{% if r.books is not none %}{{ r.books }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td data-label="Spread">{% if r.spread is not none %}{{ r.spread }}¢{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td data-label="Status"><span class="badge s-{{ r.status }}">{{ r.status.replace('_',' ').upper() }}</span></td>
+            <td data-label="Reason" style="color:var(--muted);font-size:12px">{{ r.reason }}</td>
           </tr>
           {% endfor %}
           {% endif %}
@@ -809,18 +852,19 @@ SCAN_DETAIL_TEMPLATE = """<!DOCTYPE html>
     --red: #ef4444; --blue: #3b82f6; --yellow: #f59e0b; --orange: #f97316; --purple: #a855f7;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { overflow-x: hidden; }
   body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
-  header { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--border); }
-  header a { color: var(--muted); text-decoration: none; font-size: 13px; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  header a { color: var(--muted); text-decoration: none; font-size: 13px; white-space: nowrap; }
   header a:hover { color: var(--text); }
-  header h1 { font-size: 17px; font-weight: 600; }
-  main { padding: 24px; max-width: 900px; margin: 0 auto; }
+  header h1 { font-size: 16px; font-weight: 600; }
+  main { padding: 20px; max-width: 900px; margin: 0 auto; }
   .section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
   .section-header { padding: 14px 18px; border-bottom: 1px solid var(--border); }
   .section-header h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
   .section-header p { font-size: 11px; color: var(--muted); margin-top: 4px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; }
-  .cell { padding: 14px 18px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0; }
+  .cell { padding: 14px 16px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
   .cell:last-child { border-right: none; }
   .cell-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 5px; }
   .cell-value { font-size: 16px; font-weight: 600; }
@@ -843,6 +887,27 @@ SCAN_DETAIL_TEMPLATE = """<!DOCTYPE html>
   .s-daily_cap   { color: var(--red);    background: rgba(239,68,68,0.1); }
   .s-spread_too_wide,.s-few_books,.s-no_consensus,.s-no_threshold,.s-low_volume
                  { color: var(--yellow); background: rgba(245,158,11,0.1); }
+
+  /* ── Mobile ── */
+  @media (max-width: 700px) {
+    header { padding: 10px 14px; }
+    header h1 { font-size: 14px; }
+    main { padding: 12px; }
+    .cell { padding: 10px 12px; }
+    .cell-value { font-size: 14px; }
+    .table-wrap { overflow-x: unset; }
+    table, tbody { display: block; width: 100%; }
+    thead { display: none; }
+    tbody tr { display: block; border: 1px solid var(--border); border-radius: 8px; margin: 0 0 8px; overflow: hidden; }
+    tbody td { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+               padding: 7px 12px; border-bottom: 1px solid rgba(42,45,58,0.6);
+               white-space: normal; word-break: break-word; }
+    tbody td:last-child { border-bottom: none; }
+    tbody td[data-label]::before { content: attr(data-label); font-size: 10px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; flex-shrink: 0; min-width: 76px; }
+    .bar-bg { max-width: 60px; }
+    .consensus-row td { flex-wrap: wrap; }
+  }
 </style>
 </head>
 <body>
@@ -869,7 +934,7 @@ SCAN_DETAIL_TEMPLATE = """<!DOCTYPE html>
       {% endif %}
       <div class="cell"><div class="cell-label">Scanned At</div><div class="cell-value" style="font-size:13px">{{ p.scanned_at }}</div></div>
     </div>
-    <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
+    <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
       {% if p.kalshi_url %}
       <a href="{{ p.kalshi_url }}" target="_blank" rel="noopener"
          style="font-size:13px;color:var(--blue);text-decoration:none;">
@@ -889,6 +954,7 @@ SCAN_DETAIL_TEMPLATE = """<!DOCTYPE html>
       <p>Odds captured at scan time. Click a book name to verify on their site.</p>
     </div>
     {% if p.has_data %}
+    <div class="table-wrap">
     <table>
       <thead><tr>
         <th>Sportsbook</th>
@@ -901,7 +967,7 @@ SCAN_DETAIL_TEMPLATE = """<!DOCTYPE html>
       <tbody>
         {% for r in p.breakdown %}
         <tr>
-          <td>
+          <td data-label="Book">
             {% if r.url %}
             <a href="{{ r.url }}" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none">
               <strong>{{ r.book }}</strong>
@@ -911,10 +977,10 @@ SCAN_DETAIL_TEMPLATE = """<!DOCTYPE html>
             <strong>{{ r.book }}</strong>
             {% endif %}
           </td>
-          <td style="color:var(--blue)">{{ r.line }}</td>
-          <td style="font-family:monospace">{{ '+' if r.odds > 0 else '' }}{{ r.odds }}</td>
-          <td style="color:var(--muted)">{{ r.raw_prob }}%</td>
-          <td><strong>{{ r.devigged_prob }}%</strong></td>
+          <td data-label="Line" style="color:var(--blue)">{{ r.line }}</td>
+          <td data-label="Odds" style="font-family:monospace">{{ '+' if r.odds > 0 else '' }}{{ r.odds }}</td>
+          <td data-label="Raw %" style="color:var(--muted)">{{ r.raw_prob }}%</td>
+          <td data-label="De-vigged %"><strong>{{ r.devigged_prob }}%</strong></td>
           <td>
             <div class="bar-wrap">
               <div class="bar-bg"><div class="bar-fill" style="width:{{ [r.devigged_prob, 100]|min }}%"></div></div>
@@ -924,14 +990,15 @@ SCAN_DETAIL_TEMPLATE = """<!DOCTYPE html>
         {% endfor %}
         {% if p.consensus %}
         <tr class="consensus-row">
-          <td>Consensus (avg of {{ p.book_count }} books)</td>
-          <td>—</td><td>—</td>
-          <td><strong style="color:var(--green)">{{ p.consensus }}%</strong></td>
+          <td data-label="Book">Consensus (avg of {{ p.book_count }} books)</td>
+          <td data-label="Line">—</td><td data-label="Odds">—</td>
+          <td data-label="De-vigged %"><strong style="color:var(--green)">{{ p.consensus }}%</strong></td>
           <td></td>
         </tr>
         {% endif %}
       </tbody>
     </table>
+    </div>
     {% else %}
     <div class="no-data">
       No sportsbook data for this entry.<br>
@@ -961,17 +1028,18 @@ DETAIL_TEMPLATE = """<!DOCTYPE html>
     --red: #ef4444; --blue: #3b82f6; --yellow: #f59e0b;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { overflow-x: hidden; }
   body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
-  header { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--border); }
-  header a { color: var(--muted); text-decoration: none; font-size: 13px; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  header a { color: var(--muted); text-decoration: none; font-size: 13px; white-space: nowrap; }
   header a:hover { color: var(--text); }
-  header h1 { font-size: 17px; font-weight: 600; }
-  main { padding: 24px; max-width: 900px; margin: 0 auto; }
+  header h1 { font-size: 16px; font-weight: 600; }
+  main { padding: 20px; max-width: 900px; margin: 0 auto; }
   .section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
   .section-header { padding: 14px 18px; border-bottom: 1px solid var(--border); }
   .section-header h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0; }
-  .cell { padding: 14px 18px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0; }
+  .cell { padding: 14px 16px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
   .cell:last-child { border-right: none; }
   .cell-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 5px; }
   .cell-value { font-size: 16px; font-weight: 600; }
@@ -989,6 +1057,26 @@ DETAIL_TEMPLATE = """<!DOCTYPE html>
   .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
   .tag-open { background: #1c1a07; color: var(--yellow); }
   .tag-closed { background: #1a1d27; color: var(--muted); }
+
+  /* ── Mobile ── */
+  @media (max-width: 700px) {
+    header { padding: 10px 14px; }
+    header h1 { font-size: 14px; }
+    main { padding: 12px; }
+    .cell { padding: 10px 12px; }
+    .cell-value { font-size: 14px; }
+    .table-wrap { overflow-x: unset; }
+    table, tbody { display: block; width: 100%; }
+    thead { display: none; }
+    tbody tr { display: block; border: 1px solid var(--border); border-radius: 8px; margin: 0 0 8px; overflow: hidden; }
+    tbody td { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+               padding: 7px 12px; border-bottom: 1px solid rgba(42,45,58,0.6);
+               white-space: normal; word-break: break-word; }
+    tbody td:last-child { border-bottom: none; }
+    tbody td[data-label]::before { content: attr(data-label); font-size: 10px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; flex-shrink: 0; min-width: 76px; }
+    .bar-bg { max-width: 60px; }
+  }
 </style>
 </head>
 <body>
@@ -1026,6 +1114,7 @@ DETAIL_TEMPLATE = """<!DOCTYPE html>
       <p style="font-size:11px;color:var(--muted);margin-top:4px">Odds captured at bet entry time. Click a book name to verify on their site. Some books post lines 2–3 days in advance — if you can't find the line, check back closer to game time.</p>
     </div>
     {% if p.has_data %}
+    <div class="table-wrap">
     <table>
       <thead><tr>
         <th>Sportsbook</th>
@@ -1038,7 +1127,7 @@ DETAIL_TEMPLATE = """<!DOCTYPE html>
       <tbody>
         {% for r in p.breakdown %}
         <tr>
-          <td>
+          <td data-label="Book">
             {% if r.url %}
             <a href="{{ r.url }}" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none">
               <strong>{{ r.book }}</strong>
@@ -1048,10 +1137,10 @@ DETAIL_TEMPLATE = """<!DOCTYPE html>
             <strong>{{ r.book }}</strong>
             {% endif %}
           </td>
-          <td style="color:var(--blue)">{{ r.line }}</td>
-          <td style="font-family:monospace">{{ '+' if r.odds > 0 else '' }}{{ r.odds }}</td>
-          <td style="color:var(--muted)">{{ r.raw_prob }}%</td>
-          <td><strong>{{ r.devigged_prob }}%</strong></td>
+          <td data-label="Line" style="color:var(--blue)">{{ r.line }}</td>
+          <td data-label="Odds" style="font-family:monospace">{{ '+' if r.odds > 0 else '' }}{{ r.odds }}</td>
+          <td data-label="Raw %" style="color:var(--muted)">{{ r.raw_prob }}%</td>
+          <td data-label="De-vigged %"><strong>{{ r.devigged_prob }}%</strong></td>
           <td>
             <div class="bar-wrap">
               <div class="bar-bg"><div class="bar-fill" style="width:{{ [r.devigged_prob, 100]|min }}%"></div></div>
@@ -1061,15 +1150,16 @@ DETAIL_TEMPLATE = """<!DOCTYPE html>
         {% endfor %}
         {% if p.consensus %}
         <tr class="consensus-row">
-          <td>Consensus (avg of {{ p.book_count }} books)</td>
-          <td>—</td>
-          <td>—</td>
-          <td><strong style="color:var(--green)">{{ p.consensus }}%</strong></td>
+          <td data-label="Book">Consensus (avg of {{ p.book_count }} books)</td>
+          <td data-label="Line">—</td>
+          <td data-label="Odds">—</td>
+          <td data-label="De-vigged %"><strong style="color:var(--green)">{{ p.consensus }}%</strong></td>
           <td></td>
         </tr>
         {% endif %}
       </tbody>
     </table>
+    </div>
     {% else %}
     <div class="no-data">
       No sportsbook data stored for this position.<br>
@@ -1107,46 +1197,48 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     --purple: #a855f7;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { overflow-x: hidden; }
   body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
 
-  header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--border); }
-  header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.5px; }
-  .mode-badge { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 12px; letter-spacing: 1px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 8px; }
+  header h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.5px; }
+  .header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .mode-badge { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 12px; letter-spacing: 1px; white-space: nowrap; }
   .mode-live { background: #052e16; color: var(--green); border: 1px solid var(--green); }
   .mode-paper { background: #1c1407; color: var(--yellow); border: 1px solid var(--yellow); }
-  .refresh-info { font-size: 12px; color: var(--muted); }
+  .refresh-info { font-size: 12px; color: var(--muted); white-space: nowrap; }
 
-  main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+  main { padding: 16px 20px; max-width: 1400px; margin: 0 auto; }
 
   /* Summary cards */
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
   .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
-  .card-value { font-size: 24px; font-weight: 700; }
-  .card-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .card-value { font-size: 22px; font-weight: 700; }
+  .card-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
   .pos { color: var(--green); }
   .neg { color: var(--red); }
   .neutral { color: var(--text); }
 
   /* Charts */
-  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
   @media (max-width: 700px) { .charts { grid-template-columns: 1fr; } }
-  .chart-box { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
-  .chart-box h2 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 14px; }
-  .chart-box canvas { max-height: 220px; }
+  .chart-box { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .chart-box h2 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 12px; }
+  .chart-box canvas { max-height: 200px; }
 
   /* Tables */
-  .section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 16px; overflow: hidden; }
-  .section-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
-  .section-header h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+  .section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 14px; overflow: hidden; }
+  .section-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .section-header h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
   .section-header .count { font-size: 12px; color: var(--muted); }
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; }
-  th { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
-  td { padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
   tr:last-child td { border-bottom: none; }
   tr:hover td { background: rgba(255,255,255,0.02); }
-  .empty-state { padding: 32px; text-align: center; color: var(--muted); font-size: 13px; }
+  .empty-state { padding: 28px; text-align: center; color: var(--muted); font-size: 13px; }
   .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; letter-spacing: 0.5px; }
   .tag-win { background: #052e16; color: var(--green); }
   .tag-loss { background: #2d0a0a; color: var(--red); }
@@ -1154,14 +1246,45 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .tag-submitted { background: #051b2c; color: var(--blue); }
   .tag-paper { background: #1c1407; color: var(--yellow); }
   .tag-yes { background: #14103a; color: var(--purple); }
+
+  /* ── Mobile: stacked card layout ── */
+  @media (max-width: 700px) {
+    body { font-size: 13px; }
+    header { padding: 10px 14px; flex-direction: column; align-items: flex-start; gap: 6px; }
+    header h1 { font-size: 15px; }
+    .header-right { width: 100%; }
+    .refresh-info { font-size: 11px; }
+    main { padding: 10px 12px; }
+    .cards { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 14px; }
+    .card { padding: 10px 12px; }
+    .card-value { font-size: 18px; }
+    .card-sub { font-size: 10px; word-break: break-word; }
+    .chart-box { padding: 10px; }
+    .chart-box canvas { max-height: 150px; }
+    .section-header { padding: 10px 12px; }
+    .table-wrap { overflow-x: unset; }
+    table, tbody { display: block; width: 100%; }
+    thead { display: none; }
+    tbody tr { display: block; border: 1px solid var(--border); border-radius: 8px; margin: 0 0 8px; overflow: hidden; }
+    tbody td { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+               padding: 7px 12px; border-bottom: 1px solid rgba(42,45,58,0.6);
+               white-space: normal; word-break: break-word; font-size: 13px; }
+    tbody td:last-child { border-bottom: none; }
+    tbody td[data-label]::before { content: attr(data-label); font-size: 10px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; flex-shrink: 0; min-width: 76px; }
+    tbody td.no-label::before { display: none; }
+    tbody td[colspan] { justify-content: center; }
+    tbody td[colspan]::before { display: none; }
+    .empty-state { white-space: normal; }
+  }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>Kalshi Arbitrage Bot</h1>
-  <div style="display:flex;align-items:center;gap:16px;">
-    <a href="/scan" style="font-size:13px;color:var(--blue);text-decoration:none;padding:4px 12px;border:1px solid var(--blue);border-radius:6px;">Last Scan</a>
+  <h1>Kalshi Arb Bot</h1>
+  <div class="header-right">
+    <a href="/scan" style="font-size:12px;color:var(--blue);text-decoration:none;padding:4px 10px;border:1px solid var(--blue);border-radius:6px;white-space:nowrap;">Last Scan</a>
     <span id="mode-badge" class="mode-badge">—</span>
     <span class="refresh-info" id="last-updated">Loading…</span>
   </div>
@@ -1269,9 +1392,9 @@ function renderCards(s, mode, credits) {
     const remColor = credits.remaining != null && credits.remaining < 100 ? 'neg' : credits.remaining != null && credits.remaining < 500 ? 'neutral' : 'pos';
     creditsCard = `
     <div class="card">
-      <div class="card-label">Odds API Credits</div>
+      <div class="card-label">API Credits</div>
       <div class="card-value"><span class="${remColor}">${remaining}</span></div>
-      <div class="card-sub">remaining &nbsp;·&nbsp; ${lastRun} used last scan &nbsp;·&nbsp; ${usedTotal} used total</div>
+      <div class="card-sub">remaining · ${lastRun} last scan · ${usedTotal} total</div>
     </div>`;
   }
 
@@ -1279,7 +1402,7 @@ function renderCards(s, mode, credits) {
     <div class="card"><div class="card-label">Total P&L</div><div class="card-value">${pnlVal}</div><div class="card-sub">${s.settled} settled bets</div></div>
     <div class="card"><div class="card-label">Win Rate</div><div class="card-value">${wrVal}</div><div class="card-sub">${s.wins}W / ${s.losses}L</div></div>
     <div class="card"><div class="card-label">ROI</div><div class="card-value">${roiVal}</div><div class="card-sub">on $${s.total_staked.toFixed(2)} staked</div></div>
-    <div class="card"><div class="card-label">Open Positions</div><div class="card-value"><span class="neutral">${s.open_count}</span></div><div class="card-sub">${s.total_bets} total bets</div></div>
+    <div class="card"><div class="card-label">Open</div><div class="card-value"><span class="neutral">${s.open_count}</span></div><div class="card-sub">${s.total_bets} total bets</div></div>
     ${creditsCard}
   `;
 }
@@ -1290,12 +1413,11 @@ function renderCharts(bankrollData, pnlData) {
     maintainAspectRatio: true,
     plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 } } } },
     scales: {
-      x: { ticks: { color: '#64748b', maxTicksLimit: 8, font: { size: 10 } }, grid: { color: '#1e2130' } },
+      x: { ticks: { color: '#64748b', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: '#1e2130' } },
       y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e2130' } },
     },
   };
 
-  // Bankroll chart
   if (bankrollChart) bankrollChart.destroy();
   bankrollChart = new Chart(document.getElementById('bankrollChart'), {
     type: 'line',
@@ -1309,7 +1431,6 @@ function renderCharts(bankrollData, pnlData) {
     options: { ...chartDefaults, plugins: { ...chartDefaults.plugins } },
   });
 
-  // P&L chart
   if (pnlChart) pnlChart.destroy();
   const hasData = pnlData.cumulative.length > 0;
   pnlChart = new Chart(document.getElementById('pnlChart'), {
@@ -1328,16 +1449,10 @@ function renderCharts(bankrollData, pnlData) {
     },
     options: {
       ...chartDefaults,
-      plugins: {
-        ...chartDefaults.plugins,
-        annotation: {},
-      },
+      plugins: { ...chartDefaults.plugins, annotation: {} },
       scales: {
         ...chartDefaults.scales,
-        y: {
-          ...chartDefaults.scales.y,
-          ticks: { ...chartDefaults.scales.y.ticks, callback: v => '$' + v.toFixed(0) },
-        },
+        y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => '$' + v.toFixed(0) } },
       },
     },
   });
@@ -1350,14 +1465,14 @@ function renderSportTable(rows) {
     <th>Sport</th><th>Bets</th><th>Won</th><th>Lost</th><th>Open</th>
     <th>Staked</th><th>P&L</th><th>ROI</th>
   </tr></thead><tbody>` + rows.map(r => `<tr>
-    <td><strong>${r.sport}</strong></td>
-    <td>${r.total}</td>
-    <td class="pos">${r.wins}</td>
-    <td class="neg">${r.losses}</td>
-    <td>${r.open}</td>
-    <td>$${r.staked.toFixed(2)}</td>
-    <td>${pnlStr(r.pnl)}</td>
-    <td>${roiStr(r.roi)}</td>
+    <td data-label="Sport"><strong>${r.sport}</strong></td>
+    <td data-label="Bets">${r.total}</td>
+    <td data-label="Won" class="pos">${r.wins}</td>
+    <td data-label="Lost" class="neg">${r.losses}</td>
+    <td data-label="Open">${r.open}</td>
+    <td data-label="Staked">$${r.staked.toFixed(2)}</td>
+    <td data-label="P&L">${pnlStr(r.pnl)}</td>
+    <td data-label="ROI">${roiStr(r.roi)}</td>
   </tr>`).join('') + '</tbody>';
 }
 
@@ -1366,9 +1481,9 @@ function renderOpenTable(rows) {
   document.getElementById('open-count').textContent = rows.length ? rows.length + ' positions' : '';
   if (!rows.length) { t.innerHTML = emptyRow(7, 'No open positions.'); return; }
   t.innerHTML = `<thead><tr>
-    <th>#</th><th>Bet On</th><th>Opponent</th><th>Sport</th><th>Type</th><th>Placed At</th><th>Game Time</th>
-    <th>Stake</th><th>Entry Price</th><th>Edge</th><th>Books</th><th>Spread</th>
-    <th>Potential Win</th><th>Status</th>
+    <th>#</th><th>Bet On</th><th>Opponent</th><th>Sport</th><th>Type</th><th>Placed</th><th>Game Time</th>
+    <th>Stake</th><th>Price</th><th>Edge</th><th>Books</th><th>Spread</th>
+    <th>Pot Win</th><th>Status</th>
   </tr></thead><tbody>` + rows.map(r => {
     const statusClass = r.exec_status === 'paper' ? 'tag-paper' : r.exec_status === 'submitted' ? 'tag-submitted' : 'tag-open';
     const edgeStr = r.edge != null ? `<span class="pos"><strong>${r.edge.toFixed(1)}%</strong></span>` : '<span style="color:var(--muted)">—</span>';
@@ -1378,20 +1493,20 @@ function renderOpenTable(rows) {
     const typeStr = r.bet_type && r.bet_type !== 'Moneyline' ? `<span style="color:var(--blue)">${r.bet_type}</span>` : `<span style="color:var(--muted)">Moneyline</span>`;
     const placedAt = r.entered && r.entered !== '—' ? `<span style="color:var(--muted);font-size:12px">${r.entered}</span>` : '<span style="color:var(--muted)">—</span>';
     return `<tr>
-      <td><a href="/position/${r.id}" style="color:var(--blue);text-decoration:none">#${r.id}</a></td>
-      <td><strong>${r.team}</strong></td>
-      <td style="color:var(--muted)">${r.opponent}</td>
-      <td>${r.sport}</td>
-      <td>${typeStr}</td>
-      <td>${placedAt}</td>
-      <td>${gameTime}</td>
-      <td>$${r.stake.toFixed(2)}</td>
-      <td>${r.price_pct}¢</td>
-      <td>${edgeStr}</td>
-      <td>${booksStr}</td>
-      <td>${spreadStr}</td>
-      <td class="pos">+$${r.potential_win.toFixed(2)}</td>
-      <td><span class="tag ${statusClass}">${r.exec_status}</span></td>
+      <td data-label="#"><a href="/position/${r.id}" style="color:var(--blue);text-decoration:none">#${r.id}</a></td>
+      <td data-label="Bet On"><strong>${r.team}</strong></td>
+      <td data-label="Opponent" style="color:var(--muted)">${r.opponent}</td>
+      <td data-label="Sport">${r.sport}</td>
+      <td data-label="Type">${typeStr}</td>
+      <td data-label="Placed">${placedAt}</td>
+      <td data-label="Game Time">${gameTime}</td>
+      <td data-label="Stake">$${r.stake.toFixed(2)}</td>
+      <td data-label="Price">${r.price_pct}¢</td>
+      <td data-label="Edge">${edgeStr}</td>
+      <td data-label="Books">${booksStr}</td>
+      <td data-label="Spread">${spreadStr}</td>
+      <td data-label="Pot Win" class="pos">+$${r.potential_win.toFixed(2)}</td>
+      <td data-label="Status"><span class="tag ${statusClass}">${r.exec_status}</span></td>
     </tr>`;
   }).join('') + '</tbody>';
 }
@@ -1405,23 +1520,23 @@ function renderFailedTable(rows) {
   cnt.textContent = rows.length + ' order' + (rows.length === 1 ? '' : 's');
   t.innerHTML = `<thead><tr>
     <th>#</th><th>Bet On</th><th>Opponent</th><th>Sport</th><th>Type</th>
-    <th>Attempted At</th><th>Game Time</th><th>Stake</th><th>Entry Price</th><th>Edge</th><th>Reason</th>
+    <th>Attempted</th><th>Game Time</th><th>Stake</th><th>Price</th><th>Edge</th><th>Reason</th>
   </tr></thead><tbody>` + rows.map(r => {
     const edgeStr = r.edge != null ? `<span class="pos"><strong>${r.edge.toFixed(1)}%</strong></span>` : '<span style="color:var(--muted)">—</span>';
     const gameTime = r.game_time && r.game_time !== '—' ? r.game_time : '<span style="color:var(--muted)">—</span>';
     const typeStr = r.bet_type && r.bet_type !== 'Moneyline' ? `<span style="color:var(--blue)">${r.bet_type}</span>` : `<span style="color:var(--muted)">Moneyline</span>`;
     return `<tr>
-      <td><a href="/position/${r.id}" style="color:var(--blue);text-decoration:none">#${r.id}</a></td>
-      <td><strong style="color:var(--red)">${r.team}</strong></td>
-      <td style="color:var(--muted)">${r.opponent}</td>
-      <td>${r.sport}</td>
-      <td>${typeStr}</td>
-      <td><span style="color:var(--muted);font-size:12px">${r.entered}</span></td>
-      <td>${gameTime}</td>
-      <td>$${r.stake.toFixed(2)}</td>
-      <td>${r.price_pct}¢</td>
-      <td>${edgeStr}</td>
-      <td style="color:var(--red);font-size:12px">${r.reason || '—'}</td>
+      <td data-label="#"><a href="/position/${r.id}" style="color:var(--blue);text-decoration:none">#${r.id}</a></td>
+      <td data-label="Bet On"><strong style="color:var(--red)">${r.team}</strong></td>
+      <td data-label="Opponent" style="color:var(--muted)">${r.opponent}</td>
+      <td data-label="Sport">${r.sport}</td>
+      <td data-label="Type">${typeStr}</td>
+      <td data-label="Attempted"><span style="color:var(--muted);font-size:12px">${r.entered}</span></td>
+      <td data-label="Game Time">${gameTime}</td>
+      <td data-label="Stake">$${r.stake.toFixed(2)}</td>
+      <td data-label="Price">${r.price_pct}¢</td>
+      <td data-label="Edge">${edgeStr}</td>
+      <td data-label="Reason" style="color:var(--red);font-size:12px">${r.reason || '—'}</td>
     </tr>`;
   }).join('') + '</tbody>';
 }
@@ -1430,24 +1545,24 @@ function renderSettledTable(rows) {
   const t = document.getElementById('settled-table');
   document.getElementById('settled-count').textContent = rows.length ? rows.length + ' bets' : '';
   if (!rows.length) {
-    t.innerHTML = emptyRow(7, 'No settled bets yet. Record outcomes with: python dashboard.py --settle ID --won (or --lost)');
+    t.innerHTML = emptyRow(9, 'No settled bets yet.');
     return;
   }
   t.innerHTML = `<thead><tr>
     <th>#</th><th>Team</th><th>Sport</th><th>Type</th><th>Stake</th>
-    <th>Entry Price</th><th>P&L</th><th>Result</th><th>Settled</th>
+    <th>Price</th><th>P&L</th><th>Result</th><th>Settled</th>
   </tr></thead><tbody>` + rows.map(r => {
     const typeStr = r.bet_type && r.bet_type !== 'Moneyline' ? `<span style="color:var(--blue)">${r.bet_type}</span>` : `<span style="color:var(--muted)">Moneyline</span>`;
     return `<tr>
-    <td><a href="/position/${r.id}" style="color:var(--blue);text-decoration:none">#${r.id}</a></td>
-    <td><strong>${r.team}</strong></td>
-    <td>${r.sport}</td>
-    <td>${typeStr}</td>
-    <td>$${r.stake.toFixed(2)}</td>
-    <td>${r.price_pct}¢</td>
-    <td>${pnlStr(r.pnl)}</td>
-    <td><span class="tag ${r.won ? 'tag-win' : 'tag-loss'}">${r.won ? 'WIN' : 'LOSS'}</span></td>
-    <td style="color:var(--muted)">${r.settled}</td>
+    <td data-label="#"><a href="/position/${r.id}" style="color:var(--blue);text-decoration:none">#${r.id}</a></td>
+    <td data-label="Team"><strong>${r.team}</strong></td>
+    <td data-label="Sport">${r.sport}</td>
+    <td data-label="Type">${typeStr}</td>
+    <td data-label="Stake">$${r.stake.toFixed(2)}</td>
+    <td data-label="Price">${r.price_pct}¢</td>
+    <td data-label="P&L">${pnlStr(r.pnl)}</td>
+    <td data-label="Result"><span class="tag ${r.won ? 'tag-win' : 'tag-loss'}">${r.won ? 'WIN' : 'LOSS'}</span></td>
+    <td data-label="Settled" style="color:var(--muted)">${r.settled}</td>
   </tr>`;
   }).join('') + '</tbody>';
 }
@@ -1459,13 +1574,13 @@ function renderOppTable(rows) {
     <th>Team</th><th>Sport</th><th>Consensus</th><th>Kalshi Price</th>
     <th>Edge</th><th>Alerted</th><th>Detected</th>
   </tr></thead><tbody>` + rows.map(r => `<tr>
-    <td><strong>${r.team}</strong></td>
-    <td>${r.sport}</td>
-    <td>${r.consensus.toFixed(1)}%</td>
-    <td>${r.price.toFixed(1)}%</td>
-    <td class="pos"><strong>${r.edge.toFixed(1)}%</strong></td>
-    <td>${r.alerted ? '<span class="tag tag-win">Yes</span>' : '<span style="color:var(--muted)">No</span>'}</td>
-    <td style="color:var(--muted)">${r.detected}</td>
+    <td data-label="Team"><strong>${r.team}</strong></td>
+    <td data-label="Sport">${r.sport}</td>
+    <td data-label="Consensus">${r.consensus.toFixed(1)}%</td>
+    <td data-label="Price">${r.price.toFixed(1)}%</td>
+    <td data-label="Edge" class="pos"><strong>${r.edge.toFixed(1)}%</strong></td>
+    <td data-label="Alerted">${r.alerted ? '<span class="tag tag-win">Yes</span>' : '<span style="color:var(--muted)">No</span>'}</td>
+    <td data-label="Detected" style="color:var(--muted)">${r.detected}</td>
   </tr>`).join('') + '</tbody>';
 }
 
