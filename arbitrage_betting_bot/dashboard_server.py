@@ -37,6 +37,7 @@ from flask import Flask, jsonify, render_template_string, abort, request, Respon
 import storage.db as db
 from core.odds_converter import american_to_prob, remove_vig, _norm_team, _names_match
 from execution.auto_settle import auto_settle_positions
+from data.kalshi_client import KalshiClient
 import config
 import re as _re
 
@@ -143,6 +144,7 @@ def build_data() -> dict:
     # ── Summary stats ────────────────────────────────────────────────────────
     total_staked = 0.0
     total_pnl = 0.0
+    open_stakes = 0.0
     wins = losses = settled = open_count = failed_count = 0
     by_sport: dict[str, dict] = defaultdict(
         lambda: {"staked": 0.0, "pnl": 0.0, "wins": 0, "losses": 0, "open": 0}
@@ -159,6 +161,7 @@ def build_data() -> dict:
 
         if p["status"] == "open":
             open_count += 1
+            open_stakes += stake
             by_sport[sport]["open"] += 1
         else:
             pnl = p["pnl"]
@@ -312,6 +315,14 @@ def build_data() -> dict:
             "recorded_at":    _fmt_dt(credits_row["recorded_at"]),
         }
 
+    # Infer total deposited: balance + open_stakes - realized_pnl = total_deposited
+    # This holds because: balance + open_stakes = deposited + realized_pnl at all times
+    try:
+        current_balance = KalshiClient().fetch_balance()
+        total_deposited = round(current_balance + open_stakes - total_pnl, 2)
+    except Exception:
+        total_deposited = None
+
     return {
         "mode": "PAPER" if IS_PAPER else "LIVE",
         "summary": {
@@ -325,7 +336,7 @@ def build_data() -> dict:
             "open_count": open_count,
             "failed_count": failed_count,
             "total_bets": len(positions),
-        "kalshi_balance": config.INITIAL_DEPOSIT,
+            "kalshi_balance": total_deposited,
         },
         "api_credits": api_credits,
         "bankroll_chart": {"labels": bk_labels, "bankroll": bk_values, "at_risk": bk_at_risk},
