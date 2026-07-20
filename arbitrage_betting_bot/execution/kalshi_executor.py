@@ -75,7 +75,7 @@ def place_order(
         "side": api_side,
         "price": f"{yes_price:.4f}",
         "count": f"{count:.2f}",
-        "time_in_force": "fill_or_kill",
+        "time_in_force": "immediate_or_cancel",
         "self_trade_prevention_type": "taker_at_cross",
     }
 
@@ -85,10 +85,23 @@ def place_order(
         resp = requests.post(_ORDERS_URL, json=payload, headers=headers, timeout=15)
         resp.raise_for_status()
         data = resp.json()
-        order_id = data.get("order", {}).get("order_id", client_order_id)
+        order = data.get("order", {})
+        order_id = order.get("order_id", client_order_id)
+        filled = float(order.get("filled_count", 0) or 0)
+
+        if filled == 0:
+            reason = "No resting volume — order cancelled with zero fill"
+            logger.warning("Kalshi IOC zero fill: %s %s %d contracts @ %.4f", api_side.upper(), ticker, count, yes_price)
+            return order_id, "failed", reason
+
+        if filled < count:
+            logger.warning(
+                "Kalshi IOC partial fill: %g/%d contracts for %s %s @ %.4f",
+                filled, count, ticker, api_side.upper(), yes_price,
+            )
         logger.info(
-            "Kalshi order submitted: %s %s %d contracts @ %.4f  (order_id=%s)",
-            api_side.upper(), ticker, count, yes_price, order_id,
+            "Kalshi order filled: %s %s %g/%d contracts @ %.4f  (order_id=%s)",
+            api_side.upper(), ticker, filled, count, yes_price, order_id,
         )
         return order_id, "submitted", ""
     except requests.HTTPError as e:
