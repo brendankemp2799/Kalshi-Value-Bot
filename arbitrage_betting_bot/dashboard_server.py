@@ -1276,6 +1276,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     tbody td[colspan] { justify-content: center; }
     tbody td[colspan]::before { display: none; }
     .empty-state { white-space: normal; }
+    /* Collapsible sections */
+    .section-header { cursor: pointer; user-select: none; }
+    .section-header .chevron { font-size: 11px; color: var(--muted); margin-left: 8px; flex-shrink: 0; transition: transform 0.2s; }
+    .section.collapsed .table-wrap { display: none; }
   }
 </style>
 </head>
@@ -1604,6 +1608,24 @@ async function refresh() {
 
 refresh();
 setInterval(refresh, 60000);  // auto-refresh every 60s
+
+function initCollapsible() {
+  if (window.innerWidth > 700) return;
+  document.querySelectorAll('.section').forEach(section => {
+    const header = section.querySelector('.section-header');
+    if (!header) return;
+    section.classList.add('collapsed');
+    const chevron = document.createElement('span');
+    chevron.className = 'chevron';
+    chevron.textContent = '▼';
+    header.appendChild(chevron);
+    header.addEventListener('click', () => {
+      const isNowCollapsed = section.classList.toggle('collapsed');
+      chevron.textContent = isNowCollapsed ? '▼' : '▲';
+    });
+  });
+}
+initCollapsible();
 </script>
 </body>
 </html>
