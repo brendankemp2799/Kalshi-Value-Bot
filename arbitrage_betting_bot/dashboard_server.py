@@ -37,7 +37,6 @@ from flask import Flask, jsonify, render_template_string, abort, request, Respon
 import storage.db as db
 from core.odds_converter import american_to_prob, remove_vig, _norm_team, _names_match
 from execution.auto_settle import auto_settle_positions
-from data.kalshi_client import KalshiClient
 import config
 import re as _re
 
@@ -326,7 +325,7 @@ def build_data() -> dict:
             "open_count": open_count,
             "failed_count": failed_count,
             "total_bets": len(positions),
-        "kalshi_balance": KalshiClient().fetch_balance(),
+        "kalshi_balance": config.INITIAL_DEPOSIT,
         },
         "api_credits": api_credits,
         "bankroll_chart": {"labels": bk_labels, "bankroll": bk_values, "at_risk": bk_at_risk},

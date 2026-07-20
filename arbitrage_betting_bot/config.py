@@ -16,6 +16,7 @@ KALSHI_PRIVATE_KEY_PATH: str = os.getenv("KALSHI_PRIVATE_KEY_PATH", "")
 
 # ── Bankroll ──────────────────────────────────────────────────────────────────
 BANKROLL: float = float(os.getenv("BANKROLL", "1000"))
+INITIAL_DEPOSIT: float = float(os.getenv("INITIAL_DEPOSIT", "0"))  # Total deposited to Kalshi; used for % gain display
 
 # ── Risk Management ───────────────────────────────────────────────────────────
 KELLY_FRACTION: float = 0.25          # Use quarter-Kelly to reduce variance
