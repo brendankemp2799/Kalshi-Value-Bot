@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import sys
 import time
 from datetime import datetime, timezone
@@ -273,13 +274,16 @@ def run_scan(
             send_alert(opp, sizing, dry_run=False, paper=True)
             alerted += 1
             log_alert(opp_id, sizing.recommended_dollars, bm.bankroll)
+            _price = max(0.01, min(0.99, opp.market_price))
+            _count = max(1, math.floor(sizing.recommended_dollars / _price))
+            actual_stake = round(_count * _price, 2)
             add_position(
                 sport=event.sport_key,
                 home_team=event.home_team,
                 away_team=event.away_team,
                 team_name=opp.team_name,
                 platform="Kalshi",
-                stake=sizing.recommended_dollars,
+                stake=actual_stake,
                 market_price=opp.market_price,
                 is_paper=True,
                 execution_status="paper",
@@ -300,14 +304,14 @@ def run_scan(
             )
         elif opp_id:
             # Live mode: execute first — only alert + notify if the order lands
-            order_id, exec_status, side, failure_reason = execute_trade(opp, sizing)
+            order_id, exec_status, side, failure_reason, actual_stake = execute_trade(opp, sizing)
             add_position(
                 sport=event.sport_key,
                 home_team=event.home_team,
                 away_team=event.away_team,
                 team_name=opp.team_name,
                 platform="Kalshi",
-                stake=sizing.recommended_dollars,
+                stake=actual_stake,
                 market_price=opp.market_price,
                 is_paper=False,
                 order_id=order_id,

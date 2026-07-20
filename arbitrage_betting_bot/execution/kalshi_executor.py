@@ -37,7 +37,7 @@ def place_order(
     side: str,
     stake_dollars: float,
     market_price: float,
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, float]:
     """
     Place a Kalshi order using the v2 orders endpoint.
 
@@ -48,13 +48,14 @@ def place_order(
         market_price:  ask price of the side we're buying (0.0 – 1.0)
 
     Returns:
-        (order_id, execution_status, failure_reason)
+        (order_id, execution_status, failure_reason, actual_stake)
         execution_status: "submitted" | "failed"
         failure_reason: empty string on success, human-readable error on failure
+        actual_stake: dollars actually filled (filled_count × price); 0.0 on failure
     """
     if not config.KALSHI_API_KEY:
         logger.error("KALSHI_API_KEY not set — cannot place order")
-        return "", "failed", "KALSHI_API_KEY not configured"
+        return "", "failed", "KALSHI_API_KEY not configured", 0.0
 
     # Contract count based on price of the side we're buying
     price = max(0.01, min(0.99, market_price))
@@ -92,18 +93,19 @@ def place_order(
         if filled == 0:
             reason = "No resting volume — order cancelled with zero fill"
             logger.warning("Kalshi IOC zero fill: %s %s %d contracts @ %.4f", api_side.upper(), ticker, count, yes_price)
-            return order_id, "failed", reason
+            return order_id, "failed", reason, 0.0
 
+        actual_stake = round(filled * price, 2)
         if filled < count:
             logger.warning(
-                "Kalshi IOC partial fill: %g/%d contracts for %s %s @ %.4f",
-                filled, count, ticker, api_side.upper(), yes_price,
+                "Kalshi IOC partial fill: %g/%d contracts ($%.2f of $%.2f) for %s %s @ %.4f",
+                filled, count, actual_stake, stake_dollars, ticker, api_side.upper(), yes_price,
             )
         logger.info(
-            "Kalshi order filled: %s %s %g/%d contracts @ %.4f  (order_id=%s)",
-            api_side.upper(), ticker, filled, count, yes_price, order_id,
+            "Kalshi order filled: %s %s %g/%d contracts @ %.4f  actual_stake=$%.2f  (order_id=%s)",
+            api_side.upper(), ticker, filled, count, yes_price, actual_stake, order_id,
         )
-        return order_id, "submitted", ""
+        return order_id, "submitted", "", actual_stake
     except requests.HTTPError as e:
         code = e.response.status_code if e.response is not None else "?"
         body = e.response.text if e.response is not None else ""
@@ -120,8 +122,8 @@ def place_order(
         except Exception:
             if body:
                 reason = f"HTTP {code}: {body[:200]}"
-        return client_order_id, "failed", reason
+        return client_order_id, "failed", reason, 0.0
     except requests.RequestException as e:
         reason = f"Network error: {str(e)[:200]}"
         logger.error("Kalshi order request error: %s", e)
-        return client_order_id, "failed", reason
+        return client_order_id, "failed", reason, 0.0
