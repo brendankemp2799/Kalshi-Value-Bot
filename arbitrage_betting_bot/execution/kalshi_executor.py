@@ -14,7 +14,6 @@ Order model:
   - price:          fixed-point dollar string, e.g. "0.4000" (YES price)
   - count:          fixed-point contract count string, e.g. "25.00"
   - time_in_force:  "good_till_canceled" (American spelling, one L) — resting limit order
-                    "immediate_or_cancel" — fill what's available now, cancel rest
 
 Side mapping from our internal yes/no convention:
   yes → bid,  price = yes_ask (market_price as passed in)
@@ -27,7 +26,7 @@ Fee model:
 
 Execution strategy:
   Step 1: GTC at mid price, adaptive timeout (2–10 min based on game time).
-  Step 2: GTC at ask price, short timeout (30 s). Skipped when maker_only=True.
+  Step 2: GTC at ask price, short timeout (30 s).
 """
 from __future__ import annotations
 
@@ -125,7 +124,6 @@ def place_order(
     stake_dollars: float,
     market_price: float,
     kalshi_spread: float = 0.0,
-    maker_only: bool = False,
     commence_time: datetime | None = None,
 ) -> tuple[str, str, str, float, str]:
     """
@@ -137,7 +135,6 @@ def place_order(
         stake_dollars:  dollar amount to wager
         market_price:   ask price of the side we're buying (0.0 – 1.0)
         kalshi_spread:  bid-ask spread in dollars (used to compute mid price)
-        maker_only:     if True, do not fall back to ask step when limit order expires
         commence_time:  game start time (UTC) — used to compute adaptive limit timeout
 
     Returns:
@@ -149,7 +146,7 @@ def place_order(
 
     Execution strategy (GTC = 0% maker fee on all fills):
         Step 1: GTC at mid price, adaptive timeout (2–10 min based on game time).
-        Step 2: GTC at ask price, short timeout (30 s). Skipped when maker_only=True.
+        Step 2: GTC at ask price, short timeout (30 s).
     """
     if not config.KALSHI_API_KEY:
         logger.error("KALSHI_API_KEY not set — cannot place order")
@@ -169,10 +166,7 @@ def place_order(
         yes_price_mid = round(min(0.99, yes_price_ask + kalshi_spread / 2.0), 2)
 
     # ── Step 1: GTC at mid price ──────────────────────────────────────────────
-    # maker_only bets have no step-2 fallback — use a short timeout so the scan
-    # doesn't block for 10 min on a bet that has no ask-price fallback.
-    timeout = (config.LIMIT_ORDER_MAKER_ONLY_TIMEOUT_SECONDS if maker_only
-               else _limit_timeout(commence_time))
+    timeout = _limit_timeout(commence_time)
     client_order_id = str(uuid.uuid4())
     try:
         data = _place_raw_order(ticker, api_side, yes_price_mid, count, "good_till_canceled", client_order_id)
@@ -207,10 +201,6 @@ def place_order(
             return order_id, "submitted", "", actual_stake, "maker"
 
         _cancel_order(order_id)
-        if maker_only:
-            reason = f"GTC mid unfilled after {timeout}s — no liquidity at mid, no ask fallback"
-            logger.info("Kalshi GTC mid unfilled for %s — maker_only, giving up after %ds", ticker, timeout)
-            return order_id, "failed", reason, 0.0, ""
         logger.info(
             "Kalshi GTC mid unfilled after %ds — trying GTC at ask for %s",
             timeout, ticker,
@@ -218,16 +208,10 @@ def place_order(
     except requests.HTTPError as e:
         code = e.response.status_code if e.response is not None else "?"
         body = e.response.text if e.response is not None else ""
-        logger.warning("Kalshi GTC mid failed [%s] for %s — %s",
-                       code, ticker, "giving up (maker_only)" if maker_only else "trying ask step")
-        if maker_only:
-            return client_order_id, "failed", f"GTC mid HTTP {code}", 0.0, ""
+        logger.warning("Kalshi GTC mid failed [%s] for %s — trying ask step", code, ticker)
         logger.debug("GTC mid error body: %s", body[:300])
     except requests.RequestException as e:
-        logger.warning("GTC mid network error for %s — %s: %s",
-                       ticker, "giving up (maker_only)" if maker_only else "trying ask step", e)
-        if maker_only:
-            return client_order_id, "failed", f"GTC mid network error", 0.0, ""
+        logger.warning("GTC mid network error for %s — trying ask step: %s", ticker, e)
 
     # ── Step 2: GTC at ask price ──────────────────────────────────────────────
     ask_timeout = config.LIMIT_ORDER_ASK_TIMEOUT_SECONDS

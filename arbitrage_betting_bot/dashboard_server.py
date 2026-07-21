@@ -560,6 +560,7 @@ def scan_detail(entry_id: int):
 def scan_results():
     rows = db.get_last_scan()
     scanned_at = _fmt_dt(rows[0]["scanned_at"]) if rows else "No scan data yet"
+    last_active = _fmt_dt(db.get_bot_heartbeat()) if db.get_bot_heartbeat() else None
 
     entries = []
     for r in rows:
@@ -587,7 +588,7 @@ def scan_results():
             "game_time":   _fmt_dt(r["commence_time"]),
         })
 
-    return render_template_string(SCAN_TEMPLATE, entries=entries, scanned_at=scanned_at)
+    return render_template_string(SCAN_TEMPLATE, entries=entries, scanned_at=scanned_at, last_active=last_active)
 
 
 @app.route("/")
@@ -708,7 +709,7 @@ SCAN_TEMPLATE = """<!DOCTYPE html>
 <header>
   <a href="/">← Dashboard</a>
   <h1>Last Scan Results</h1>
-  <span class="meta">Scanned: {{ scanned_at }}</span>
+  <span class="meta">Last scan: {{ scanned_at }}{% if last_active %} · Bot active: {{ last_active }}{% endif %}</span>
 </header>
 <main>
   <div class="toolbar">

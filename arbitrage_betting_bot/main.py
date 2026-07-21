@@ -27,18 +27,21 @@ Setup (first time):
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import logging
 import math
+import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from rich.console import Console
 from rich.logging import RichHandler
 
 import config
-from storage.db import init_db, log_opportunity, log_alert, add_position, get_daily_stake_total, count_open_positions, log_scan_results, mark_scan_start, get_api_credits
+from storage.db import init_db, log_opportunity, log_alert, add_position, get_daily_stake_total, count_open_positions, log_scan_results, mark_scan_start, get_api_credits, update_bot_heartbeat
 from execution.trade_executor import execute_trade, resolve_side
 from data.odds_fetcher import OddsAPIClient, _in_season
 from data.kalshi_client import KalshiClient
@@ -130,6 +133,8 @@ def run_scan(
             pass  # keep existing bankroll on failure
 
     logger.info("Starting scan... [%s] (bankroll: $%.2f)", mode, bm.bankroll)
+    if not dry_run:
+        update_bot_heartbeat()
 
     # 0. Check hard limits before spending any API credits
     if not dry_run:
@@ -286,8 +291,10 @@ def run_scan(
         logger.info("Scan complete. No value found.")
         return
 
-    # 4b. Iterate in ranked order; correlation/exposure checks unchanged
+    # 4b. Pre-check all opportunities sequentially (reads DB — must be serial)
     alerted = 0
+    approved_live: list[tuple] = []  # (opp, sizing, opp_id) for live parallel execution
+
     for _score, opp, sizing in scored:
         allowed, reason = tracker.is_allowed(opp, sizing.recommended_dollars, arb_game_keys=arb_game_keys)
 
@@ -316,7 +323,6 @@ def run_scan(
             send_alert(opp, sizing, dry_run=True, paper=False)
             alerted += 1
         elif paper and opp_id:
-            # Paper mode: alert + log simulated position, skip execution
             send_alert(opp, sizing, dry_run=False, paper=True)
             alerted += 1
             log_alert(opp_id, sizing.recommended_dollars, bm.bankroll)
@@ -344,52 +350,60 @@ def run_scan(
                 threshold=opp.matched_event.kalshi_market.threshold,
                 bookmakers_json=json.dumps(event.bookmakers),
             )
-            logger.info(
-                "[PAPER] Position logged: %s $%.2f on Kalshi",
-                opp.team_name, sizing.recommended_dollars,
-            )
+            logger.info("[PAPER] Position logged: %s $%.2f on Kalshi",
+                        opp.team_name, sizing.recommended_dollars)
         elif opp_id:
-            # Live mode: execute first — only alert + notify if the order lands
-            order_id, exec_status, side, failure_reason, actual_stake, fill_type = execute_trade(opp, sizing)
-            add_position(
-                sport=event.sport_key,
-                home_team=event.home_team,
-                away_team=event.away_team,
-                team_name=opp.team_name,
-                platform="Kalshi",
-                stake=actual_stake,
-                market_price=opp.market_price,
-                is_paper=False,
-                order_id=order_id,
-                execution_status=exec_status,
-                market_ticker=opp.matched_event.kalshi_market.ticker,
-                side=side,
-                edge=opp.edge,
-                bookmaker_count=opp.bookmaker_count,
-                consensus_std=opp.consensus_std,
-                kalshi_spread=opp.matched_event.kalshi_market.spread,
-                commence_time=event.commence_time.isoformat(),
-                bet_type=opp.matched_event.kalshi_market.bet_type,
-                threshold=opp.matched_event.kalshi_market.threshold,
-                bookmakers_json=json.dumps(event.bookmakers),
-                failure_reason=failure_reason or None,
-                fill_type=fill_type or "taker",
-            )
-            if exec_status == "submitted":
-                send_alert(opp, sizing, dry_run=False, paper=False)
-                alerted += 1
-                log_alert(opp_id, sizing.recommended_dollars, bm.bankroll)
-                logger.info(
-                    "[LIVE] Order submitted: %s $%.2f on Kalshi  (order_id=%s)",
-                    opp.team_name, sizing.recommended_dollars, order_id,
+            # Live mode: queue for parallel execution below
+            approved_live.append((opp, sizing, opp_id))
+
+    # 4c. Live mode — place all approved orders in parallel (GTC timeouts run concurrently)
+    if approved_live:
+        def _do_trade(args):
+            opp, sizing, _ = args
+            return execute_trade(opp, sizing)
+
+        with ThreadPoolExecutor(max_workers=len(approved_live)) as pool:
+            future_map = {pool.submit(_do_trade, item): item for item in approved_live}
+            for future in as_completed(future_map):
+                opp, sizing, opp_id = future_map[future]
+                order_id, exec_status, side, failure_reason, actual_stake, fill_type = future.result()
+                event = opp.matched_event.odds_event
+                add_position(
+                    sport=event.sport_key,
+                    home_team=event.home_team,
+                    away_team=event.away_team,
+                    team_name=opp.team_name,
+                    platform="Kalshi",
+                    stake=actual_stake,
+                    market_price=opp.market_price,
+                    is_paper=False,
+                    order_id=order_id,
+                    execution_status=exec_status,
+                    market_ticker=opp.matched_event.kalshi_market.ticker,
+                    side=side,
+                    edge=opp.edge,
+                    bookmaker_count=opp.bookmaker_count,
+                    consensus_std=opp.consensus_std,
+                    kalshi_spread=opp.matched_event.kalshi_market.spread,
+                    commence_time=event.commence_time.isoformat(),
+                    bet_type=opp.matched_event.kalshi_market.bet_type,
+                    threshold=opp.matched_event.kalshi_market.threshold,
+                    bookmakers_json=json.dumps(event.bookmakers),
+                    failure_reason=failure_reason or None,
+                    fill_type=fill_type or "taker",
                 )
-            else:
-                logger.error(
-                    "[LIVE] Order FAILED: %s $%.2f — position logged with status=failed",
-                    opp.team_name, sizing.recommended_dollars,
-                )
-                _update_scan_log(scan_log, opp, "execution_failed",
-                                 failure_reason or "Order unfilled or rejected")
+                if exec_status == "submitted":
+                    send_alert(opp, sizing, dry_run=False, paper=False)
+                    alerted += 1
+                    log_alert(opp_id, sizing.recommended_dollars, bm.bankroll)
+                    logger.info("[LIVE] Order submitted: %s $%.2f on Kalshi  (order_id=%s)",
+                                opp.team_name, sizing.recommended_dollars, order_id)
+                else:
+                    tracker.record_failure(opp.matched_event.kalshi_market.ticker)
+                    logger.error("[LIVE] Order FAILED: %s $%.2f — position logged with status=failed",
+                                 opp.team_name, sizing.recommended_dollars)
+                    _update_scan_log(scan_log, opp, "execution_failed",
+                                     failure_reason or "Order unfilled or rejected")
 
 
     if not dry_run:
@@ -450,6 +464,23 @@ def main() -> None:
         bm = BankrollManager(bankroll=live_balance, is_paper=False)
         tracker = CorrelationTracker(bankroll_manager=bm)
 
+    # Lock file: prevent two bot instances from running at the same time.
+    # --once / --dry-run / --paper are exempt since they're read-only or one-shot.
+    _LOCK = "/tmp/arbitrage-bot.lock"
+    if not args.once and not args.dry_run and not args.paper:
+        if os.path.exists(_LOCK):
+            try:
+                existing_pid = int(open(_LOCK).read().strip())
+                if os.path.exists(f"/proc/{existing_pid}"):
+                    console.print(f"[bold red]ERROR:[/bold red] Bot already running (PID {existing_pid}). "
+                                  f"Stop it first or delete {_LOCK}.")
+                    sys.exit(1)
+            except (ValueError, OSError):
+                pass  # stale lock — overwrite it
+        with open(_LOCK, "w") as f:
+            f.write(str(os.getpid()))
+        atexit.register(lambda: os.path.exists(_LOCK) and os.remove(_LOCK))
+
     if args.once:
         run_scan(
             odds_client, kalshi_client, bm, tracker,
@@ -466,7 +497,7 @@ def main() -> None:
         f"{config.POLL_INTERVAL_PRE_GAME_SECONDS // 60} min / "
         f"≤{config.NEAR_GAME_THRESHOLD_MINUTES} min to tip-off: "
         f"{config.POLL_INTERVAL_NEAR_GAME_SECONDS // 60} min. "
-        f"Bankroll: [bold]${bankroll:,.2f}[/bold]. "
+        f"Bankroll: [bold]${bm.bankroll:,.2f}[/bold]. "
         f"Press Ctrl+C to stop."
     )
     _run_variable_loop(

@@ -535,6 +535,31 @@ def update_api_credits(used: int | None, remaining: int | None) -> None:
         )
 
 
+def update_bot_heartbeat() -> None:
+    """Update the bot's last-active timestamp. Called on every scan cycle, even skipped ones."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS bot_heartbeat (
+                id         INTEGER PRIMARY KEY CHECK (id = 1),
+                last_seen  TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            INSERT INTO bot_heartbeat (id, last_seen) VALUES (1, ?)
+            ON CONFLICT(id) DO UPDATE SET last_seen = excluded.last_seen
+        """, (datetime.utcnow().isoformat(),))
+
+
+def get_bot_heartbeat() -> str | None:
+    """Return the last-active timestamp string, or None if never set."""
+    with get_connection() as conn:
+        try:
+            row = conn.execute("SELECT last_seen FROM bot_heartbeat WHERE id = 1").fetchone()
+            return row["last_seen"] if row else None
+        except Exception:
+            return None
+
+
 def get_api_credits() -> sqlite3.Row | None:
     """Return the most recent credit snapshot."""
     with get_connection() as conn:

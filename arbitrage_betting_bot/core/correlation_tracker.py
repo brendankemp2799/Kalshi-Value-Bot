@@ -9,10 +9,12 @@ Rules (in order):
 from __future__ import annotations
 
 import logging
+import time
 
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import config
 from core.value_detector import ValueOpportunity
 from core.bankroll_manager import BankrollManager
 from storage import db
@@ -23,6 +25,12 @@ logger = logging.getLogger(__name__)
 class CorrelationTracker:
     def __init__(self, bankroll_manager: BankrollManager):
         self.bm = bankroll_manager
+        self._failed_cooldowns: dict[str, float] = {}  # ticker → unix timestamp of failure
+
+    def record_failure(self, ticker: str) -> None:
+        """Record that a bet on this ticker failed. Suppresses retries for FAILED_BET_COOLDOWN_SECONDS."""
+        self._failed_cooldowns[ticker] = time.time()
+        logger.debug("Cooldown started for %s (%dh)", ticker, config.FAILED_BET_COOLDOWN_SECONDS // 3600)
 
     def is_allowed(
         self,
@@ -52,6 +60,15 @@ class CorrelationTracker:
         for pos in open_positions:
             if pos["market_ticker"] == ticker:
                 return False, f"Already have an open position on {ticker}"
+
+        # Rule 0b: failed-bet cooldown — skip recently failed tickers
+        failed_at = self._failed_cooldowns.get(ticker, 0)
+        if failed_at:
+            retry_in = failed_at + config.FAILED_BET_COOLDOWN_SECONDS - time.time()
+            if retry_in > 0:
+                return False, f"Failed attempt cooldown — retry in {int(retry_in / 60)}min"
+            else:
+                del self._failed_cooldowns[ticker]
 
         # Rule 1: same game — skip for arb pairs (both legs placed in same scan)
         if not is_arb:
