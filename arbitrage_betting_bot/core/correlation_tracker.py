@@ -46,6 +46,12 @@ class CorrelationTracker:
         is_arb = arb_game_keys is not None and (home, away) in arb_game_keys
 
         open_positions = db.get_open_positions(self.bm.is_paper)
+        ticker = opp.matched_event.kalshi_market.ticker
+
+        # Rule 0: same Kalshi ticker — never bet the same market twice
+        for pos in open_positions:
+            if pos["market_ticker"] == ticker:
+                return False, f"Already have an open position on {ticker}"
 
         # Rule 1: same game — skip for arb pairs (both legs placed in same scan)
         if not is_arb:
