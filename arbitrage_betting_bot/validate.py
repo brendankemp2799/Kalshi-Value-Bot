@@ -29,7 +29,7 @@ from core.odds_converter import (
     _names_match,
     _norm_team,
     american_to_prob,
-    remove_vig,
+    _devig,
 )
 from core.value_detector import detect_value
 from data.kalshi_client import KalshiClient
@@ -103,7 +103,7 @@ def _book_detail(
             american = target["price"]
             raw_prob = american_to_prob(american)
             all_probs = [american_to_prob(o["price"]) for o in outcomes]
-            no_vig = remove_vig(all_probs)
+            no_vig = _devig(all_probs)
             idx = outcomes.index(target)
             de_vigged = no_vig[idx]
             rows.append({

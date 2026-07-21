@@ -259,6 +259,60 @@ def remove_vig(probs: list[float]) -> list[float]:
     return [p / total for p in probs]
 
 
+def _shin_z(raw_probs: list[float], overround: float) -> float:
+    """
+    Solve for Shin's (1992/1993) implied insider-trading proportion z via
+    bisection. Fair probabilities under z are:
+        p_i(z) = (sqrt(z**2 + 4*(1-z)*raw_i**2/O) - z) / (2*(1-z))
+    sum_i p_i(z) is 1 at z=0 (it's sqrt(O)*O/O = sqrt(O) > 1 for O>1) and
+    strictly decreasing in z, crossing 1 at the z we want (0 <= z < 0.5).
+    """
+    def total(z: float) -> float:
+        return sum(
+            ((z ** 2 + 4 * (1 - z) * p ** 2 / overround) ** 0.5 - z) / (2 * (1 - z))
+            for p in raw_probs
+        )
+
+    lo, hi = 0.0, 0.4999
+    for _ in range(50):
+        mid = (lo + hi) / 2.0
+        if total(mid) > 1.0:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2.0
+
+
+def remove_vig_shin(probs: list[float]) -> list[float]:
+    """
+    De-vig via Shin's method, which corrects for favorite-longshot bias:
+    proportional normalization (remove_vig) overstates the fair probability
+    of favorites and understates it for longshots, because bookmaker margin
+    isn't spread evenly across outcomes. Shin's method models the overround
+    as coming from a proportion `z` of informed ("insider") money and solves
+    for the fair probabilities implied by that model.
+
+    Falls back to proportional normalization when the market has no overround
+    (sum <= 1) — a degenerate case Shin's formula isn't defined for.
+    """
+    overround = sum(probs)
+    if overround <= 1.0:
+        return remove_vig(probs)
+    z = _shin_z(probs, overround)
+    return [
+        ((z ** 2 + 4 * (1 - z) * p ** 2 / overround) ** 0.5 - z) / (2 * (1 - z))
+        for p in probs
+    ]
+
+
+def _devig(probs: list[float]) -> list[float]:
+    """Dispatch to the configured de-vig method (config.DEVIG_METHOD)."""
+    import config
+    if config.DEVIG_METHOD == "shin":
+        return remove_vig_shin(probs)
+    return remove_vig(probs)
+
+
 def consensus_stats(
     bookmakers_data: list[dict],
     outcome_name: str,
@@ -335,7 +389,7 @@ def consensus_stats(
                 continue
 
             all_probs = [american_to_prob(o["price"]) for o in outcomes]
-            no_vig = remove_vig(all_probs)
+            no_vig = _devig(all_probs)
             idx = outcomes.index(target)
             weighted_probs.append((weight, no_vig[idx]))
 
@@ -347,51 +401,3 @@ def consensus_stats(
     variance = sum(w * (p - mean) ** 2 for w, p in weighted_probs) / total_weight
     std_dev = variance ** 0.5
     return mean, len(weighted_probs), round(std_dev, 6)
-
-
-def consensus_probability(bookmakers_data: list[dict], outcome_name: str) -> float | None:
-    """
-    Given The Odds API bookmakers list for an event, compute the de-vigged
-    consensus probability for a specific outcome (team name).
-
-    bookmakers_data format (after normalization in odds_fetcher):
-        [
-            {
-                "name": "fanduel",
-                "markets": [
-                    {
-                        "key": "h2h",
-                        "outcomes": [
-                            {"name": "Lakers", "price": -150},
-                            {"name": "Celtics", "price": +130},
-                        ]
-                    }
-                ]
-            },
-            ...
-        ]
-
-    Returns the average de-vigged probability across all bookmakers that
-    have this outcome, or None if no bookmaker carries this outcome.
-    """
-    de_vigged_probs: list[float] = []
-
-    for book in bookmakers_data:
-        for market in book.get("markets", []):
-            if market.get("key") != "h2h":
-                continue
-            outcomes = market.get("outcomes", [])
-            # Find our outcome
-            target = next((o for o in outcomes if o["name"] == outcome_name), None)
-            if target is None:
-                continue
-            # All raw probs for this market (to de-vig)
-            all_probs = [american_to_prob(o["price"]) for o in outcomes]
-            no_vig = remove_vig(all_probs)
-            # Index of our target
-            idx = outcomes.index(target)
-            de_vigged_probs.append(no_vig[idx])
-
-    if not de_vigged_probs:
-        return None
-    return sum(de_vigged_probs) / len(de_vigged_probs)

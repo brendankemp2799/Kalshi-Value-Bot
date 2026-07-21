@@ -9,8 +9,15 @@
 
 # SQLite database (runtime data)
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
+
+# Ad-hoc debug scripts and their output (not part of the bot itself)
+debug_*.py
+*_debug.txt
+validation_report.txt
 
 # Python cache
 __pycache__/

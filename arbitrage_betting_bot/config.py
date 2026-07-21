@@ -76,9 +76,44 @@ KALSHI_API_BASE_URL: str = "https://api.elections.kalshi.com/trade-api/v2"
 # ── Market Matching ───────────────────────────────────────────────────────────
 FUZZY_MATCH_THRESHOLD: int = 80       # Minimum rapidfuzz score (0-100)
 
+# ── De-vig Method ──────────────────────────────────────────────────────────────
+# "shin" corrects for favorite-longshot bias (Shin 1992/1993) — proportional
+# normalization misprices heavy favorites/underdogs. "proportional" is the old
+# simple-normalization method, kept as an instant revert switch since this
+# changes every edge calculation in the bot.
+DEVIG_METHOD: str = os.getenv("DEVIG_METHOD", "shin")
+
 # ── Opportunity Quality Filters ───────────────────────────────────────────────
-MIN_BOOKMAKER_COUNT: int = 2          # Consensus must come from ≥2 books
-MAX_KALSHI_SPREAD: float = 0.05       # Kalshi bid-ask spread ≤ 5¢ (ensures fillable price)
+# Tiered by bet type: H2H moneylines have deep sportsbook coverage; totals,
+# spreads, and soccer draw markets are typically covered by fewer books, so a
+# single global threshold either starves the thin markets or under-protects
+# the deep ones. All tiers currently hold the same values as the old global
+# constants (min_bookmaker_count=2, max_kalshi_spread=0.05, min_kalshi_volume=0,
+# high_uncertainty_std=0.04/min_books=4) — this is a structural change, not a
+# threshold change. Once the calibration dashboard has enough settled bets to
+# show which tiers are over/under-performing, tune them independently here.
+_DEFAULT_QUALITY_FILTER: dict = {
+    "min_bookmaker_count": 2,
+    "max_kalshi_spread": 0.05,
+    "min_kalshi_volume": 0.0,
+    "high_uncertainty_std": 0.04,
+    "high_uncertainty_min_books": 4,
+}
+QUALITY_FILTERS: dict[str, dict] = {
+    "h2h":    dict(_DEFAULT_QUALITY_FILTER),
+    "totals": dict(_DEFAULT_QUALITY_FILTER),
+    "spread": dict(_DEFAULT_QUALITY_FILTER),
+    "draw":   dict(_DEFAULT_QUALITY_FILTER),  # soccer 3-way TIE market
+}
+
+
+def quality_filters(bet_type: str, is_draw: bool = False) -> dict:
+    """Return the quality-filter thresholds for a given bet type."""
+    if is_draw:
+        return QUALITY_FILTERS["draw"]
+    return QUALITY_FILTERS.get(bet_type, _DEFAULT_QUALITY_FILTER)
+
+
 # Kalshi charges 0% maker fee on ALL GTC orders — even those that immediately
 # cross existing liquidity. IOC orders are therefore never used.
 # Execution is two-step: (1) GTC at mid, adaptive timeout; (2) GTC at ask, short timeout.
@@ -86,7 +121,6 @@ LIMIT_ORDER_TIMEOUT_DEFAULT_SECONDS: int = 600   # step 1 — game > 1 hour away
 LIMIT_ORDER_TIMEOUT_PRE_GAME_SECONDS: int = 300  # step 1 — within 1 hour
 LIMIT_ORDER_TIMEOUT_NEAR_GAME_SECONDS: int = 120 # step 1 — within 30 minutes
 LIMIT_ORDER_ASK_TIMEOUT_SECONDS: int = 30        # step 2 — GTC at ask (short; ask should fill fast)
-MIN_KALSHI_VOLUME: float = 0.0        # Disabled — spread filter (MAX_KALSHI_SPREAD) is sufficient liquidity gate
 FAILED_BET_COOLDOWN_SECONDS: int = int(os.getenv("FAILED_BET_COOLDOWN_SECONDS", "10800"))  # 3 hours
 MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.015"))  # Minimum NET edge after Kalshi taker fee
 # Kalshi settlement fee: quadratic in price — fee = RATE × price × (1-price) × contracts

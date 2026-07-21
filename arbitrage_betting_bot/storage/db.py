@@ -365,6 +365,9 @@ def settle_position(position_id: int, result: str) -> float:
             if fill_type == "maker":
                 fee = config.kalshi_maker_fee(price, stake)
             else:
+                # Currently unreachable in practice: kalshi_executor only ever
+                # places GTC orders, which it always tags "maker" on success.
+                # Kept for correctness if the execution strategy ever changes.
                 fee = config.kalshi_taker_fee(price, stake)
             pnl = gross_profit - fee
         elif result == "lost":

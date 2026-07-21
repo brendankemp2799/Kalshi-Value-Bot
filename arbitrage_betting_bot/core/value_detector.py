@@ -152,6 +152,33 @@ def _log(
     })
 
 
+def _quality_check(
+    km,
+    book_count: int,
+    std_dev: float,
+    bet_type: str,
+    is_draw: bool = False,
+) -> tuple[str, str] | None:
+    """
+    Check book count / spread / agreement against the quality-filter tier for
+    this bet type. Returns (status, reason) if a filter fails, else None.
+    """
+    qf = config.quality_filters(bet_type, is_draw=is_draw)
+    if book_count < qf["min_bookmaker_count"]:
+        return "few_books", f"Only {book_count} books (min {qf['min_bookmaker_count']})"
+    if km.spread > qf["max_kalshi_spread"]:
+        return (
+            "spread_too_wide",
+            f"Kalshi spread {km.spread*100:.1f}¢ > max {qf['max_kalshi_spread']*100:.0f}¢",
+        )
+    if std_dev > qf["high_uncertainty_std"] and book_count < qf["high_uncertainty_min_books"]:
+        return (
+            "high_uncertainty",
+            f"High uncertainty: std_dev {std_dev:.3f} with only {book_count} books",
+        )
+    return None
+
+
 def detect_value(
     matched_events: list[MatchedEvent],
     min_edge: float = 0.0,
@@ -162,10 +189,12 @@ def detect_value(
     for me in matched_events:
         event = me.odds_event
         km = me.kalshi_market
+        is_draw = km.bet_type == "h2h" and me.kalshi_outcome == "tie"
 
         # ── Filter: Kalshi volume ─────────────────────────────────────────────
-        if km.volume < config.MIN_KALSHI_VOLUME:
-            reason = f"Volume {km.volume:.0f} < min {config.MIN_KALSHI_VOLUME:.0f}"
+        qf = config.quality_filters(km.bet_type, is_draw=is_draw)
+        if km.volume < qf["min_kalshi_volume"]:
+            reason = f"Volume {km.volume:.0f} < min {qf['min_kalshi_volume']:.0f}"
             logger.debug("Skip %s vs %s [%s] — %s (ticker=%s)",
                          event.home_team, event.away_team, km.bet_type, reason, km.ticker)
             _log(scan_log, me, km.yes_team or km.title[:30], None, None,
@@ -216,23 +245,12 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
                  "no_consensus", "No sportsbook data for this team")
             continue
 
-        if book_count < config.MIN_BOOKMAKER_COUNT:
-            reason = f"Only {book_count} books (min {config.MIN_BOOKMAKER_COUNT})"
+        qcheck = _quality_check(km, book_count, std_dev, "h2h")
+        if qcheck:
+            status, reason = qcheck
             logger.debug("Skip %s — %s", team, reason)
             _log(scan_log, me, team, None, consensus, book_count, std_dev, None,
-                 "few_books", reason)
-            continue
-
-        if km.spread > config.MAX_KALSHI_SPREAD:
-            reason = f"Kalshi spread {km.spread*100:.1f}¢ > max {config.MAX_KALSHI_SPREAD*100:.0f}¢"
-            _log(scan_log, me, team, None, consensus, book_count, std_dev, None,
-                 "spread_too_wide", reason)
-            continue
-
-        if std_dev > 0.04 and book_count < 4:
-            reason = f"High uncertainty: std_dev {std_dev:.3f} with only {book_count} books"
-            _log(scan_log, me, team, None, consensus, book_count, std_dev, None,
-                 "high_uncertainty", reason)
+                 status, reason)
             continue
 
         if outcome == Outcome.HOME:
@@ -271,20 +289,11 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log):
         _log(scan_log, me, "Draw", None, None, 0, 0.0, None,
              "no_consensus", "No sportsbook data for Draw")
         return
-    if book_count < config.MIN_BOOKMAKER_COUNT:
-        reason = f"Only {book_count} books (min {config.MIN_BOOKMAKER_COUNT})"
+    qcheck = _quality_check(km, book_count, std_dev, "h2h", is_draw=True)
+    if qcheck:
+        status, reason = qcheck
         _log(scan_log, me, "Draw", None, consensus, book_count, std_dev, None,
-             "few_books", reason)
-        return
-    if km.spread > config.MAX_KALSHI_SPREAD:
-        reason = f"Kalshi spread {km.spread*100:.1f}¢ > max {config.MAX_KALSHI_SPREAD*100:.0f}¢"
-        _log(scan_log, me, "Draw", None, consensus, book_count, std_dev, None,
-             "spread_too_wide", reason)
-        return
-    if std_dev > 0.04 and book_count < 4:
-        reason = f"High uncertainty: std_dev {std_dev:.3f} with only {book_count} books"
-        _log(scan_log, me, "Draw", None, consensus, book_count, std_dev, None,
-             "high_uncertainty", reason)
+             status, reason)
         return
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
     edge = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
@@ -347,20 +356,11 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
         _log(scan_log, me, label, None, None, 0, 0.0, None,
              "no_consensus", f"No sportsbook totals data for {label}")
         return
-    if book_count < config.MIN_BOOKMAKER_COUNT:
-        reason = f"Only {book_count} books (min {config.MIN_BOOKMAKER_COUNT})"
+    qcheck = _quality_check(km, book_count, std_dev, "totals")
+    if qcheck:
+        status, reason = qcheck
         _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
-             "few_books", reason)
-        return
-    if km.spread > config.MAX_KALSHI_SPREAD:
-        reason = f"Kalshi spread {km.spread*100:.1f}¢ > max {config.MAX_KALSHI_SPREAD*100:.0f}¢"
-        _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
-             "spread_too_wide", reason)
-        return
-    if std_dev > 0.04 and book_count < 4:
-        reason = f"High uncertainty: std_dev {std_dev:.3f} with only {book_count} books"
-        _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
-             "high_uncertainty", reason)
+             status, reason)
         return
 
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
@@ -453,20 +453,11 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log):
         _log(scan_log, me, label, None, None, 0, 0.0, None,
              "no_consensus", f"No sportsbook spread data for {label}")
         return
-    if book_count < config.MIN_BOOKMAKER_COUNT:
-        reason = f"Only {book_count} books (min {config.MIN_BOOKMAKER_COUNT})"
+    qcheck = _quality_check(km, book_count, std_dev, "spread")
+    if qcheck:
+        status, reason = qcheck
         _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
-             "few_books", reason)
-        return
-    if km.spread > config.MAX_KALSHI_SPREAD:
-        reason = f"Kalshi spread {km.spread*100:.1f}¢ > max {config.MAX_KALSHI_SPREAD*100:.0f}¢"
-        _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
-             "spread_too_wide", reason)
-        return
-    if std_dev > 0.04 and book_count < 4:
-        reason = f"High uncertainty: std_dev {std_dev:.3f} with only {book_count} books"
-        _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
-             "high_uncertainty", reason)
+             status, reason)
         return
 
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price

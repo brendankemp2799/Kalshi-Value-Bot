@@ -35,7 +35,7 @@ from functools import wraps
 
 from flask import Flask, jsonify, render_template_string, abort, request, Response
 import storage.db as db
-from core.odds_converter import american_to_prob, remove_vig, _norm_team, _names_match
+from core.odds_converter import american_to_prob, _devig, _norm_team, _names_match
 from execution.auto_settle import auto_settle_positions
 from data.kalshi_client import KalshiClient
 import config
@@ -128,6 +128,97 @@ def _fmt_dt(iso: str | None) -> str:
         return f"{dt.strftime('%b')} {dt.day}  {h}:{dt.strftime('%M')} {ampm} PT"
     except ValueError:
         return iso[:16]
+
+
+MIN_CALIBRATION_SAMPLE = 20  # below this, win-rate/Brier numbers are noise, not signal
+
+
+def _calibration_bucket_stats(rows: list[dict]) -> dict:
+    """
+    Aggregate a set of settled (non-void) positions into calibration stats:
+    win rate vs. average predicted probability, and Brier score.
+    predicted_prob (0-1) = market_price + edge, i.e. the consensus probability
+    that qualified the bet in the first place.
+    """
+    n = len(rows)
+    if n == 0:
+        return {"n": 0, "wins": 0, "losses": 0, "win_rate": None,
+                "avg_predicted": None, "diff": None, "brier": None,
+                "sample_ok": False}
+    wins = sum(1 for r in rows if r["won"])
+    win_rate = round(wins / n * 100, 1)
+    avg_predicted = round(sum(r["predicted"] for r in rows) / n * 100, 1)
+    brier = round(sum((r["predicted"] - (1.0 if r["won"] else 0.0)) ** 2 for r in rows) / n, 4)
+    return {
+        "n": n, "wins": wins, "losses": n - wins,
+        "win_rate": win_rate, "avg_predicted": avg_predicted,
+        "diff": round(win_rate - avg_predicted, 1),
+        "brier": brier, "sample_ok": n >= MIN_CALIBRATION_SAMPLE,
+    }
+
+
+def _book_count_bucket(count: int | None) -> str:
+    if count is None:
+        return "?"
+    if count <= 2:
+        return "2"
+    if count == 3:
+        return "3"
+    if count <= 5:
+        return "4-5"
+    return "6+"
+
+
+def _calibration_data(positions: list) -> dict:
+    """
+    Predicted-vs-actual calibration check on placed bets only (v1 scope — no
+    outcome data exists for opportunities that were filtered out and never bet).
+    Void settlements are excluded: a market cancellation isn't a probability
+    outcome, so it carries no calibration signal either way.
+    """
+    settled: list[dict] = []
+    voids = 0
+    for p in positions:
+        if p["status"] != "closed" or p["pnl"] is None:
+            continue
+        if p["pnl"] == 0.0:
+            voids += 1
+            continue
+        if p["edge"] is None:
+            continue
+        settled.append({
+            "won": p["pnl"] > 0,
+            "predicted": p["market_price"] + p["edge"],
+            "bet_type": p["bet_type"] if "bet_type" in p.keys() else "h2h",
+            "bookmaker_count": p["bookmaker_count"] if "bookmaker_count" in p.keys() else None,
+        })
+
+    overall = _calibration_bucket_stats(settled)
+    overall["voids"] = voids
+
+    by_bet_type: dict[str, list[dict]] = defaultdict(list)
+    for r in settled:
+        by_bet_type[_bet_type_label(r["bet_type"])].append(r)
+    bet_type_rows = [
+        {"label": label, **_calibration_bucket_stats(rows)}
+        for label, rows in sorted(by_bet_type.items())
+    ]
+
+    by_books: dict[str, list[dict]] = defaultdict(list)
+    for r in settled:
+        by_books[_book_count_bucket(r["bookmaker_count"])].append(r)
+    _book_order = {"2": 0, "3": 1, "4-5": 2, "6+": 3, "?": 4}
+    book_rows = [
+        {"label": label, **_calibration_bucket_stats(rows)}
+        for label, rows in sorted(by_books.items(), key=lambda kv: _book_order.get(kv[0], 9))
+    ]
+
+    return {
+        "overall": overall,
+        "by_bet_type": bet_type_rows,
+        "by_book_count": book_rows,
+        "min_sample": MIN_CALIBRATION_SAMPLE,
+    }
 
 
 def build_data() -> dict:
@@ -319,6 +410,8 @@ def build_data() -> dict:
     except Exception:
         total_deposited = None
 
+    calibration = _calibration_data(positions)
+
     return {
         "mode": "PAPER" if IS_PAPER else "LIVE",
         "summary": {
@@ -342,6 +435,7 @@ def build_data() -> dict:
         "failed_rows": failed_rows,
         "settled_rows": settled_rows[:30],
         "opp_rows": opp_rows,
+        "calibration": calibration,
     }
 
 
@@ -454,7 +548,7 @@ def _book_breakdown(bookmakers_json: str, team_name: str, bet_type: str, thresho
                 continue
 
             raw_probs = [american_to_prob(o["price"]) for o in outcomes]
-            no_vig = remove_vig(raw_probs)
+            no_vig = _devig(raw_probs)
             idx = outcomes.index(target)
             pt = target.get("point")
             line = f"{outcome_name} {pt}" if pt is not None else outcome_name
@@ -1368,6 +1462,27 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div class="section-header"><h2>Recent Value Detections</h2></div>
     <div class="table-wrap"><table id="opp-table"></table></div>
   </div>
+
+  <!-- Calibration summary -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Calibration</h2>
+      <span class="count" id="calibration-count"></span>
+    </div>
+    <div class="cards" id="calibration-cards"></div>
+  </div>
+
+  <!-- Calibration by bet type -->
+  <div class="section">
+    <div class="section-header"><h2>Calibration — By Bet Type</h2></div>
+    <div class="table-wrap"><table id="calibration-bettype-table"></table></div>
+  </div>
+
+  <!-- Calibration by bookmaker count -->
+  <div class="section">
+    <div class="section-header"><h2>Calibration — By Bookmaker Count</h2></div>
+    <div class="table-wrap"><table id="calibration-books-table"></table></div>
+  </div>
 </main>
 
 <script>
@@ -1612,6 +1727,61 @@ function renderOppTable(rows) {
   </tr>`).join('') + '</tbody>';
 }
 
+function _calRowsHtml(rows, labelHeader) {
+  if (!rows.length) return emptyRow(6, 'No settled bets yet.');
+  return `<thead><tr>
+    <th>${labelHeader}</th><th>N</th><th>Won</th><th>Lost</th><th>Win Rate</th><th>Avg Predicted</th><th>Diff</th>
+  </tr></thead><tbody>` + rows.map(r => {
+    if (!r.n) {
+      return `<tr><td data-label="${labelHeader}"><strong>${r.label}</strong></td>
+        <td colspan="6" style="color:var(--muted)">No settled bets</td></tr>`;
+    }
+    const diffClass = r.diff > 3 ? 'pos' : r.diff < -3 ? 'neg' : 'neutral';
+    const sampleTag = r.sample_ok ? '' : ' <span style="color:var(--muted);font-size:11px">(low sample)</span>';
+    return `<tr>
+      <td data-label="${labelHeader}"><strong>${r.label}</strong></td>
+      <td data-label="N">${r.n}${sampleTag}</td>
+      <td data-label="Won" class="pos">${r.wins}</td>
+      <td data-label="Lost" class="neg">${r.losses}</td>
+      <td data-label="Win Rate">${r.win_rate.toFixed(1)}%</td>
+      <td data-label="Avg Predicted">${r.avg_predicted.toFixed(1)}%</td>
+      <td data-label="Diff" class="${diffClass}">${r.diff >= 0 ? '+' : ''}${r.diff.toFixed(1)}pt</td>
+    </tr>`;
+  }).join('') + '</tbody>';
+}
+
+function renderCalibration(cal) {
+  const o = cal.overall;
+  document.getElementById('calibration-count').textContent =
+    o.n ? o.n + ' settled bet' + (o.n === 1 ? '' : 's') + (o.voids ? ' (' + o.voids + ' void)' : '') : '';
+
+  const cardsEl = document.getElementById('calibration-cards');
+  if (!o.n) {
+    cardsEl.innerHTML = `<div class="card"><div class="card-label">Calibration</div>
+      <div class="card-value neutral">—</div><div class="card-sub">No settled bets yet</div></div>`;
+  } else {
+    const diffClass = o.diff > 3 ? 'pos' : o.diff < -3 ? 'neg' : 'neutral';
+    const sampleCard = o.sample_ok ? '' : `
+      <div class="card"><div class="card-label">Sample Size</div><div class="card-value neutral">Low</div>
+      <div class="card-sub">Need ${cal.min_sample}+ settled bets for signal</div></div>`;
+    cardsEl.innerHTML = `
+      <div class="card"><div class="card-label">Settled Bets</div><div class="card-value">${o.n}</div>
+        <div class="card-sub">${o.wins}W / ${o.losses}L${o.voids ? ' · ' + o.voids + ' void' : ''}</div></div>
+      <div class="card"><div class="card-label">Win Rate</div><div class="card-value">${o.win_rate.toFixed(1)}%</div>
+        <div class="card-sub">vs ${o.avg_predicted.toFixed(1)}% predicted</div></div>
+      <div class="card"><div class="card-label">Calibration Gap</div>
+        <div class="card-value"><span class="${diffClass}">${o.diff >= 0 ? '+' : ''}${o.diff.toFixed(1)}pt</span></div>
+        <div class="card-sub">actual − predicted win rate</div></div>
+      <div class="card"><div class="card-label">Brier Score</div><div class="card-value">${o.brier.toFixed(4)}</div>
+        <div class="card-sub">lower is better · 0 = perfect</div></div>
+      ${sampleCard}
+    `;
+  }
+
+  document.getElementById('calibration-bettype-table').innerHTML = _calRowsHtml(cal.by_bet_type, 'Bet Type');
+  document.getElementById('calibration-books-table').innerHTML = _calRowsHtml(cal.by_book_count, 'Books');
+}
+
 async function refresh() {
   try {
     const res = await fetch('/api/data');
@@ -1623,6 +1793,7 @@ async function refresh() {
     renderFailedTable(d.failed_rows);
     renderSettledTable(d.settled_rows);
     renderOppTable(d.opp_rows);
+    renderCalibration(d.calibration);
     document.getElementById('last-updated').textContent =
       'Updated ' + new Date().toLocaleTimeString();
   } catch (e) {
