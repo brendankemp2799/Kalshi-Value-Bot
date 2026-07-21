@@ -237,7 +237,7 @@ def run_scan(
         if sizing.recommended_dollars < min_bet:
             reason = (
                 f"Kelly bet ${sizing.recommended_dollars:.2f} below "
-                f"minimum ${min_bet:.2f} (1% of ${bm.bankroll:.0f} bankroll)"
+                f"minimum ${min_bet:.2f} (0.5% of ${bm.bankroll:.0f} bankroll)"
             )
             logger.debug("Skip %s — %s", opp.team_name, reason)
             _update_scan_log(scan_log, opp, "kelly_no_edge", reason)

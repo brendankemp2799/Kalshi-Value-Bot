@@ -19,8 +19,8 @@ BANKROLL: float = float(os.getenv("BANKROLL", "1000"))
 
 # ── Risk Management ───────────────────────────────────────────────────────────
 KELLY_FRACTION: float = 0.25          # Use quarter-Kelly to reduce variance
-MIN_BET_DOLLARS: float = 1.0          # Absolute floor — Kalshi minimum is ~$0.01 per contract
-MIN_BET_PCT: float = 0.01             # Minimum bet as % of bankroll (1%); scales with account size
+MIN_BET_DOLLARS: float = 0.5          # Absolute floor — Kalshi minimum is ~$0.01 per contract
+MIN_BET_PCT: float = 0.005            # Minimum bet as % of bankroll (0.5%); scales with account size
 MAX_BET_DOLLARS: float = 100.0        # Hard dollar cap per bet
 MAX_PCT_BANKROLL: float = 0.05        # Max 5% of bankroll per single bet
 MAX_TOTAL_EXPOSURE_PCT: float = 0.30  # Max 30% of bankroll deployed at once
@@ -91,7 +91,7 @@ LIMIT_ORDER_ASK_TIMEOUT_SECONDS: int = 30        # step 2 — GTC at ask (short;
 # 30 s catches any immediate liquidity at mid without blocking the loop for 10 min.
 LIMIT_ORDER_MAKER_ONLY_TIMEOUT_SECONDS: int = int(os.getenv("LIMIT_ORDER_MAKER_ONLY_TIMEOUT_SECONDS", "30"))
 MIN_KALSHI_VOLUME: float = 0.0        # Disabled — spread filter (MAX_KALSHI_SPREAD) is sufficient liquidity gate
-MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.02"))  # Minimum NET edge after Kalshi taker fee
+MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.015"))  # Minimum NET edge after Kalshi taker fee
 # Kalshi settlement fee: quadratic in price — fee = RATE × price × (1-price) × contracts
 # Taker (IOC fills): 7¢ per contract at max (price=0.5); simplifies to RATE×(1-price)×stake
 # Maker (limit fills): no fee currently charged
