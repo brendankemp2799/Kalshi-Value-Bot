@@ -20,7 +20,6 @@ BANKROLL: float = float(os.getenv("BANKROLL", "1000"))
 # ── Risk Management ───────────────────────────────────────────────────────────
 KELLY_FRACTION: float = 0.25          # Use quarter-Kelly to reduce variance
 MIN_BET_DOLLARS: float = 0.5          # Absolute floor — Kalshi minimum is ~$0.01 per contract
-MIN_BET_PCT: float = 0.005            # Minimum bet as % of bankroll (0.5%); scales with account size
 MAX_BET_DOLLARS: float = 100.0        # Hard dollar cap per bet
 MAX_PCT_BANKROLL: float = 0.05        # Max 5% of bankroll per single bet
 MAX_TOTAL_EXPOSURE_PCT: float = 0.30  # Max 30% of bankroll deployed at once
