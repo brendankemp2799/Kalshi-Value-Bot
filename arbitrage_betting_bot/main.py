@@ -388,6 +388,8 @@ def run_scan(
                     "[LIVE] Order FAILED: %s $%.2f — position logged with status=failed",
                     opp.team_name, sizing.recommended_dollars,
                 )
+                _update_scan_log(scan_log, opp, "execution_failed",
+                                 failure_reason or "Order unfilled or rejected")
 
 
     if not dry_run:
