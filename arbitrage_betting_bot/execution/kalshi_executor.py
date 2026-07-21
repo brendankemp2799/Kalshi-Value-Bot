@@ -161,11 +161,12 @@ def place_order(
     if side == "yes":
         api_side = "bid"
         yes_price_ask = price
-        yes_price_mid = max(0.01, price - kalshi_spread / 2.0)
+        # Round to nearest cent — Kalshi prices are on a 1¢ grid (step=0.01)
+        yes_price_mid = round(max(0.01, price - kalshi_spread / 2.0), 2)
     else:
         api_side = "ask"
         yes_price_ask = 1.0 - price
-        yes_price_mid = min(0.99, yes_price_ask + kalshi_spread / 2.0)
+        yes_price_mid = round(min(0.99, yes_price_ask + kalshi_spread / 2.0), 2)
 
     # ── Step 1: GTC at mid price ──────────────────────────────────────────────
     timeout = _limit_timeout(commence_time)
