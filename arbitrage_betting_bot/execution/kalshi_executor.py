@@ -169,7 +169,10 @@ def place_order(
         yes_price_mid = round(min(0.99, yes_price_ask + kalshi_spread / 2.0), 2)
 
     # ── Step 1: GTC at mid price ──────────────────────────────────────────────
-    timeout = _limit_timeout(commence_time)
+    # maker_only bets have no step-2 fallback — use a short timeout so the scan
+    # doesn't block for 10 min on a bet that has no ask-price fallback.
+    timeout = (config.LIMIT_ORDER_MAKER_ONLY_TIMEOUT_SECONDS if maker_only
+               else _limit_timeout(commence_time))
     client_order_id = str(uuid.uuid4())
     try:
         data = _place_raw_order(ticker, api_side, yes_price_mid, count, "good_till_canceled", client_order_id)
@@ -205,8 +208,8 @@ def place_order(
 
         _cancel_order(order_id)
         if maker_only:
-            reason = f"GTC mid unfilled after {timeout}s — maker_only, not trying ask step"
-            logger.info("Kalshi GTC mid unfilled for %s — maker_only, giving up", ticker)
+            reason = f"GTC mid unfilled after {timeout}s — no liquidity at mid, no ask fallback"
+            logger.info("Kalshi GTC mid unfilled for %s — maker_only, giving up after %ds", ticker, timeout)
             return order_id, "failed", reason, 0.0, ""
         logger.info(
             "Kalshi GTC mid unfilled after %ds — trying GTC at ask for %s",

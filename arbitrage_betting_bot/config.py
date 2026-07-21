@@ -87,6 +87,9 @@ LIMIT_ORDER_TIMEOUT_DEFAULT_SECONDS: int = 600   # step 1 — game > 1 hour away
 LIMIT_ORDER_TIMEOUT_PRE_GAME_SECONDS: int = 300  # step 1 — within 1 hour
 LIMIT_ORDER_TIMEOUT_NEAR_GAME_SECONDS: int = 120 # step 1 — within 30 minutes
 LIMIT_ORDER_ASK_TIMEOUT_SECONDS: int = 30        # step 2 — GTC at ask (short; ask should fill fast)
+# maker_only bets have no step-2 fallback, so polling indefinitely wastes scan time.
+# 30 s catches any immediate liquidity at mid without blocking the loop for 10 min.
+LIMIT_ORDER_MAKER_ONLY_TIMEOUT_SECONDS: int = int(os.getenv("LIMIT_ORDER_MAKER_ONLY_TIMEOUT_SECONDS", "30"))
 MIN_KALSHI_VOLUME: float = 0.0        # Disabled — spread filter (MAX_KALSHI_SPREAD) is sufficient liquidity gate
 MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.02"))  # Minimum NET edge after Kalshi taker fee
 # Kalshi settlement fee: quadratic in price — fee = RATE × price × (1-price) × contracts

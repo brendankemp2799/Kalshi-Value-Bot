@@ -106,9 +106,10 @@ def _eval_edge(
     mid_edge = consensus - mid_price   # GTC at mid, 0% fee
     ask_edge = consensus - ask_price   # GTC at ask, 0% fee
 
+    _EPS = 1e-9  # floating-point tolerance: treat 1.9999999% as 2.0%
     if mid_edge >= min_edge:
-        return mid_edge, ask_edge < min_edge
-    if ask_edge >= min_edge:
+        return mid_edge, ask_edge < min_edge - _EPS
+    if ask_edge >= min_edge - _EPS:
         return ask_edge, False
     return None
 
