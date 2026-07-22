@@ -368,6 +368,9 @@ def build_data() -> dict:
             continue
         pnl_v = p["pnl"]
         bet_type_s = p["bet_type"] if "bet_type" in p.keys() else "h2h"
+        edge_v = p["edge"] if "edge" in p.keys() else None
+        consensus_pct = round((p["market_price"] + edge_v) * 100, 1) if edge_v is not None else None
+        edge_pct = round(edge_v * 100, 1) if edge_v is not None else None
         settled_rows.append({
             "id": p["id"],
             "team": p["team_name"],
@@ -375,6 +378,8 @@ def build_data() -> dict:
             "bet_type": _bet_type_label(bet_type_s),
             "stake": round(p["stake"], 2),
             "price_pct": round(p["market_price"] * 100, 0),
+            "consensus_pct": consensus_pct,
+            "edge_pct": edge_pct,
             "pnl": round(pnl_v, 2) if pnl_v is not None else None,
             "won": pnl_v is not None and pnl_v >= 0,
             "settled": _fmt_dt(p["settled_at"]),
@@ -1688,14 +1693,16 @@ function renderSettledTable(rows) {
   const t = document.getElementById('settled-table');
   document.getElementById('settled-count').textContent = rows.length ? rows.length + ' bets' : '';
   if (!rows.length) {
-    t.innerHTML = emptyRow(9, 'No settled bets yet.');
+    t.innerHTML = emptyRow(11, 'No settled bets yet.');
     return;
   }
   t.innerHTML = `<thead><tr>
     <th>#</th><th>Team</th><th>Sport</th><th>Type</th><th>Stake</th>
-    <th>Price</th><th>P&L</th><th>Result</th><th>Settled</th>
+    <th>Price</th><th>Consensus</th><th>Edge</th><th>P&L</th><th>Result</th><th>Settled</th>
   </tr></thead><tbody>` + rows.map(r => {
     const typeStr = r.bet_type && r.bet_type !== 'Moneyline' ? `<span style="color:var(--blue)">${r.bet_type}</span>` : `<span style="color:var(--muted)">Moneyline</span>`;
+    const consensusStr = r.consensus_pct != null ? `${r.consensus_pct.toFixed(1)}%` : '<span style="color:var(--muted)">—</span>';
+    const edgeStr = r.edge_pct != null ? `<span class="pos"><strong>${r.edge_pct.toFixed(1)}%</strong></span>` : '<span style="color:var(--muted)">—</span>';
     return `<tr>
     <td data-label="#"><a href="/position/${r.id}" style="color:var(--blue);text-decoration:none">#${r.id}</a></td>
     <td data-label="Team"><strong>${r.team}</strong></td>
@@ -1703,6 +1710,8 @@ function renderSettledTable(rows) {
     <td data-label="Type">${typeStr}</td>
     <td data-label="Stake">$${r.stake.toFixed(2)}</td>
     <td data-label="Price">${r.price_pct}¢</td>
+    <td data-label="Consensus">${consensusStr}</td>
+    <td data-label="Edge">${edgeStr}</td>
     <td data-label="P&L">${pnlStr(r.pnl)}</td>
     <td data-label="Result"><span class="tag ${r.won ? 'tag-win' : 'tag-loss'}">${r.won ? 'WIN' : 'LOSS'}</span></td>
     <td data-label="Settled" style="color:var(--muted)">${r.settled}</td>
