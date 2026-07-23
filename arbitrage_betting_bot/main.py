@@ -101,6 +101,17 @@ def _log_api_credits(logger: logging.Logger) -> None:
         pass  # never crash a scan over credit logging
 
 
+def _run_reconciliation_if_live(paper: bool, dry_run: bool) -> None:
+    """Compare our tracked positions against Kalshi's own records — live only, never paper/dry-run."""
+    if paper or dry_run:
+        return
+    try:
+        from execution.reconciliation import run_reconciliation_check
+        run_reconciliation_check()
+    except Exception as e:
+        logging.getLogger(__name__).warning("Reconciliation check failed: %s", e)
+
+
 
 def run_scan(
     odds_client: OddsAPIClient,
@@ -147,6 +158,7 @@ def run_scan(
                 daily_staked, daily_risk_cap,
             )
             auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=config.ENABLE_TRAILING_STOP)
+            _run_reconciliation_if_live(paper, dry_run)
             bm.snapshot()
             _log_api_credits(logger)
             return
@@ -160,6 +172,7 @@ def run_scan(
         )
         if not dry_run:
             auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=config.ENABLE_TRAILING_STOP)
+            _run_reconciliation_if_live(paper, dry_run)
             bm.snapshot()
         _log_api_credits(logger)
         return
@@ -173,6 +186,7 @@ def run_scan(
                 open_count, config.MAX_OPEN_POSITIONS,
             )
             auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=config.ENABLE_TRAILING_STOP)
+            _run_reconciliation_if_live(paper, dry_run)
             bm.snapshot()
             _log_api_credits(logger)
             return
@@ -293,9 +307,16 @@ def run_scan(
     # 4b. Pre-check all opportunities sequentially (reads DB — must be serial)
     alerted = 0
     approved_live: list[tuple] = []  # (opp, sizing, opp_id) for live parallel execution
+    # Live positions aren't written to the DB until the parallel execution block below,
+    # so tracker.is_allowed()'s same-ticker rule can't see anything queued earlier in
+    # THIS scan. Track it locally so the same ticker can't be approved twice in one batch.
+    approved_tickers_this_scan: set[str] = set()
 
     for _score, opp, sizing in scored:
+        ticker = opp.matched_event.kalshi_market.ticker
         allowed, reason = tracker.is_allowed(opp, sizing.recommended_dollars, arb_game_keys=arb_game_keys)
+        if allowed and not dry_run and not paper and ticker in approved_tickers_this_scan:
+            allowed, reason = False, f"Already queued an entry on {ticker} earlier this scan"
 
         event = opp.matched_event.odds_event
         opp_id = None
@@ -353,6 +374,7 @@ def run_scan(
                         opp.team_name, sizing.recommended_dollars)
         elif opp_id:
             # Live mode: queue for parallel execution below
+            approved_tickers_this_scan.add(ticker)
             approved_live.append((opp, sizing, opp_id))
 
     # 4c. Live mode — place all approved orders in parallel (GTC timeouts run concurrently)
@@ -365,44 +387,80 @@ def run_scan(
             future_map = {pool.submit(_do_trade, item): item for item in approved_live}
             for future in as_completed(future_map):
                 opp, sizing, opp_id = future_map[future]
-                order_id, exec_status, side, failure_reason, actual_stake, fill_type = future.result()
+                ticker = opp.matched_event.kalshi_market.ticker
+
+                # Stage 1: unpack the trade result. An exception here means we don't
+                # even know if a fill happened — isolated per-future so one bad
+                # result can't skip recording for every other order in this batch.
+                try:
+                    order_id, exec_status, side, failure_reason, actual_stake, fill_type = future.result()
+                except Exception as e:
+                    logger.error(
+                        "execute_trade() raised for %s (%s) — order status UNKNOWN, "
+                        "check Kalshi manually: %s",
+                        opp.team_name, ticker, e, exc_info=True,
+                    )
+                    continue
+
+                # Stage 2: record the fill immediately, before anything else that
+                # could throw. This is the one thing that must never be skipped —
+                # if it fails, log everything needed to manually reconcile rather
+                # than silently lose track of a real Kalshi order.
                 event = opp.matched_event.odds_event
-                add_position(
-                    sport=event.sport_key,
-                    home_team=event.home_team,
-                    away_team=event.away_team,
-                    team_name=opp.team_name,
-                    platform="Kalshi",
-                    stake=actual_stake,
-                    market_price=opp.market_price,
-                    is_paper=False,
-                    order_id=order_id,
-                    execution_status=exec_status,
-                    market_ticker=opp.matched_event.kalshi_market.ticker,
-                    side=side,
-                    edge=opp.edge,
-                    bookmaker_count=opp.bookmaker_count,
-                    consensus_std=opp.consensus_std,
-                    kalshi_spread=opp.matched_event.kalshi_market.spread,
-                    commence_time=event.commence_time.isoformat(),
-                    bet_type=opp.matched_event.kalshi_market.bet_type,
-                    threshold=opp.matched_event.kalshi_market.threshold,
-                    bookmakers_json=json.dumps(event.bookmakers),
-                    failure_reason=failure_reason or None,
-                    fill_type=fill_type or "taker",
-                )
-                if exec_status == "submitted":
-                    send_alert(opp, sizing, dry_run=False, paper=False)
-                    alerted += 1
-                    log_alert(opp_id, sizing.recommended_dollars, bm.bankroll)
-                    logger.info("[LIVE] Order submitted: %s $%.2f on Kalshi  (order_id=%s)",
-                                opp.team_name, sizing.recommended_dollars, order_id)
-                else:
-                    tracker.record_failure(opp.matched_event.kalshi_market.ticker)
-                    logger.error("[LIVE] Order FAILED: %s $%.2f — position logged with status=failed",
-                                 opp.team_name, sizing.recommended_dollars)
-                    _update_scan_log(scan_log, opp, "execution_failed",
-                                     failure_reason or "Order unfilled or rejected")
+                try:
+                    add_position(
+                        sport=event.sport_key,
+                        home_team=event.home_team,
+                        away_team=event.away_team,
+                        team_name=opp.team_name,
+                        platform="Kalshi",
+                        stake=actual_stake,
+                        market_price=opp.market_price,
+                        is_paper=False,
+                        order_id=order_id,
+                        execution_status=exec_status,
+                        market_ticker=ticker,
+                        side=side,
+                        edge=opp.edge,
+                        bookmaker_count=opp.bookmaker_count,
+                        consensus_std=opp.consensus_std,
+                        kalshi_spread=opp.matched_event.kalshi_market.spread,
+                        commence_time=event.commence_time.isoformat(),
+                        bet_type=opp.matched_event.kalshi_market.bet_type,
+                        threshold=opp.matched_event.kalshi_market.threshold,
+                        bookmakers_json=json.dumps(event.bookmakers),
+                        failure_reason=failure_reason or None,
+                        fill_type=fill_type or "taker",
+                    )
+                except Exception as e:
+                    logger.critical(
+                        "add_position() FAILED after a REAL Kalshi fill — this position "
+                        "is UNTRACKED. order_id=%s ticker=%s exec_status=%s stake=$%.2f — "
+                        "manual reconciliation required: %s",
+                        order_id, ticker, exec_status, actual_stake, e, exc_info=True,
+                    )
+                    continue
+
+                # Stage 3: alerts/logging — the position is already safely recorded,
+                # so a failure here is a nuisance, not a tracking loss.
+                try:
+                    if exec_status == "submitted":
+                        send_alert(opp, sizing, dry_run=False, paper=False)
+                        alerted += 1
+                        log_alert(opp_id, sizing.recommended_dollars, bm.bankroll)
+                        logger.info("[LIVE] Order submitted: %s $%.2f on Kalshi  (order_id=%s)",
+                                    opp.team_name, sizing.recommended_dollars, order_id)
+                    else:
+                        tracker.record_failure(ticker)
+                        logger.error("[LIVE] Order FAILED: %s $%.2f — position logged with status=failed",
+                                     opp.team_name, sizing.recommended_dollars)
+                        _update_scan_log(scan_log, opp, "execution_failed",
+                                         failure_reason or "Order unfilled or rejected")
+                except Exception as e:
+                    logger.warning(
+                        "Post-recording alert/logging failed for %s (position already "
+                        "recorded safely): %s", ticker, e,
+                    )
 
 
     if not dry_run:
@@ -413,6 +471,7 @@ def run_scan(
     # Auto-settle any open positions whose Kalshi market has now resolved
     if not dry_run:
         auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=config.ENABLE_TRAILING_STOP)
+        _run_reconciliation_if_live(paper, dry_run)
 
     _log_api_credits(logger)
     if alerted > 0:
