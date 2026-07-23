@@ -371,6 +371,8 @@ def build_data() -> dict:
         edge_v = p["edge"] if "edge" in p.keys() else None
         consensus_pct = round((p["market_price"] + edge_v) * 100, 1) if edge_v is not None else None
         edge_pct = round(edge_v * 100, 1) if edge_v is not None else None
+        kalshi_close_v = p["kalshi_close_price"] if "kalshi_close_price" in p.keys() else None
+        consensus_close_v = p["consensus_close_prob"] if "consensus_close_prob" in p.keys() else None
         settled_rows.append({
             "id": p["id"],
             "team": p["team_name"],
@@ -380,6 +382,8 @@ def build_data() -> dict:
             "price_pct": round(p["market_price"] * 100, 0),
             "consensus_pct": consensus_pct,
             "edge_pct": edge_pct,
+            "kalshi_close_pct": round(kalshi_close_v * 100, 1) if kalshi_close_v is not None else None,
+            "consensus_close_pct": round(consensus_close_v * 100, 1) if consensus_close_v is not None else None,
             "pnl": round(pnl_v, 2) if pnl_v is not None else None,
             "won": pnl_v is not None and pnl_v >= 0,
             "settled": _fmt_dt(p["settled_at"]),
@@ -1348,9 +1352,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
   /* Tables */
   .section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 14px; overflow: hidden; }
-  .section-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .section-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; user-select: none; }
   .section-header h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
   .section-header .count { font-size: 12px; color: var(--muted); }
+  .section-header .chevron { font-size: 11px; color: var(--muted); margin-left: 8px; flex-shrink: 0; transition: transform 0.2s; }
+  .section.collapsed .table-wrap, .section.collapsed .cards { display: none; }
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; }
   th { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
@@ -1395,10 +1402,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     tbody td[colspan] { justify-content: center; }
     tbody td[colspan]::before { display: none; }
     .empty-state { white-space: normal; }
-    /* Collapsible sections */
-    .section-header { cursor: pointer; user-select: none; }
-    .section-header .chevron { font-size: 11px; color: var(--muted); margin-left: 8px; flex-shrink: 0; transition: transform 0.2s; }
-    .section.collapsed .table-wrap { display: none; }
   }
 </style>
 </head>
@@ -1693,16 +1696,19 @@ function renderSettledTable(rows) {
   const t = document.getElementById('settled-table');
   document.getElementById('settled-count').textContent = rows.length ? rows.length + ' bets' : '';
   if (!rows.length) {
-    t.innerHTML = emptyRow(11, 'No settled bets yet.');
+    t.innerHTML = emptyRow(13, 'No settled bets yet.');
     return;
   }
   t.innerHTML = `<thead><tr>
     <th>#</th><th>Team</th><th>Sport</th><th>Type</th><th>Stake</th>
-    <th>Price</th><th>Consensus</th><th>Edge</th><th>P&L</th><th>Result</th><th>Settled</th>
+    <th>Price</th><th>Consensus</th><th>Edge</th><th>Kalshi Close</th><th>Consensus Close</th>
+    <th>P&L</th><th>Result</th><th>Settled</th>
   </tr></thead><tbody>` + rows.map(r => {
     const typeStr = r.bet_type && r.bet_type !== 'Moneyline' ? `<span style="color:var(--blue)">${r.bet_type}</span>` : `<span style="color:var(--muted)">Moneyline</span>`;
     const consensusStr = r.consensus_pct != null ? `${r.consensus_pct.toFixed(1)}%` : '<span style="color:var(--muted)">—</span>';
     const edgeStr = r.edge_pct != null ? `<span class="pos"><strong>${r.edge_pct.toFixed(1)}%</strong></span>` : '<span style="color:var(--muted)">—</span>';
+    const kalshiCloseStr = r.kalshi_close_pct != null ? `${r.kalshi_close_pct.toFixed(1)}%` : '<span style="color:var(--muted)">—</span>';
+    const consensusCloseStr = r.consensus_close_pct != null ? `${r.consensus_close_pct.toFixed(1)}%` : '<span style="color:var(--muted)">—</span>';
     return `<tr>
     <td data-label="#"><a href="/position/${r.id}" style="color:var(--blue);text-decoration:none">#${r.id}</a></td>
     <td data-label="Team"><strong>${r.team}</strong></td>
@@ -1712,6 +1718,8 @@ function renderSettledTable(rows) {
     <td data-label="Price">${r.price_pct}¢</td>
     <td data-label="Consensus">${consensusStr}</td>
     <td data-label="Edge">${edgeStr}</td>
+    <td data-label="Kalshi Close">${kalshiCloseStr}</td>
+    <td data-label="Consensus Close">${consensusCloseStr}</td>
     <td data-label="P&L">${pnlStr(r.pnl)}</td>
     <td data-label="Result"><span class="tag ${r.won ? 'tag-win' : 'tag-loss'}">${r.won ? 'WIN' : 'LOSS'}</span></td>
     <td data-label="Settled" style="color:var(--muted)">${r.settled}</td>
@@ -1814,14 +1822,17 @@ refresh();
 setInterval(refresh, 60000);  // auto-refresh every 60s
 
 function initCollapsible() {
-  if (window.innerWidth > 700) return;
+  // Mobile starts collapsed by default to save scroll space; desktop starts
+  // expanded (unchanged prior behavior) but every section still gets a
+  // click-to-collapse toggle.
+  const startCollapsed = window.innerWidth <= 700;
   document.querySelectorAll('.section').forEach(section => {
     const header = section.querySelector('.section-header');
     if (!header) return;
-    section.classList.add('collapsed');
+    if (startCollapsed) section.classList.add('collapsed');
     const chevron = document.createElement('span');
     chevron.className = 'chevron';
-    chevron.textContent = '▼';
+    chevron.textContent = startCollapsed ? '▼' : '▲';
     header.appendChild(chevron);
     header.addEventListener('click', () => {
       const isNowCollapsed = section.classList.toggle('collapsed');

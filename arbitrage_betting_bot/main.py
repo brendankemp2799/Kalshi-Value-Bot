@@ -146,7 +146,7 @@ def run_scan(
                 "skipping API fetch. Running auto-settle only.",
                 daily_staked, daily_risk_cap,
             )
-            auto_settle_positions(is_paper=paper)
+            auto_settle_positions(is_paper=paper, capture_closing_lines=True)
             bm.snapshot()
             _log_api_credits(logger)
             return
@@ -159,7 +159,7 @@ def run_scan(
             exposure_pct * 100, config.MAX_TOTAL_EXPOSURE_PCT * 100,
         )
         if not dry_run:
-            auto_settle_positions(is_paper=paper)
+            auto_settle_positions(is_paper=paper, capture_closing_lines=True)
             bm.snapshot()
         _log_api_credits(logger)
         return
@@ -172,7 +172,7 @@ def run_scan(
                 "Running auto-settle only.",
                 open_count, config.MAX_OPEN_POSITIONS,
             )
-            auto_settle_positions(is_paper=paper)
+            auto_settle_positions(is_paper=paper, capture_closing_lines=True)
             bm.snapshot()
             _log_api_credits(logger)
             return
@@ -412,7 +412,7 @@ def run_scan(
 
     # Auto-settle any open positions whose Kalshi market has now resolved
     if not dry_run:
-        auto_settle_positions(is_paper=paper)
+        auto_settle_positions(is_paper=paper, capture_closing_lines=True)
 
     _log_api_credits(logger)
     if alerted > 0:

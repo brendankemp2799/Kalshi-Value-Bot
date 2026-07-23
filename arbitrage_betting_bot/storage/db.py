@@ -150,6 +150,9 @@ def _migrate() -> None:
             ("bookmakers_json",  "ALTER TABLE positions ADD COLUMN bookmakers_json TEXT"),
             ("failure_reason",   "ALTER TABLE positions ADD COLUMN failure_reason TEXT"),
             ("fill_type",        "ALTER TABLE positions ADD COLUMN fill_type TEXT NOT NULL DEFAULT 'taker'"),
+            ("kalshi_close_price",     "ALTER TABLE positions ADD COLUMN kalshi_close_price REAL"),
+            ("consensus_close_prob",   "ALTER TABLE positions ADD COLUMN consensus_close_prob REAL"),
+            ("closing_line_attempts", "ALTER TABLE positions ADD COLUMN closing_line_attempts INTEGER NOT NULL DEFAULT 0"),
         ]:
             if col not in existing:
                 conn.execute(ddl)
@@ -383,6 +386,40 @@ def settle_position(position_id: int, result: str) -> float:
             (pnl, datetime.utcnow().isoformat(), position_id),
         )
         return pnl
+
+
+# ── Closing Line Value ──────────────────────────────────────────────────────────
+
+def get_positions_pending_closing_lines(max_attempts: int = 3) -> list[sqlite3.Row]:
+    """Closed positions still missing closing-line data, under the retry cap."""
+    with get_connection() as conn:
+        return conn.execute(
+            """
+            SELECT * FROM positions
+            WHERE status = 'closed'
+              AND consensus_close_prob IS NULL
+              AND closing_line_attempts < ?
+            """,
+            (max_attempts,),
+        ).fetchall()
+
+
+def set_closing_lines(
+    position_id: int,
+    kalshi_close_price: float | None,
+    consensus_close_prob: float | None,
+) -> None:
+    """Record closing-line values for a settled position and bump the attempt count."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE positions
+            SET kalshi_close_price = ?, consensus_close_prob = ?,
+                closing_line_attempts = closing_line_attempts + 1
+            WHERE id = ?
+            """,
+            (kalshi_close_price, consensus_close_prob, position_id),
+        )
 
 
 # ── Dashboard Queries ─────────────────────────────────────────────────────────

@@ -179,6 +179,23 @@ class KalshiClient:
         resp.raise_for_status()
         return resp.json()
 
+    def fetch_candlesticks(
+        self,
+        series_ticker: str,
+        ticker: str,
+        start_ts: int,
+        end_ts: int,
+        period_interval: int = 1,
+    ) -> dict:
+        """
+        Minute-level (or other period_interval, in minutes) OHLC + bid/ask price
+        history for a market between two unix timestamps. Not credit-metered.
+        """
+        return self._get(
+            f"/series/{series_ticker}/markets/{ticker}/candlesticks",
+            {"start_ts": start_ts, "end_ts": end_ts, "period_interval": period_interval},
+        )
+
     def fetch_balance(self) -> float:
         """Return available trading balance in dollars from Kalshi portfolio API.
         Falls back to config.BANKROLL if the request fails."""

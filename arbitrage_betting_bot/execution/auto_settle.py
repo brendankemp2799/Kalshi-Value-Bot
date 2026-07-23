@@ -19,13 +19,22 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
-from storage.db import get_open_positions, settle_position
+from storage.db import (
+    get_open_positions,
+    settle_position,
+    get_positions_pending_closing_lines,
+    set_closing_lines,
+)
 from data.kalshi_auth import auth_headers
+from data.kalshi_client import KalshiClient
+from data.odds_fetcher import OddsAPIClient
+from core.odds_converter import consensus_stats
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +53,14 @@ def _fetch_market(ticker: str) -> dict | None:
     return None
 
 
-def auto_settle_positions(is_paper: bool = False) -> int:
+def auto_settle_positions(is_paper: bool = False, capture_closing_lines: bool = False) -> int:
     """
     Check all open positions and settle any whose Kalshi market has resolved.
+
+    capture_closing_lines: also backfill Kalshi/consensus closing-line data for
+    settled positions missing it. The Odds API call this involves is credit-
+    metered, so only the main scan loop should pass True here — never the
+    dashboard's 60s auto-refresh path (see _capture_closing_lines).
 
     Returns the number of positions settled in this call.
     """
@@ -95,4 +109,112 @@ def auto_settle_positions(is_paper: bool = False) -> int:
     if settled_count:
         logger.info("Auto-settled %d position(s).", settled_count)
 
+    if capture_closing_lines:
+        try:
+            _capture_closing_lines()
+        except Exception as e:
+            logger.warning("Closing-line capture failed: %s", e)
+
     return settled_count
+
+
+# ── Closing Line Value ──────────────────────────────────────────────────────────
+
+def _fetch_kalshi_closing_price(pos) -> float | None:
+    """
+    Kalshi price of our side at (or just before) game start, via candlesticks.
+    Mirrors the yes/no → "price of the side we bought" convention already used
+    for market_price at entry, so the two are directly comparable.
+    """
+    ticker = pos["market_ticker"]
+    commence_str = pos["commence_time"]
+    if not ticker or not commence_str:
+        return None
+    try:
+        commence = datetime.fromisoformat(commence_str)
+        if commence.tzinfo is None:
+            commence = commence.replace(tzinfo=timezone.utc)
+        end_ts = int(commence.timestamp())
+        start_ts = end_ts - 7200  # 2h lookback window
+        series_ticker = ticker.split("-")[0]
+        data = KalshiClient().fetch_candlesticks(series_ticker, ticker, start_ts, end_ts)
+        candles = data.get("candlesticks", [])
+        if not candles:
+            return None
+        last = candles[-1]
+        yes_ask = float((last.get("yes_ask") or {}).get("close_dollars") or 0)
+        yes_bid = float((last.get("yes_bid") or {}).get("close_dollars") or 0)
+        last_price = float((last.get("price") or {}).get("close_dollars") or 0)
+
+        side = (pos["side"] or "yes").lower()
+        if side == "yes":
+            price = yes_ask if yes_ask > 0 else last_price
+        else:
+            price = (1.0 - yes_bid) if yes_bid > 0 else ((1.0 - last_price) if last_price > 0 else 0.0)
+        return round(price, 4) if price > 0 else None
+    except Exception as e:
+        logger.warning("Closing Kalshi price fetch failed for %s: %s", ticker, e)
+        return None
+
+
+def _fetch_consensus_closing_prob(pos) -> float | None:
+    """
+    Sportsbook consensus probability (same de-vig method as entry-time edge)
+    for our side, at the historical odds snapshot closest to game start.
+    """
+    sport = pos["sport"]
+    commence_str = pos["commence_time"]
+    if not sport or not commence_str:
+        return None
+    try:
+        date_iso = commence_str.replace("+00:00", "Z")
+        events = OddsAPIClient().fetch_historical_odds(sport, date_iso, "h2h,totals,spreads")
+        home, away = pos["home_team"], pos["away_team"]
+        event = next(
+            (e for e in events if e.get("home_team") == home and e.get("away_team") == away),
+            None,
+        )
+        if event is None:
+            return None
+
+        bet_type = pos["bet_type"] or "h2h"
+        team_name = pos["team_name"] or ""
+        threshold = pos["threshold"]
+
+        if bet_type == "h2h":
+            outcome_name = "Draw" if team_name == "Draw" else team_name
+            market_key, point = "h2h", None
+        elif bet_type == "totals":
+            outcome_name = "Over" if team_name.lower().startswith("over") else "Under"
+            market_key, point = "totals", threshold
+        elif bet_type == "spread":
+            covering = home if team_name.startswith(home) else away
+            outcome_name, market_key, point = covering, "spreads", threshold
+        else:
+            return None
+
+        consensus, _book_count, _std = consensus_stats(
+            event.get("bookmakers", []), outcome_name, market_key=market_key, point=point,
+        )
+        return consensus
+    except Exception as e:
+        logger.warning("Closing consensus fetch failed for position #%s: %s", pos["id"], e)
+        return None
+
+
+def _capture_closing_lines() -> None:
+    """
+    Backfill Kalshi + consensus closing-line data for settled positions that
+    don't have it yet (retry-capped — see get_positions_pending_closing_lines).
+    """
+    pending = get_positions_pending_closing_lines()
+    for pos in pending:
+        kalshi_close = _fetch_kalshi_closing_price(pos)
+        consensus_close = _fetch_consensus_closing_prob(pos)
+        set_closing_lines(pos["id"], kalshi_close, consensus_close)
+        logger.info(
+            "Closing lines captured for position #%d: kalshi=%s consensus=%s",
+            pos["id"],
+            f"{kalshi_close:.3f}" if kalshi_close is not None else "—",
+            f"{consensus_close:.3f}" if consensus_close is not None else "—",
+        )

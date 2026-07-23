@@ -111,6 +111,35 @@ class OddsAPIClient:
             logger.error("Odds API request failed for %s: %s", sport, e)
             return []
 
+    def fetch_historical_odds(self, sport: str, date_iso: str, markets: str) -> list[dict]:
+        """
+        Raw odds snapshot for a sport as of the given UTC timestamp (the API
+        returns the last available snapshot at-or-before `date_iso`). Used for
+        closing-line lookups — costs real credits (~10/call), unlike live odds
+        polling, so callers must not invoke this on a tight loop.
+
+        Returns the raw event list (bookmakers in the same shape as live odds —
+        feed directly into core.odds_converter.consensus_stats()), or [] on error.
+        """
+        try:
+            resp = self._get(
+                f"/historical/sports/{sport}/odds",
+                {
+                    "regions": config.ODDS_API_REGIONS,
+                    "markets": markets,
+                    "oddsFormat": config.ODDS_API_ODDS_FORMAT,
+                    "date": date_iso,
+                },
+            )
+            return resp.get("data", [])
+        except requests.HTTPError as e:
+            status = e.response.status_code if e.response is not None else "?"
+            logger.warning("Odds API historical HTTP %s for %s @ %s", status, sport, date_iso)
+            return []
+        except requests.RequestException as e:
+            logger.warning("Odds API historical request failed for %s: %s", sport, e)
+            return []
+
     def fetch_odds(self, sport: str, markets: str = config.ODDS_API_MARKETS) -> list[OddsEvent]:
         """
         Fetch odds for a sport. markets is a comma-separated list of market types.
