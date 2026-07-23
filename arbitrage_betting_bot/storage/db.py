@@ -156,6 +156,7 @@ def _migrate() -> None:
             ("peak_price",   "ALTER TABLE positions ADD COLUMN peak_price REAL"),
             ("close_reason", "ALTER TABLE positions ADD COLUMN close_reason TEXT"),
             ("entry_fee_paid", "ALTER TABLE positions ADD COLUMN entry_fee_paid REAL NOT NULL DEFAULT 0.0"),
+            ("order_verified_at", "ALTER TABLE positions ADD COLUMN order_verified_at TEXT"),
         ]:
             if col not in existing:
                 conn.execute(ddl)
@@ -442,6 +443,34 @@ def close_position_early(
             (pnl, datetime.utcnow().isoformat(), reason, position_id),
         )
         return pnl
+
+
+# ── Order ID Verification (ghost-position audit) ────────────────────────────────
+
+def get_unverified_real_positions() -> list[sqlite3.Row]:
+    """
+    Real (live, actually-submitted) positions whose order_id hasn't yet been checked
+    against Kalshi's own order history. Once checked, a position is never re-checked —
+    see execution/reconciliation.py::audit_order_ids() for why, and for what happens
+    when one turns out not to be real (a "ghost" — see the incident this was built for,
+    2026-07-23: a position whose order_id was actually a client-side UUID rather than
+    Kalshi's real assigned order_id, double-counting a real trade with the wrong stake).
+    """
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM positions WHERE is_paper = 0 AND execution_status = 'submitted' "
+            "AND order_verified_at IS NULL"
+        ).fetchall()
+
+
+def mark_order_verified(position_id: int) -> None:
+    """Record that a position's order_id has been checked against Kalshi's real order
+    history — regardless of the result, so a flagged ghost isn't re-alerted every scan."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE positions SET order_verified_at = ? WHERE id = ?",
+            (datetime.utcnow().isoformat(), position_id),
+        )
 
 
 # ── Closing Line Value ──────────────────────────────────────────────────────────

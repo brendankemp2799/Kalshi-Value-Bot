@@ -105,11 +105,17 @@ def _run_reconciliation_if_live(paper: bool, dry_run: bool) -> None:
     """Compare our tracked positions against Kalshi's own records — live only, never paper/dry-run."""
     if paper or dry_run:
         return
+    logger = logging.getLogger(__name__)
     try:
         from execution.reconciliation import run_reconciliation_check
         run_reconciliation_check()
     except Exception as e:
-        logging.getLogger(__name__).warning("Reconciliation check failed: %s", e)
+        logger.warning("Reconciliation check failed: %s", e)
+    try:
+        from execution.reconciliation import audit_order_ids
+        audit_order_ids()
+    except Exception as e:
+        logger.warning("Ghost-position audit failed: %s", e)
 
 
 

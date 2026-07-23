@@ -99,3 +99,78 @@ def run_reconciliation_check() -> None:
             "positions for %d ticker(s):\n%s",
             len(discrepancies), "\n".join(f"  {d}" for d in discrepancies),
         )
+
+
+# ── Ghost-position audit ─────────────────────────────────────────────────────────
+#
+# Built 2026-07-23 after finding 4 positions whose `order_id` was actually a
+# client-side UUID (our own locally-generated order identifier) rather than
+# Kalshi's real assigned order_id — each one double-counted a real trade under a
+# second, fictitious position with the wrong stake. Confirmed by querying Kalshi's
+# order-status endpoint directly (404 = not a real order). This check catches the
+# same pattern going forward: verify every new real position's order_id actually
+# appears in Kalshi's own fill history.
+
+def _all_real_order_ids() -> set[str] | None:
+    """Every order_id Kalshi has ever recorded a fill for on this account. Paginated —
+    not credit-metered, but only worth fetching when there's something to check
+    against it (see audit_order_ids' cheap early-exit). None on fetch failure."""
+    try:
+        from data.kalshi_auth import auth_headers
+        import requests
+        url = "https://external-api.kalshi.com/trade-api/v2/portfolio/fills"
+        order_ids: set[str] = set()
+        cursor = None
+        while True:
+            params = {"limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+            headers = auth_headers("GET", url)
+            resp = requests.get(url, headers=headers, timeout=15, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            fills = data.get("fills", [])
+            order_ids.update(f["order_id"] for f in fills)
+            cursor = data.get("cursor")
+            if not cursor or not fills:
+                break
+        return order_ids
+    except Exception as e:
+        logger.warning("Ghost-position audit: could not fetch Kalshi fills: %s", e)
+        return None
+
+
+def audit_order_ids() -> None:
+    """
+    Verify every not-yet-checked real position's order_id against Kalshi's actual
+    fill history, flag any that don't match (loudly — for manual review, this never
+    auto-deletes), then mark all of them checked either way so this doesn't re-fetch
+    Kalshi's full fill history (which only grows) on every scan once a position has
+    already been verified once.
+    """
+    from storage.db import get_unverified_real_positions, mark_order_verified
+
+    pending = get_unverified_real_positions()
+    if not pending:
+        return  # cheap common case — no Kalshi call needed
+
+    real_order_ids = _all_real_order_ids()
+    if real_order_ids is None:
+        return  # transient fetch failure — leave unverified, retry next scan
+
+    ghosts = []
+    for pos in pending:
+        if pos["order_id"] not in real_order_ids:
+            ghosts.append(pos)
+        mark_order_verified(pos["id"])
+
+    if ghosts:
+        logger.critical(
+            "GHOST POSITION(S) DETECTED — order_id doesn't match any real Kalshi "
+            "order for %d position(s). Not auto-deleted — needs manual review:\n%s",
+            len(ghosts),
+            "\n".join(
+                f"  #{g['id']} {g['market_ticker']} stake=${g['stake']:.2f} order_id={g['order_id']}"
+                for g in ghosts
+            ),
+        )
