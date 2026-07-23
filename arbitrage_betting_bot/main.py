@@ -630,6 +630,17 @@ def _run_variable_loop(
 
     Tick granularity: 30 seconds (small enough to respect the 2-min near-game
     interval without wasting CPU when nothing is due).
+
+    Position monitoring (auto-settle + trailing stop + reconciliation) runs on its
+    own cadence (config.POSITION_MONITOR_INTERVAL_SECONDS), independent of the
+    Odds-API sport-due logic above. This was a real gap: `_sport_poll_interval` only
+    looks at *upcoming* (not-yet-started) games, so once a position's own game goes
+    in-progress it stops influencing the scan cadence at all — if no other game in
+    that sport happens to be starting soon, the interval falls back to the 45-minute
+    default, leaving a live, still-moving position unchecked for up to 45 minutes
+    (found 2026-07-23 when a trailing stop nearly missed a fast-moving in-play price
+    swing). This tick calls Kalshi-only endpoints (capture_closing_lines=False) so it
+    never spends Odds API credits, however frequently it runs.
     """
     # Per-sport caches keyed by Odds API sport key
     sport_events: dict[str, list] = {}    # sport → list[OddsEvent]
@@ -662,11 +673,28 @@ def _run_variable_loop(
         logger.error("Initial scan error (continuing to loop): %s", e, exc_info=True)
     _log_sport_intervals(sport_events, logger)
 
+    last_position_check = time.time()
+
     # ── Main tick loop ──────────────────────────────────────────────────────
     try:
         while True:
             time.sleep(30)
             now_ts = time.time()
+
+            # Kalshi-only position monitoring — decoupled from the Odds-API `due`
+            # check below so a live position's stop keeps getting checked even when
+            # no sport is due for a full odds-driven scan. Never touches Odds API
+            # credits (capture_closing_lines=False).
+            if not dry_run and (now_ts - last_position_check) >= config.POSITION_MONITOR_INTERVAL_SECONDS:
+                last_position_check = now_ts
+                try:
+                    auto_settle_positions(
+                        is_paper=paper, capture_closing_lines=False,
+                        manage_open_positions=config.ENABLE_TRAILING_STOP,
+                    )
+                    _run_reconciliation_if_live(paper, dry_run)
+                except Exception as e:
+                    logger.warning("Position-monitor tick failed: %s", e)
 
             due: list[str] = []
             for sport in config.SPORTS:

@@ -35,6 +35,11 @@ MAX_DAILY_CAPITAL_RISK_PCT: float = 0.30  # Max % of bankroll staked in new posi
 ENABLE_TRAILING_STOP: bool = os.getenv("ENABLE_TRAILING_STOP", "false").lower() == "true"
 TRAILING_STOP_ARM_MOVE: float = 0.10        # min favorable move (price units) before the stop arms
 TRAILING_STOP_LOCK_FRACTION: float = 0.20   # fraction of the move-from-entry protected once armed
+# How often open positions are checked against Kalshi, independent of the Odds-API scan
+# cadence above. Kalshi's own APIs (market quotes, portfolio positions/fills) aren't
+# credit-metered, so this can run much faster than the Odds-API-driven scan without any
+# cost — see POSITION_MONITOR_INTERVAL_SECONDS below and _run_variable_loop().
+POSITION_MONITOR_INTERVAL_SECONDS: int = int(os.getenv("POSITION_MONITOR_INTERVAL_SECONDS", "30"))
 
 # ── Scheduling ────────────────────────────────────────────────────────────────
 # Variable-frequency polling: each sport is fetched at a rate based on its
