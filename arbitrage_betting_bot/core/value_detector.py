@@ -91,16 +91,26 @@ def _eval_edge(
     min_edge: float,
 ) -> float | None:
     """
-    Return edge at ask price if >= min_edge, else None.
+    Return edge at ask price if it clears min_edge net of Kalshi's estimated fee,
+    else None. The returned value is still the RAW edge (consensus - ask_price) —
+    only the comparison threshold is fee-adjusted, not the stored value, since
+    downstream code (CLV backfill, calibration dashboard) reconstructs
+    consensus_prob as market_price + edge and would break if edge meant something
+    else here.
 
-    Only bets where ask_edge >= min_edge are accepted. The executor still
-    tries to fill at mid first (GTC, 0% fee) for a better price, then falls
-    back to ask. Restricting to ask_edge >= min_edge ensures step 2 always
-    has sufficient edge and prevents blocking scans on illiquid mid-only fills.
+    Only bets where ask_edge clears the fee-adjusted bar are accepted. The executor
+    still tries to fill at mid first (maker, ~0% fee) for a better price, then falls
+    back to ask (crosses the book — real taker fee, see
+    core/kelly_calculator.py::fee_adjusted_breakeven_prob). Gating on the ask-price
+    case ensures step 2 always clears the bar too and prevents blocking scans on
+    illiquid mid-only fills.
     """
+    from core.kelly_calculator import fee_adjusted_breakeven_prob
+
     ask_edge = consensus - ask_price
+    fee_edge_cost = fee_adjusted_breakeven_prob(ask_price) - ask_price
     _EPS = 1e-9  # floating-point tolerance: treat 1.9999999% as 2.0%
-    if ask_edge >= min_edge - _EPS:
+    if ask_edge >= min_edge + fee_edge_cost - _EPS:
         return ask_edge
     return None
 

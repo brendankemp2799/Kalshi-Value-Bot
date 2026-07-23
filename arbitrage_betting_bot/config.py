@@ -138,6 +138,14 @@ LIMIT_ORDER_ASK_TIMEOUT_SECONDS: int = 30        # step 2 — GTC at ask (short;
 FAILED_BET_COOLDOWN_SECONDS: int = int(os.getenv("FAILED_BET_COOLDOWN_SECONDS", "10800"))  # 3 hours
 MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.015"))  # Minimum NET edge after Kalshi taker fee
 
+# Pre-trade fee ESTIMATE, used only for the edge gate and Kelly sizing — before a bet
+# is placed we don't yet know whether it'll fill via step 1 (mid, maker, ~0% fee) or
+# step 2 (ask, crosses the book, real taker fee). Assume the worst case (taker), same
+# "size for the guaranteed floor" philosophy already used for the ask-price edge check.
+# This is NOT used at settlement — that uses the real fee actually charged, captured
+# per-fill (see execution/kalshi_executor.py::_actual_fee_dollars).
+KALSHI_TAKER_FEE_RATE_ESTIMATE: float = 0.07
+
 # ── Notifications ─────────────────────────────────────────────────────────────
 PUSHOVER_USER_KEY: str  = os.getenv("PUSHOVER_USER_KEY", "")   # From pushover.net account page
 PUSHOVER_APP_TOKEN: str = os.getenv("PUSHOVER_APP_TOKEN", "")  # From pushover.net app creation

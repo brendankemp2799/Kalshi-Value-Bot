@@ -1,13 +1,25 @@
 """
-Fractional Kelly Criterion bet sizing.
+Fractional Kelly Criterion bet sizing, adjusted for Kalshi's real fee.
 
-Full Kelly formula:
+Standard full Kelly:
     f* = (b·p - q) / b
-
-Where:
-    b = net odds received per unit wagered = (1 / market_price) - 1
+    b = net odds received per unit wagered = (1 - price) / price
     p = estimated true probability of winning (sportsbook consensus)
     q = 1 - p
+
+This assumes a loss costs exactly 1x the stake and nothing else. That's not true here:
+Kalshi's taker fee is charged at fill time regardless of outcome (see
+storage/db.py::settle_position), so a loss actually costs stake + fee — more than 1x.
+The standard formula also overstates the win payout by ignoring the fee taken out of it.
+
+Generalized two-outcome Kelly (win pays b_net per unit, loss costs L_net per unit,
+L_net > 1 here because of the sunk fee):
+    f* = (p·b_net - q·L_net) / (b_net · L_net)
+
+See _fee_adjusted_b_and_l() for the derivation of b_net/L_net. This is a pre-trade
+ESTIMATE (config.KALSHI_TAKER_FEE_RATE_ESTIMATE) — we don't know at sizing time whether
+the fill will actually be maker or taker, so it assumes the worst case (taker), matching
+the same guaranteed-floor philosophy already used for the ask-price edge check.
 
 Fractional Kelly:
     f = f* × KELLY_FRACTION  (default: 0.25 to reduce variance)
@@ -30,6 +42,34 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 
 logger = logging.getLogger(__name__)
+
+
+def _fee_adjusted_b_and_l(price: float) -> tuple[float, float]:
+    """
+    Net win odds (b_net) and net loss multiplier (L_net) for a binary contract at
+    `price`, after Kalshi's estimated taker fee (config.KALSHI_TAKER_FEE_RATE_ESTIMATE),
+    which is charged on stake regardless of outcome.
+
+    Derivation, per $1 staked (N = 1/price contracts):
+      win:  payout = N = 1/price; fee = RATE*(1-price); net profit = payout - fee - 1
+            => b_net = (1-price)*(1 - RATE*price) / price
+      lose: payout = 0; fee still charged => net loss = 1 + RATE*(1-price) = L_net
+    """
+    fee_rate = config.KALSHI_TAKER_FEE_RATE_ESTIMATE
+    b_net = (1.0 - price) * (1.0 - fee_rate * price) / price
+    l_net = 1.0 + fee_rate * (1.0 - price)
+    return b_net, l_net
+
+
+def fee_adjusted_breakeven_prob(price: float) -> float:
+    """
+    The true probability at which a contract at `price` has exactly zero net EV after
+    the estimated fee (versus plain `price`, which is the zero-fee breakeven point).
+    Used by value_detector to raise the effective edge bar by the fee amount, without
+    changing what the stored `edge` value itself means (still consensus - price).
+    """
+    b_net, l_net = _fee_adjusted_b_and_l(price)
+    return l_net / (b_net + l_net)
 
 
 @dataclass
@@ -76,10 +116,9 @@ def calculate_kelly(
             has_edge=False,
         )
 
-    b_gross = (1.0 - effective_price) / effective_price
-    b = b_gross  # 0% maker fee on all GTC orders
+    b_net, l_net = _fee_adjusted_b_and_l(effective_price)
 
-    full_kelly = (b * p - q) / b
+    full_kelly = (p * b_net - q * l_net) / (b_net * l_net)
 
     if full_kelly <= 0:
         logger.debug(
