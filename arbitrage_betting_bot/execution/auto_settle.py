@@ -53,7 +53,11 @@ def _fetch_market(ticker: str) -> dict | None:
     return None
 
 
-def auto_settle_positions(is_paper: bool = False, capture_closing_lines: bool = False) -> int:
+def auto_settle_positions(
+    is_paper: bool = False,
+    capture_closing_lines: bool = False,
+    manage_open_positions: bool = False,
+) -> int:
     """
     Check all open positions and settle any whose Kalshi market has resolved.
 
@@ -61,6 +65,12 @@ def auto_settle_positions(is_paper: bool = False, capture_closing_lines: bool = 
     settled positions missing it. The Odds API call this involves is credit-
     metered, so only the main scan loop should pass True here — never the
     dashboard's 60s auto-refresh path (see _capture_closing_lines).
+
+    manage_open_positions: also run the trailing-stop risk manager (see
+    execution/risk_manager.py) against every still-open position using the same
+    market data already fetched here. This can place REAL closing orders — only
+    the main scan loop should ever pass True here, never the dashboard, and only
+    when config.ENABLE_TRAILING_STOP is on.
 
     Returns the number of positions settled in this call.
     """
@@ -84,6 +94,13 @@ def auto_settle_positions(is_paper: bool = False, capture_closing_lines: bool = 
         market = ticker_to_market.get(ticker)
         if not market:
             continue
+
+        if manage_open_positions:
+            try:
+                if _check_trailing_stop(pos, market, is_paper):
+                    continue  # position just closed early — don't also run natural settlement below
+            except Exception as e:
+                logger.warning("Trailing stop check failed for position #%d: %s", pos["id"], e)
 
         result = (market.get("result") or "").lower()
         if result not in ("yes", "no", "void"):
@@ -116,6 +133,21 @@ def auto_settle_positions(is_paper: bool = False, capture_closing_lines: bool = 
             logger.warning("Closing-line capture failed: %s", e)
 
     return settled_count
+
+
+def _check_trailing_stop(pos, market: dict, is_paper: bool) -> bool:
+    """
+    Evaluate + apply the trailing-stop decision for one open position.
+    Returns True if the position was closed early this cycle (caller should not
+    also run the natural-settlement check against the same stale `pos` row).
+    """
+    from execution.risk_manager import evaluate_trailing_stop, execute_trailing_stop, ActionKind
+
+    action = evaluate_trailing_stop(pos, market)
+    if action.kind == ActionKind.NONE:
+        return False
+    execute_trailing_stop(pos, action, is_paper)
+    return action.kind == ActionKind.TRIGGER_CLOSE
 
 
 # ── Closing Line Value ──────────────────────────────────────────────────────────

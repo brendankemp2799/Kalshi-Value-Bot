@@ -153,6 +153,8 @@ def _migrate() -> None:
             ("kalshi_close_price",     "ALTER TABLE positions ADD COLUMN kalshi_close_price REAL"),
             ("consensus_close_prob",   "ALTER TABLE positions ADD COLUMN consensus_close_prob REAL"),
             ("closing_line_attempts", "ALTER TABLE positions ADD COLUMN closing_line_attempts INTEGER NOT NULL DEFAULT 0"),
+            ("peak_price",   "ALTER TABLE positions ADD COLUMN peak_price REAL"),
+            ("close_reason", "ALTER TABLE positions ADD COLUMN close_reason TEXT"),
         ]:
             if col not in existing:
                 conn.execute(ddl)
@@ -384,6 +386,50 @@ def settle_position(position_id: int, result: str) -> float:
             WHERE id = ?
             """,
             (pnl, datetime.utcnow().isoformat(), position_id),
+        )
+        return pnl
+
+
+# ── Risk Management (trailing stop) ─────────────────────────────────────────────
+
+def set_peak_price(position_id: int, peak_price: float) -> None:
+    """Record a new high-water mark for the trailing stop."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE positions SET peak_price = ? WHERE id = ?",
+            (peak_price, position_id),
+        )
+
+
+def close_position_early(position_id: int, exit_price: float, reason: str = "trailing_stop") -> float:
+    """
+    Close a position via our own trade (not a natural Kalshi settlement) — e.g. a
+    trailing-stop trigger. Independent of settle_position() by design: touching that
+    function's tested win/lost/void math isn't worth the risk for this new path.
+
+    pnl = contracts * (exit_price - entry_price), same underlying formula as a natural
+    settlement (won = exit_price 1.0, lost = exit_price 0.0, void = exit_price ==
+    entry_price), just computed for an arbitrary exit price instead. GTC orders are
+    0% maker fee (see settle_position's fee comment) — assumed here too.
+    """
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT stake, market_price FROM positions WHERE id = ?",
+            (position_id,),
+        ).fetchone()
+        if not row:
+            raise ValueError(f"Position {position_id} not found")
+        stake: float = row["stake"]
+        entry_price: float = row["market_price"]
+        contracts = stake / entry_price
+        pnl = contracts * (exit_price - entry_price)
+        conn.execute(
+            """
+            UPDATE positions
+            SET status = 'closed', pnl = ?, settled_at = ?, close_reason = ?
+            WHERE id = ?
+            """,
+            (pnl, datetime.utcnow().isoformat(), reason, position_id),
         )
         return pnl
 

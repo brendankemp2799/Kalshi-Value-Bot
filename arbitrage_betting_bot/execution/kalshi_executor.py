@@ -85,8 +85,15 @@ def _place_raw_order(
     count: int,
     time_in_force: str,
     client_order_id: str,
+    reduce_only: bool = False,
 ) -> dict:
-    """Post a single order to Kalshi. Returns the API response dict."""
+    """
+    Post a single order to Kalshi. Returns the API response dict.
+
+    reduce_only: when True, the order can only shrink/close an existing position —
+    it can never open new exposure on the other side. Used for risk-management exits
+    (see execution/risk_manager.py); entries always leave this False.
+    """
     from data.kalshi_auth import auth_headers
     payload = {
         "ticker": ticker,
@@ -96,6 +103,7 @@ def _place_raw_order(
         "count": f"{count:.2f}",
         "time_in_force": time_in_force,
         "self_trade_prevention_type": "taker_at_cross",
+        "reduce_only": reduce_only,
     }
     headers = auth_headers("POST", _ORDERS_URL)
     resp = requests.post(_ORDERS_URL, json=payload, headers=headers, timeout=15)
@@ -271,3 +279,93 @@ def place_order(
         reason = f"Network error: {str(e)[:200]}"
         logger.error("Kalshi GTC ask network error: %s", e)
         return client_order_id, "failed", reason, 0.0, ""
+
+
+def close_position(
+    ticker: str,
+    side: str,
+    count: int,
+    exit_price: float,
+    timeout_seconds: int = 30,
+) -> tuple[str, str, str, float, float]:
+    """
+    Close (all of) an existing position via a single reduce_only GTC order — used by
+    the trailing-stop risk manager, not the entry flow. Unlike place_order(), this is
+    a single attempt at the requested price (no mid-then-ask two-step): the whole
+    point of an exit is to lock in protection now, not to optimize entry price at the
+    cost of further slippage while the position sits exposed.
+
+    Args:
+        side:       "yes" or "no" — the side of the EXISTING position being closed
+                    (same convention as place_order's side param at entry).
+        count:      contracts to close.
+        exit_price: desired price of the side being closed (0-1), same convention as
+                    market_price (e.g. current yes_bid for a yes position).
+
+    Returns:
+        (order_id, execution_status, failure_reason, filled_count, fill_price)
+        execution_status: "submitted" | "failed"
+    """
+    if not config.KALSHI_API_KEY:
+        logger.error("KALSHI_API_KEY not set — cannot close position")
+        return "", "failed", "KALSHI_API_KEY not configured", 0.0, 0.0
+
+    price = max(0.01, min(0.99, exit_price))
+    if side == "yes":
+        api_side = "ask"   # selling YES closes a long-YES position
+        yes_price = price
+    else:
+        api_side = "bid"   # buying YES back closes a short-YES (NO) position
+        yes_price = 1.0 - price
+
+    client_order_id = str(uuid.uuid4())
+    try:
+        data = _place_raw_order(
+            ticker, api_side, yes_price, count, "good_till_canceled",
+            client_order_id, reduce_only=True,
+        )
+        order_id = data.get("order_id", client_order_id)
+        filled = float(data.get("fill_count", 0) or 0)
+
+        if filled < count:
+            deadline = time.time() + timeout_seconds
+            while time.time() < deadline and filled < count:
+                time.sleep(5)
+                status = _get_order_status(order_id)
+                if status:
+                    filled = float(status.get("fill_count_fp", 0) or 0)
+                    if filled >= count:
+                        break
+            if filled < count:
+                _cancel_order(order_id)
+
+        if filled <= 0:
+            reason = f"Close order unfilled after {timeout_seconds}s — no resting liquidity"
+            logger.warning("Kalshi close zero fill for %s @ %.4f", ticker, yes_price)
+            return order_id, "failed", reason, 0.0, 0.0
+
+        logger.info(
+            "Kalshi position close: %s %s %g/%d contracts @ %.4f",
+            api_side.upper(), ticker, filled, count, yes_price,
+        )
+        return order_id, "submitted", "", filled, price
+
+    except requests.HTTPError as e:
+        code = e.response.status_code if e.response is not None else "?"
+        body = e.response.text if e.response is not None else ""
+        reason = f"HTTP {code}"
+        try:
+            err = _json.loads(body)
+            err_obj = err.get("error", err)
+            msg = err_obj.get("message", "")
+            if msg:
+                reason = f"HTTP {code}: {msg}"
+        except Exception:
+            if body:
+                reason = f"HTTP {code}: {body[:200]}"
+        logger.error("Kalshi close failed [%s]: %s", code, body[:300])
+        return client_order_id, "failed", reason, 0.0, 0.0
+    except requests.RequestException as e:
+        reason = f"Network error: {str(e)[:200]}"
+        logger.error("Kalshi close network error: %s", e)
+        return client_order_id, "failed", reason, 0.0, 0.0

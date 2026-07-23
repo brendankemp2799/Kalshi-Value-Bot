@@ -27,6 +27,16 @@ MAX_SPORT_EXPOSURE_PCT: float = 0.15  # Max 15% of bankroll in one sport
 MAX_OPEN_POSITIONS: int = 10          # Max simultaneous open positions — exposure % is the primary gate
 MAX_DAILY_CAPITAL_RISK_PCT: float = 0.30  # Max % of bankroll staked in new positions per calendar day (UTC)
 
+# ── Trailing Stop (mid-position exit risk management) ──────────────────────────
+# Kalshi has no native stop/conditional order type — this is simulated by polling
+# price each scan (piggybacked on auto_settle's existing per-position market fetch)
+# and placing a real closing order once price retraces to the trailing level.
+# Master switch — defaults off. Validate in paper mode before enabling live.
+ENABLE_TRAILING_STOP: bool = os.getenv("ENABLE_TRAILING_STOP", "false").lower() == "true"
+TRAILING_STOP_ARM_MOVE: float = 0.10        # min favorable move (price units) before the stop arms
+TRAILING_STOP_LOCK_FRACTION: float = 0.20   # fraction of the move-from-entry protected once armed
+TRAILING_STOP_ORDER_TIMEOUT_SECONDS: int = 30  # how long the closing GTC order rests before retrying next scan
+
 # ── Scheduling ────────────────────────────────────────────────────────────────
 # Variable-frequency polling: each sport is fetched at a rate based on its
 # nearest upcoming game. Sports with no game within 1 hour use the default
