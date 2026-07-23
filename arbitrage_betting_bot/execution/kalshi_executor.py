@@ -314,14 +314,16 @@ def close_position(
     side: str,
     count: int,
     exit_price: float,
-    timeout_seconds: int = 30,
 ) -> tuple[str, str, str, float, float, float]:
     """
-    Close (all of) an existing position via a single reduce_only GTC order — used by
+    Close (all of) an existing position via a single reduce_only IOC order — used by
     the trailing-stop risk manager, not the entry flow. Unlike place_order(), this is
-    a single attempt at the requested price (no mid-then-ask two-step): the whole
-    point of an exit is to lock in protection now, not to optimize entry price at the
-    cost of further slippage while the position sits exposed.
+    a single attempt at the requested price (no mid-then-ask two-step, no resting/
+    waiting): the whole point of an exit is to lock in protection now, not to
+    optimize entry price at the cost of further slippage while the position sits
+    exposed. Kalshi requires reduce_only orders to be immediate_or_cancel — see the
+    invalid_order rejection this replaced, discovered 2026-07-23 when the trailing
+    stop fired for the first time in production and Kalshi rejected the GTC attempt.
 
     Args:
         side:       "yes" or "no" — the side of the EXISTING position being closed
@@ -351,27 +353,19 @@ def close_position(
 
     client_order_id = str(uuid.uuid4())
     try:
+        # Kalshi rejects reduce_only orders placed as GTC — reduce_only requires
+        # immediate_or_cancel (or fill_or_kill). IOC also resolves synchronously: it
+        # fills what it can against the book right now and the exchange cancels the
+        # rest itself, so there's nothing to poll or wait for here.
         data = _place_raw_order(
-            ticker, api_side, yes_price, count, "good_till_canceled",
+            ticker, api_side, yes_price, count, "immediate_or_cancel",
             client_order_id, reduce_only=True,
         )
         order_id = data.get("order_id", client_order_id)
         filled = float(data.get("fill_count", 0) or 0)
 
-        if filled < count:
-            deadline = time.time() + timeout_seconds
-            while time.time() < deadline and filled < count:
-                time.sleep(5)
-                status = _get_order_status(order_id)
-                if status:
-                    filled = float(status.get("fill_count_fp", 0) or 0)
-                    if filled >= count:
-                        break
-            if filled < count:
-                _cancel_order(order_id)
-
         if filled <= 0:
-            reason = f"Close order unfilled after {timeout_seconds}s — no resting liquidity"
+            reason = "Close order unfilled — no resting liquidity at requested price"
             logger.warning("Kalshi close zero fill for %s @ %.4f", ticker, yes_price)
             return order_id, "failed", reason, 0.0, 0.0, 0.0
 

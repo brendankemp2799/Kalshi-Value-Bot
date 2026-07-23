@@ -35,7 +35,6 @@ MAX_DAILY_CAPITAL_RISK_PCT: float = 0.30  # Max % of bankroll staked in new posi
 ENABLE_TRAILING_STOP: bool = os.getenv("ENABLE_TRAILING_STOP", "false").lower() == "true"
 TRAILING_STOP_ARM_MOVE: float = 0.10        # min favorable move (price units) before the stop arms
 TRAILING_STOP_LOCK_FRACTION: float = 0.20   # fraction of the move-from-entry protected once armed
-TRAILING_STOP_ORDER_TIMEOUT_SECONDS: int = 30  # how long the closing GTC order rests before retrying next scan
 
 # ── Scheduling ────────────────────────────────────────────────────────────────
 # Variable-frequency polling: each sport is fetched at a rate based on its

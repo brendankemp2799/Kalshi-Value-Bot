@@ -144,7 +144,6 @@ def execute_trailing_stop(pos, action: Action, is_paper: bool) -> None:
     from execution.kalshi_executor import close_position
     order_id, status, reason, filled, fill_price, exit_fee = close_position(
         ticker, side, contracts, exit_price,
-        timeout_seconds=config.TRAILING_STOP_ORDER_TIMEOUT_SECONDS,
     )
     if status != "submitted" or filled <= 0:
         logger.warning(
