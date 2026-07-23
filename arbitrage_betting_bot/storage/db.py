@@ -155,6 +155,7 @@ def _migrate() -> None:
             ("closing_line_attempts", "ALTER TABLE positions ADD COLUMN closing_line_attempts INTEGER NOT NULL DEFAULT 0"),
             ("peak_price",   "ALTER TABLE positions ADD COLUMN peak_price REAL"),
             ("close_reason", "ALTER TABLE positions ADD COLUMN close_reason TEXT"),
+            ("entry_fee_paid", "ALTER TABLE positions ADD COLUMN entry_fee_paid REAL NOT NULL DEFAULT 0.0"),
         ]:
             if col not in existing:
                 conn.execute(ddl)
@@ -243,6 +244,7 @@ def add_position(
     bookmakers_json: str | None = None,
     failure_reason: str | None = None,
     fill_type: str = "taker",
+    entry_fee_paid: float = 0.0,
 ) -> int:
     with get_connection() as conn:
         cur = conn.execute(
@@ -252,8 +254,9 @@ def add_position(
                  platform, stake, market_price, status, is_paper,
                  order_id, execution_status, market_ticker, side,
                  edge, bookmaker_count, consensus_std, kalshi_spread, commence_time,
-                 bet_type, threshold, bookmakers_json, failure_reason, fill_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 bet_type, threshold, bookmakers_json, failure_reason, fill_type,
+                 entry_fee_paid)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 datetime.utcnow().isoformat(),
@@ -273,6 +276,7 @@ def add_position(
                 bookmakers_json,
                 failure_reason,
                 fill_type,
+                entry_fee_paid,
             ),
         )
         return cur.lastrowid
@@ -347,9 +351,15 @@ def settle_position(position_id: int, result: str) -> float:
     Mark a position as closed with its outcome and compute realised P&L.
 
     result: "won" | "lost" | "void"
-      won:  pnl = stake * (1 - entry_price) / entry_price
-      lost: pnl = -stake
+      won:  pnl = stake * (1 - entry_price) / entry_price - entry_fee_paid
+      lost: pnl = -stake - entry_fee_paid
       void: pnl = 0.0  (market cancelled, stake returned)
+
+    entry_fee_paid is the actual dollar fee Kalshi charged at fill time (read directly
+    from the order's own record — see execution/kalshi_executor.py::_actual_fee_dollars),
+    not a formula estimate. It's owed whether the position wins or loses, which the
+    old formula-based version of this function got wrong for losses (no fee was ever
+    subtracted there).
 
     Returns the realised P&L in dollars.
     """
@@ -357,26 +367,19 @@ def settle_position(position_id: int, result: str) -> float:
         raise ValueError(f"result must be 'won', 'lost', or 'void', got: {result!r}")
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT stake, market_price, fill_type FROM positions WHERE id = ?",
+            "SELECT stake, market_price, entry_fee_paid FROM positions WHERE id = ?",
             (position_id,),
         ).fetchone()
         if not row:
             raise ValueError(f"Position {position_id} not found")
         stake: float = row["stake"]
         price: float = row["market_price"]
-        fill_type: str = row["fill_type"] or "taker"
+        entry_fee_paid: float = row["entry_fee_paid"] or 0.0
         if result == "won":
             gross_profit = stake * (1.0 - price) / price
-            if fill_type == "maker":
-                fee = config.kalshi_maker_fee(price, stake)
-            else:
-                # Currently unreachable in practice: kalshi_executor only ever
-                # places GTC orders, which it always tags "maker" on success.
-                # Kept for correctness if the execution strategy ever changes.
-                fee = config.kalshi_taker_fee(price, stake)
-            pnl = gross_profit - fee
+            pnl = gross_profit - entry_fee_paid
         elif result == "lost":
-            pnl = -stake
+            pnl = -stake - entry_fee_paid
         else:  # void
             pnl = 0.0
         conn.execute(
@@ -401,28 +404,35 @@ def set_peak_price(position_id: int, peak_price: float) -> None:
         )
 
 
-def close_position_early(position_id: int, exit_price: float, reason: str = "trailing_stop") -> float:
+def close_position_early(
+    position_id: int,
+    exit_price: float,
+    reason: str = "trailing_stop",
+    exit_fee: float = 0.0,
+) -> float:
     """
     Close a position via our own trade (not a natural Kalshi settlement) — e.g. a
     trailing-stop trigger. Independent of settle_position() by design: touching that
     function's tested win/lost/void math isn't worth the risk for this new path.
 
-    pnl = contracts * (exit_price - entry_price), same underlying formula as a natural
-    settlement (won = exit_price 1.0, lost = exit_price 0.0, void = exit_price ==
-    entry_price), just computed for an arbitrary exit price instead. GTC orders are
-    0% maker fee (see settle_position's fee comment) — assumed here too.
+    pnl = contracts * (exit_price - entry_price) - entry_fee_paid - exit_fee, same
+    underlying formula as a natural settlement (won = exit_price 1.0, lost = exit_price
+    0.0, void = exit_price == entry_price), just computed for an arbitrary exit price.
+    Both the fee paid to enter and the fee paid to exit (each read from Kalshi's own
+    order records, not estimated) are real costs regardless of how the trade turns out.
     """
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT stake, market_price FROM positions WHERE id = ?",
+            "SELECT stake, market_price, entry_fee_paid FROM positions WHERE id = ?",
             (position_id,),
         ).fetchone()
         if not row:
             raise ValueError(f"Position {position_id} not found")
         stake: float = row["stake"]
         entry_price: float = row["market_price"]
+        entry_fee_paid: float = row["entry_fee_paid"] or 0.0
         contracts = stake / entry_price
-        pnl = contracts * (exit_price - entry_price)
+        pnl = contracts * (exit_price - entry_price) - entry_fee_paid - exit_fee
         conn.execute(
             """
             UPDATE positions

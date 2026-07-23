@@ -124,30 +124,19 @@ def quality_filters(bet_type: str, is_draw: bool = False) -> dict:
     return QUALITY_FILTERS.get(bet_type, _DEFAULT_QUALITY_FILTER)
 
 
-# Kalshi charges 0% maker fee on ALL GTC orders — even those that immediately
-# cross existing liquidity. IOC orders are therefore never used.
-# Execution is two-step: (1) GTC at mid, adaptive timeout; (2) GTC at ask, short timeout.
+# Kalshi charges a real fee whenever an order crosses the spread at placement — not
+# a fixed 0%/maker-only rate as originally assumed here. The actual fee per fill is
+# read directly from Kalshi's own order record at fill time (see
+# execution/kalshi_executor.py::_actual_fee_dollars) and stored on the position
+# (entry_fee_paid), rather than estimated with a formula — a formula got this wrong
+# before. Execution is two-step: (1) GTC at mid, adaptive timeout; (2) GTC at ask,
+# short timeout — step 2 crosses the book by design and often incurs a real fee.
 LIMIT_ORDER_TIMEOUT_DEFAULT_SECONDS: int = 600   # step 1 — game > 1 hour away
 LIMIT_ORDER_TIMEOUT_PRE_GAME_SECONDS: int = 300  # step 1 — within 1 hour
 LIMIT_ORDER_TIMEOUT_NEAR_GAME_SECONDS: int = 120 # step 1 — within 30 minutes
 LIMIT_ORDER_ASK_TIMEOUT_SECONDS: int = 30        # step 2 — GTC at ask (short; ask should fill fast)
 FAILED_BET_COOLDOWN_SECONDS: int = int(os.getenv("FAILED_BET_COOLDOWN_SECONDS", "10800"))  # 3 hours
 MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.015"))  # Minimum NET edge after Kalshi taker fee
-# Kalshi settlement fee: quadratic in price — fee = RATE × price × (1-price) × contracts
-# Taker (IOC fills): 7¢ per contract at max (price=0.5); simplifies to RATE×(1-price)×stake
-# Maker (limit fills): no fee currently charged
-KALSHI_TAKER_FEE_RATE: float = 0.07
-KALSHI_MAKER_FEE_RATE: float = 0.0
-
-
-def kalshi_taker_fee(price: float, stake: float) -> float:
-    """Settlement fee for taker (IOC) orders in dollars. Quadratic formula verified from live settlements."""
-    return KALSHI_TAKER_FEE_RATE * (1.0 - price) * stake
-
-
-def kalshi_maker_fee(price: float, stake: float) -> float:
-    """Settlement fee for maker (limit) orders in dollars. Currently zero."""
-    return KALSHI_MAKER_FEE_RATE * (1.0 - price) * stake
 
 # ── Notifications ─────────────────────────────────────────────────────────────
 PUSHOVER_USER_KEY: str  = os.getenv("PUSHOVER_USER_KEY", "")   # From pushover.net account page

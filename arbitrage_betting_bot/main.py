@@ -393,7 +393,7 @@ def run_scan(
                 # even know if a fill happened — isolated per-future so one bad
                 # result can't skip recording for every other order in this batch.
                 try:
-                    order_id, exec_status, side, failure_reason, actual_stake, fill_type = future.result()
+                    order_id, exec_status, side, failure_reason, actual_stake, fill_type, fee_paid = future.result()
                 except Exception as e:
                     logger.error(
                         "execute_trade() raised for %s (%s) — order status UNKNOWN, "
@@ -431,6 +431,7 @@ def run_scan(
                         bookmakers_json=json.dumps(event.bookmakers),
                         failure_reason=failure_reason or None,
                         fill_type=fill_type or "taker",
+                        entry_fee_paid=fee_paid,
                     )
                 except Exception as e:
                     logger.critical(

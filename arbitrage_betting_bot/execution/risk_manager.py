@@ -142,7 +142,7 @@ def execute_trailing_stop(pos, action: Action, is_paper: bool) -> None:
         return
 
     from execution.kalshi_executor import close_position
-    order_id, status, reason, filled, fill_price = close_position(
+    order_id, status, reason, filled, fill_price, exit_fee = close_position(
         ticker, side, contracts, exit_price,
         timeout_seconds=config.TRAILING_STOP_ORDER_TIMEOUT_SECONDS,
     )
@@ -165,9 +165,9 @@ def execute_trailing_stop(pos, action: Action, is_paper: bool) -> None:
         )
         return
 
-    pnl = close_position_early(pos_id, fill_price, reason="trailing_stop")
+    pnl = close_position_early(pos_id, fill_price, reason="trailing_stop", exit_fee=exit_fee)
     logger.info(
         "[LIVE] Trailing stop triggered: position #%d closed %g contracts @ %.4f  "
-        "P&L=$%.2f  (order_id=%s)",
-        pos_id, filled, fill_price, pnl, order_id,
+        "P&L=$%.2f  (order_id=%s, exit_fee=$%.4f)",
+        pos_id, filled, fill_price, pnl, order_id, exit_fee,
     )

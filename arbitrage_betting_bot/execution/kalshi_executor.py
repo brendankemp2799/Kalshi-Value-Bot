@@ -20,9 +20,12 @@ Side mapping from our internal yes/no convention:
   no  → ask,  price = 1 - no_ask  (convert no price to the YES price we're selling at)
 
 Fee model:
-  Kalshi charges 0% maker fee on GTC limit orders (verified via maker_fees_dollars=0
-  in live order responses). All GTC orders are classified as maker regardless of
-  whether they immediately cross existing liquidity.
+  Kalshi charges a real fee whenever an order crosses the spread at placement (an
+  economic "taker" action), regardless of GTC vs IOC order type — step 2 below ("GTC
+  at ask") is designed to cross immediately and often does incur this fee. The actual
+  fee charged is read directly from the order's maker_fees_dollars/taker_fees_dollars
+  fields (GET /portfolio/orders/{id}) after every fill rather than inferred/assumed,
+  since guessing this got it wrong before (see _actual_fee_dollars()).
 
 Execution strategy:
   Step 1: GTC at mid price, adaptive timeout (2–10 min based on game time).
@@ -63,6 +66,21 @@ def _get_order_status(order_id: str) -> dict | None:
     except Exception as e:
         logger.warning("Could not fetch order status for %s: %s", order_id, e)
         return None
+
+
+def _actual_fee_dollars(order_id: str) -> float:
+    """
+    The real fee Kalshi charged for an order (maker + taker combined), read directly
+    from the order's own record. Do not infer/assume this — an earlier version of this
+    code hardcoded "always maker, 0% fee" and was wrong for any fill that crossed the
+    spread at placement.
+    """
+    status = _get_order_status(order_id)
+    if not status:
+        return 0.0
+    maker_fee = float(status.get("maker_fees_dollars", 0) or 0)
+    taker_fee = float(status.get("taker_fees_dollars", 0) or 0)
+    return round(maker_fee + taker_fee, 6)
 
 
 def _cancel_order(order_id: str) -> bool:
@@ -133,9 +151,9 @@ def place_order(
     market_price: float,
     kalshi_spread: float = 0.0,
     commence_time: datetime | None = None,
-) -> tuple[str, str, str, float, str]:
+) -> tuple[str, str, str, float, str, float]:
     """
-    Place a Kalshi order using GTC limit orders (0% maker fee).
+    Place a Kalshi order using GTC limit orders.
 
     Args:
         ticker:         Kalshi market ticker
@@ -146,19 +164,21 @@ def place_order(
         commence_time:  game start time (UTC) — used to compute adaptive limit timeout
 
     Returns:
-        (order_id, execution_status, failure_reason, actual_stake, fill_type)
+        (order_id, execution_status, failure_reason, actual_stake, fill_type, fee_paid)
         execution_status: "submitted" | "failed"
         failure_reason:   empty string on success, human-readable error on failure
         actual_stake:     dollars actually filled; 0.0 on failure
-        fill_type:        "maker" on success | "" on failure
+        fill_type:        "maker" | "taker" on success (derived from fee_paid) | "" on failure
+        fee_paid:         actual dollars charged by Kalshi for this fill; 0.0 on failure
 
-    Execution strategy (GTC = 0% maker fee on all fills):
+    Execution strategy:
         Step 1: GTC at mid price, adaptive timeout (2–10 min based on game time).
-        Step 2: GTC at ask price, short timeout (30 s).
+        Step 2: GTC at ask price, short timeout (30 s) — this step crosses the book
+                immediately by design and often incurs a real taker fee.
     """
     if not config.KALSHI_API_KEY:
         logger.error("KALSHI_API_KEY not set — cannot place order")
-        return "", "failed", "KALSHI_API_KEY not configured", 0.0, ""
+        return "", "failed", "KALSHI_API_KEY not configured", 0.0, "", 0.0
 
     price = max(0.01, min(0.99, market_price))
     count = max(1, math.floor(stake_dollars / price))
@@ -183,11 +203,13 @@ def place_order(
 
         if filled >= count:
             actual_stake = round(filled * price, 2)
+            fee_paid = _actual_fee_dollars(order_id)
+            fill_type = "taker" if fee_paid > 0 else "maker"
             logger.info(
-                "Kalshi GTC mid fill (immediate): %s %s %g contracts @ %.4f  actual_stake=$%.2f",
-                api_side.upper(), ticker, filled, yes_price_mid, actual_stake,
+                "Kalshi GTC mid fill (immediate): %s %s %g contracts @ %.4f  actual_stake=$%.2f  fee=$%.4f",
+                api_side.upper(), ticker, filled, yes_price_mid, actual_stake, fee_paid,
             )
-            return order_id, "submitted", "", actual_stake, "maker"
+            return order_id, "submitted", "", actual_stake, fill_type, fee_paid
 
         # Poll for fill up to adaptive timeout
         deadline = time.time() + timeout
@@ -201,12 +223,14 @@ def place_order(
 
         if filled > 0:
             actual_stake = round(filled * price, 2)
+            fee_paid = _actual_fee_dollars(order_id)
+            fill_type = "taker" if fee_paid > 0 else "maker"
             logger.info(
-                "Kalshi GTC mid fill: %s %s %g/%d contracts @ %.4f  actual_stake=$%.2f (order_id=%s)",
-                api_side.upper(), ticker, filled, count, yes_price_mid, actual_stake, order_id,
+                "Kalshi GTC mid fill: %s %s %g/%d contracts @ %.4f  actual_stake=$%.2f  fee=$%.4f (order_id=%s)",
+                api_side.upper(), ticker, filled, count, yes_price_mid, actual_stake, fee_paid, order_id,
             )
             _cancel_order(order_id)
-            return order_id, "submitted", "", actual_stake, "maker"
+            return order_id, "submitted", "", actual_stake, fill_type, fee_paid
 
         _cancel_order(order_id)
         logger.info(
@@ -231,11 +255,13 @@ def place_order(
 
         if filled >= count:
             actual_stake = round(filled * price, 2)
+            fee_paid = _actual_fee_dollars(order_id)
+            fill_type = "taker" if fee_paid > 0 else "maker"
             logger.info(
-                "Kalshi GTC ask fill (immediate): %s %s %g contracts @ %.4f  actual_stake=$%.2f",
-                api_side.upper(), ticker, filled, yes_price_ask, actual_stake,
+                "Kalshi GTC ask fill (immediate): %s %s %g contracts @ %.4f  actual_stake=$%.2f  fee=$%.4f",
+                api_side.upper(), ticker, filled, yes_price_ask, actual_stake, fee_paid,
             )
-            return order_id, "submitted", "", actual_stake, "maker"
+            return order_id, "submitted", "", actual_stake, fill_type, fee_paid
 
         deadline = time.time() + ask_timeout
         while time.time() < deadline and filled < count:
@@ -248,17 +274,19 @@ def place_order(
 
         if filled > 0:
             actual_stake = round(filled * price, 2)
+            fee_paid = _actual_fee_dollars(order_id)
+            fill_type = "taker" if fee_paid > 0 else "maker"
             logger.info(
-                "Kalshi GTC ask fill: %s %s %g/%d contracts @ %.4f  actual_stake=$%.2f (order_id=%s)",
-                api_side.upper(), ticker, filled, count, yes_price_ask, actual_stake, order_id,
+                "Kalshi GTC ask fill: %s %s %g/%d contracts @ %.4f  actual_stake=$%.2f  fee=$%.4f (order_id=%s)",
+                api_side.upper(), ticker, filled, count, yes_price_ask, actual_stake, fee_paid, order_id,
             )
             _cancel_order(order_id)
-            return order_id, "submitted", "", actual_stake, "maker"
+            return order_id, "submitted", "", actual_stake, fill_type, fee_paid
 
         _cancel_order(order_id)
         reason = f"GTC ask unfilled after {ask_timeout}s — no resting liquidity at ask"
         logger.warning("Kalshi GTC ask zero fill for %s @ %.4f", ticker, yes_price_ask)
-        return order_id, "failed", reason, 0.0, ""
+        return order_id, "failed", reason, 0.0, "", 0.0
 
     except requests.HTTPError as e:
         code = e.response.status_code if e.response is not None else "?"
@@ -274,11 +302,11 @@ def place_order(
             if body:
                 reason = f"HTTP {code}: {body[:200]}"
         logger.error("Kalshi GTC ask failed [%s]: %s", code, body[:300])
-        return client_order_id, "failed", reason, 0.0, ""
+        return client_order_id, "failed", reason, 0.0, "", 0.0
     except requests.RequestException as e:
         reason = f"Network error: {str(e)[:200]}"
         logger.error("Kalshi GTC ask network error: %s", e)
-        return client_order_id, "failed", reason, 0.0, ""
+        return client_order_id, "failed", reason, 0.0, "", 0.0
 
 
 def close_position(
@@ -287,7 +315,7 @@ def close_position(
     count: int,
     exit_price: float,
     timeout_seconds: int = 30,
-) -> tuple[str, str, str, float, float]:
+) -> tuple[str, str, str, float, float, float]:
     """
     Close (all of) an existing position via a single reduce_only GTC order — used by
     the trailing-stop risk manager, not the entry flow. Unlike place_order(), this is
@@ -303,12 +331,15 @@ def close_position(
                     market_price (e.g. current yes_bid for a yes position).
 
     Returns:
-        (order_id, execution_status, failure_reason, filled_count, fill_price)
+        (order_id, execution_status, failure_reason, filled_count, fill_price, fee_paid)
         execution_status: "submitted" | "failed"
+        fee_paid: actual dollars Kalshi charged for this close, read from the order's
+                  own record (see _actual_fee_dollars) — closing orders can incur a
+                  real fee just like entries.
     """
     if not config.KALSHI_API_KEY:
         logger.error("KALSHI_API_KEY not set — cannot close position")
-        return "", "failed", "KALSHI_API_KEY not configured", 0.0, 0.0
+        return "", "failed", "KALSHI_API_KEY not configured", 0.0, 0.0, 0.0
 
     price = max(0.01, min(0.99, exit_price))
     if side == "yes":
@@ -342,13 +373,14 @@ def close_position(
         if filled <= 0:
             reason = f"Close order unfilled after {timeout_seconds}s — no resting liquidity"
             logger.warning("Kalshi close zero fill for %s @ %.4f", ticker, yes_price)
-            return order_id, "failed", reason, 0.0, 0.0
+            return order_id, "failed", reason, 0.0, 0.0, 0.0
 
+        fee_paid = _actual_fee_dollars(order_id)
         logger.info(
-            "Kalshi position close: %s %s %g/%d contracts @ %.4f",
-            api_side.upper(), ticker, filled, count, yes_price,
+            "Kalshi position close: %s %s %g/%d contracts @ %.4f  fee=$%.4f",
+            api_side.upper(), ticker, filled, count, yes_price, fee_paid,
         )
-        return order_id, "submitted", "", filled, price
+        return order_id, "submitted", "", filled, price, fee_paid
 
     except requests.HTTPError as e:
         code = e.response.status_code if e.response is not None else "?"
@@ -364,8 +396,8 @@ def close_position(
             if body:
                 reason = f"HTTP {code}: {body[:200]}"
         logger.error("Kalshi close failed [%s]: %s", code, body[:300])
-        return client_order_id, "failed", reason, 0.0, 0.0
+        return client_order_id, "failed", reason, 0.0, 0.0, 0.0
     except requests.RequestException as e:
         reason = f"Network error: {str(e)[:200]}"
         logger.error("Kalshi close network error: %s", e)
-        return client_order_id, "failed", reason, 0.0, 0.0
+        return client_order_id, "failed", reason, 0.0, 0.0, 0.0
