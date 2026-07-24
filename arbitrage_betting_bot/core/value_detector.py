@@ -84,6 +84,21 @@ def _kalshi_url(ticker: str, event_ticker: str = "") -> str:
     return f"https://kalshi.com/markets/{series.lower()}/{slug}/{event}"
 
 
+def _effective_min_edge(ask_price: float, min_edge: float) -> float:
+    """
+    The real edge bar a bet at this price must clear: config.MIN_EDGE plus the
+    fee-adjusted cost of trading at this specific price (see
+    core/kelly_calculator.py::fee_adjusted_breakeven_prob). Single source of truth
+    for both _eval_edge's pass/fail check and the "no_edge" reason strings below —
+    those used to display only the raw min_edge (rounded to a whole percent, so
+    1.5% misleadingly showed as "2%") instead of the true, price-dependent bar.
+    """
+    from core.kelly_calculator import fee_adjusted_breakeven_prob
+
+    fee_edge_cost = fee_adjusted_breakeven_prob(ask_price) - ask_price
+    return min_edge + fee_edge_cost
+
+
 def _eval_edge(
     consensus: float,
     ask_price: float,
@@ -105,12 +120,9 @@ def _eval_edge(
     case ensures step 2 always clears the bar too and prevents blocking scans on
     illiquid mid-only fills.
     """
-    from core.kelly_calculator import fee_adjusted_breakeven_prob
-
     ask_edge = consensus - ask_price
-    fee_edge_cost = fee_adjusted_breakeven_prob(ask_price) - ask_price
     _EPS = 1e-9  # floating-point tolerance: treat 1.9999999% as 2.0%
-    if ask_edge >= min_edge + fee_edge_cost - _EPS:
+    if ask_edge >= _effective_min_edge(ask_price, min_edge) - _EPS:
         return ask_edge
     return None
 
@@ -277,7 +289,8 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
         edge = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
         if edge is None:
             best_edge = consensus - kalshi_price
-            reason = f"Edge {best_edge*100:.2f}% net below minimum {min_edge*100:.0f}%"
+            eff_min = _effective_min_edge(kalshi_price, min_edge)
+            reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
             _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
                  best_edge, "no_edge", reason)
             continue
@@ -309,7 +322,8 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log):
     edge = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if edge is None:
         best_edge = consensus - kalshi_price
-        reason = f"Edge {best_edge*100:.2f}% net below minimum {min_edge*100:.0f}%"
+        eff_min = _effective_min_edge(kalshi_price, min_edge)
+        reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
              best_edge, "no_edge", reason)
         return
@@ -377,7 +391,8 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
     edge = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if edge is None:
         best_edge = consensus - kalshi_price
-        reason = f"Edge {best_edge*100:.2f}% net below minimum {min_edge*100:.0f}%"
+        eff_min = _effective_min_edge(kalshi_price, min_edge)
+        reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              best_edge, "no_edge", reason)
     else:
@@ -400,7 +415,8 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
         no_edge = _eval_edge(no_consensus, no_price, km.spread, min_edge)
         if no_edge is None:
             no_best = no_consensus - no_price
-            reason = f"Edge {no_best*100:.2f}% net below minimum {min_edge*100:.0f}%"
+            eff_min = _effective_min_edge(no_price, min_edge)
+            reason = f"Edge {no_best*100:.2f}% net below minimum {eff_min*100:.2f}%"
             _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
                  no_best, "no_edge", reason)
         else:
@@ -474,7 +490,8 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log):
     edge = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if edge is None:
         best_edge = consensus - kalshi_price
-        reason = f"Edge {best_edge*100:.2f}% net below minimum {min_edge*100:.0f}%"
+        eff_min = _effective_min_edge(kalshi_price, min_edge)
+        reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              best_edge, "no_edge", reason)
         return
