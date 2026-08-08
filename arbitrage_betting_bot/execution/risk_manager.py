@@ -1,21 +1,35 @@
 """
-Trailing stop-to-breakeven+ risk management for open positions.
+Trailing stop and stop-loss risk management for open positions.
 
 Kalshi has no native stop/conditional order type (verified against their API
-reference), so this simulates one: each scan, compute the currently achievable exit
-price for a position (same convention as market_price at entry), track the best price
-seen since entry (peak_price), and once armed (peak has moved far enough favorably),
-trigger a full-position close if price retraces to the trailing stop level.
+reference), so both of these simulate one via polling — each scan, compute the
+currently achievable exit price for a position (same convention as market_price at
+entry) and decide whether to close it. They're symmetric and independent:
 
-    arm:   peak_price - entry_price >= config.TRAILING_STOP_ARM_MOVE
-    stop:  entry_price + config.TRAILING_STOP_LOCK_FRACTION * (peak_price - entry_price)
+  Trailing stop (protects gains): track the best price seen since entry (peak_price),
+  and once armed (peak has moved far enough favorably), trigger a full-position close
+  if price retraces to the trailing stop level.
 
-The stop rises as peak_price rises — protects more of the gain the further a winner
-runs, with no cap on the upside while the position keeps working.
+      arm:   peak_price - entry_price >= config.TRAILING_STOP_ARM_MOVE
+      stop:  entry_price + config.TRAILING_STOP_LOCK_FRACTION * (peak_price - entry_price)
 
-See config.TRAILING_STOP_* for the arm/lock parameters, and config.ENABLE_TRAILING_STOP
-for the master on/off switch. Only ever call execute_trailing_stop() from the main
-scan loop (main.py) — never from the dashboard — since it can place real orders.
+  The stop rises as peak_price rises — protects more of the gain the further a winner
+  runs, with no cap on the upside while the position keeps working.
+
+  Stop loss (limits losses): stateless — no arming, no peak tracking. Triggers a
+  full-position close as soon as price has moved against entry by config.STOP_LOSS_MOVE.
+  Added after real bet history showed positions that never armed the trailing stop (and
+  so had no risk management applied at all) were the dominant source of losses.
+
+      stop:  entry_price - config.STOP_LOSS_MOVE
+
+The two never conflict — the trailing stop only ever triggers above entry price, the
+stop-loss only ever triggers below it.
+
+See config.TRAILING_STOP_*/config.ENABLE_TRAILING_STOP and
+config.STOP_LOSS_MOVE/config.ENABLE_STOP_LOSS for the parameters and master on/off
+switches. Only ever call execute_trailing_stop()/execute_stop_loss() from the main scan
+loop (main.py) — never from the dashboard — since they can place real orders.
 """
 from __future__ import annotations
 
@@ -90,6 +104,28 @@ def evaluate_trailing_stop(pos, market: dict) -> Action:
     return Action(kind=ActionKind.NONE)
 
 
+def evaluate_stop_loss(pos, market: dict) -> Action:
+    """
+    Pure decision function — no side effects, no I/O. `pos` is a positions row
+    (sqlite3.Row) with at least: side, market_price. Unlike evaluate_trailing_stop(),
+    this is stateless: no peak tracking, just a fixed offset from entry.
+    """
+    side = (pos["side"] or "yes").lower()
+    entry_price = pos["market_price"]
+
+    achievable = _achievable_exit_price(side, market)
+    if achievable is None:
+        return Action(kind=ActionKind.NONE)
+
+    _EPS = 1e-9
+
+    stop_level = entry_price - config.STOP_LOSS_MOVE
+    if achievable <= stop_level + _EPS:
+        return Action(kind=ActionKind.TRIGGER_CLOSE, exit_price=achievable)
+
+    return Action(kind=ActionKind.NONE)
+
+
 def _fetch_live_contract_count(ticker: str) -> float | None:
     """Authoritative held-contract count from Kalshi's own portfolio data (free, not credit-metered)."""
     try:
@@ -108,56 +144,48 @@ def _fetch_live_contract_count(ticker: str) -> float | None:
         return None
 
 
-def execute_trailing_stop(pos, action: Action, is_paper: bool) -> bool:
+def _execute_close(pos, exit_price: float, is_paper: bool, reason: str) -> bool:
     """
-    Apply the decision from evaluate_trailing_stop(): update DB state or close the
-    position. Returns True only when the position was actually closed this call —
-    the caller (auto_settle.py) uses this to decide whether to also skip natural
-    settlement that cycle. Previously the caller inferred "handled" from
-    action.kind alone, which was wrong whenever the close attempt itself failed
-    (e.g. Kalshi's live contract count briefly unavailable right around
-    settlement) — that let a position sit with no risk management applied at all,
-    for as long as the failure kept recurring.
+    Shared TRIGGER_CLOSE execution, used by both execute_trailing_stop() and
+    execute_stop_loss() — fetch live contract count, close via IOC, record P&L under
+    the given `reason` (so trailing-stop and stop-loss exits stay distinguishable in
+    `positions.close_reason` for future analysis, same as `close_reason` already
+    distinguishes either from natural settlement). Returns True only when the
+    position was actually closed this call — callers (auto_settle.py) use this to
+    decide whether to also skip natural settlement that cycle; a close attempt that
+    merely fails must NOT be treated as "handled," or a position can end up with no
+    risk management applied at all for as long as the failure keeps recurring.
     """
-    from storage.db import set_peak_price, close_position_early
+    from storage.db import close_position_early
 
-    if action.kind == ActionKind.NONE:
-        return False
-
-    if action.kind == ActionKind.UPDATE_PEAK:
-        set_peak_price(pos["id"], action.peak_price)
-        return False
-
-    # TRIGGER_CLOSE
     pos_id = pos["id"]
     side = (pos["side"] or "yes").lower()
     ticker = pos["market_ticker"]
-    exit_price = action.exit_price
 
     if is_paper:
-        pnl = close_position_early(pos_id, exit_price, reason="trailing_stop")
+        pnl = close_position_early(pos_id, exit_price, reason=reason)
         logger.info(
-            "[PAPER] Trailing stop triggered: position #%d closed @ %.4f  P&L=$%.2f",
-            pos_id, exit_price, pnl,
+            "[PAPER] %s triggered: position #%d closed @ %.4f  P&L=$%.2f",
+            reason, pos_id, exit_price, pnl,
         )
         return True
 
     contracts = _fetch_live_contract_count(ticker)
     if not contracts or contracts <= 0:
         logger.warning(
-            "Trailing stop triggered for position #%d but no live Kalshi position "
-            "found for %s — skipping close this cycle", pos_id, ticker,
+            "%s triggered for position #%d but no live Kalshi position "
+            "found for %s — skipping close this cycle", reason, pos_id, ticker,
         )
         return False
 
     from execution.kalshi_executor import close_position
-    order_id, status, reason, filled, fill_price, exit_fee = close_position(
+    order_id, status, fail_reason, filled, fill_price, exit_fee = close_position(
         ticker, side, contracts, exit_price,
     )
     if status != "submitted" or filled <= 0:
         logger.warning(
-            "Trailing stop close FAILED for position #%d (%s): %s — will retry next scan",
-            pos_id, ticker, reason,
+            "%s close FAILED for position #%d (%s): %s — will retry next scan",
+            reason, pos_id, ticker, fail_reason,
         )
         return False
 
@@ -166,17 +194,45 @@ def execute_trailing_stop(pos, action: Action, is_paper: bool) -> bool:
         # not a partial-position ledger) — leave the position open and flag loudly
         # for manual review rather than silently misrecord P&L.
         logger.error(
-            "Trailing stop PARTIAL fill for position #%d (%s): closed %g/%g contracts "
+            "%s PARTIAL fill for position #%d (%s): closed %g/%g contracts "
             "@ %.4f (order_id=%s). Position left OPEN for manual review — remaining "
             "contracts are still exposed on Kalshi.",
-            pos_id, ticker, filled, contracts, fill_price, order_id,
+            reason, pos_id, ticker, filled, contracts, fill_price, order_id,
         )
         return False
 
-    pnl = close_position_early(pos_id, fill_price, reason="trailing_stop", exit_fee=exit_fee)
+    pnl = close_position_early(pos_id, fill_price, reason=reason, exit_fee=exit_fee)
     logger.info(
-        "[LIVE] Trailing stop triggered: position #%d closed %g contracts @ %.4f  "
+        "[LIVE] %s triggered: position #%d closed %g contracts @ %.4f  "
         "P&L=$%.2f  (order_id=%s, exit_fee=$%.4f)",
-        pos_id, filled, fill_price, pnl, order_id, exit_fee,
+        reason, pos_id, filled, fill_price, pnl, order_id, exit_fee,
     )
     return True
+
+
+def execute_trailing_stop(pos, action: Action, is_paper: bool) -> bool:
+    """
+    Apply the decision from evaluate_trailing_stop(): update DB state or close the
+    position. Returns True only when the position was actually closed this call.
+    """
+    from storage.db import set_peak_price
+
+    if action.kind == ActionKind.NONE:
+        return False
+
+    if action.kind == ActionKind.UPDATE_PEAK:
+        set_peak_price(pos["id"], action.peak_price)
+        return False
+
+    return _execute_close(pos, action.exit_price, is_paper, reason="trailing_stop")
+
+
+def execute_stop_loss(pos, action: Action, is_paper: bool) -> bool:
+    """
+    Apply the decision from evaluate_stop_loss(): close the position if triggered.
+    Returns True only when the position was actually closed this call.
+    """
+    if action.kind == ActionKind.NONE:
+        return False
+
+    return _execute_close(pos, action.exit_price, is_paper, reason="stop_loss")

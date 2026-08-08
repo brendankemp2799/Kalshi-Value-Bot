@@ -102,6 +102,13 @@ def auto_settle_positions(
             except Exception as e:
                 logger.warning("Trailing stop check failed for position #%d: %s", pos["id"], e)
 
+            if config.ENABLE_STOP_LOSS:
+                try:
+                    if _check_stop_loss(pos, market, is_paper):
+                        continue  # position just closed early — don't also run natural settlement below
+                except Exception as e:
+                    logger.warning("Stop-loss check failed for position #%d: %s", pos["id"], e)
+
         result = (market.get("result") or "").lower()
         if result not in ("yes", "no", "void"):
             # Market still open or result not yet published
@@ -151,6 +158,19 @@ def _check_trailing_stop(pos, market: dict, is_paper: bool) -> bool:
     if action.kind == ActionKind.NONE:
         return False
     return execute_trailing_stop(pos, action, is_paper)
+
+
+def _check_stop_loss(pos, market: dict, is_paper: bool) -> bool:
+    """
+    Evaluate + apply the stop-loss decision for one open position. Same
+    True-only-on-actual-close contract as _check_trailing_stop().
+    """
+    from execution.risk_manager import evaluate_stop_loss, execute_stop_loss, ActionKind
+
+    action = evaluate_stop_loss(pos, market)
+    if action.kind == ActionKind.NONE:
+        return False
+    return execute_stop_loss(pos, action, is_paper)
 
 
 # ── Closing Line Value ──────────────────────────────────────────────────────────

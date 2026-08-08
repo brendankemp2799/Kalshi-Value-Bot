@@ -46,6 +46,18 @@ TRAILING_STOP_LOCK_FRACTION: float = 0.35   # fraction of the move-from-entry pr
 # cost — see POSITION_MONITOR_INTERVAL_SECONDS below and _run_variable_loop().
 POSITION_MONITOR_INTERVAL_SECONDS: int = int(os.getenv("POSITION_MONITOR_INTERVAL_SECONDS", "30"))
 
+# ── Stop Loss (mid-position adverse-move exit) ──────────────────────────────────
+# Symmetric counterpart to the trailing stop above: the trailing stop only protects
+# positions that first move favorably — this cuts a position that's moving against
+# entry, before it rides all the way to a full loss. Added 2026-08-08 after real bet
+# history showed positions with no risk management applied at all (never armed the
+# trailing stop) had a -51% ROI vs -1% for trailing-stop-managed exits. Confirmed
+# against real candlestick history that these losses decline gradually (20-185 min),
+# not in a single tick, so a polling check has time to catch them.
+# Master switch — defaults off. Validate in paper mode before enabling live.
+ENABLE_STOP_LOSS: bool = os.getenv("ENABLE_STOP_LOSS", "false").lower() == "true"
+STOP_LOSS_MOVE: float = 0.20   # adverse move (price units) from entry that triggers a cut
+
 # ── Scheduling ────────────────────────────────────────────────────────────────
 # Variable-frequency polling: each sport is fetched at a rate based on its
 # nearest upcoming game. Sports with no game within 1 hour use the default
