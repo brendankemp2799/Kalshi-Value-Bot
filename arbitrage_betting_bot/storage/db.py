@@ -257,11 +257,12 @@ def add_position(
                  edge, bookmaker_count, consensus_std, kalshi_spread, commence_time,
                  bet_type, threshold, bookmakers_json, failure_reason, fill_type,
                  entry_fee_paid)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 datetime.utcnow().isoformat(),
                 sport, home_team, away_team, team_name, platform, stake, market_price,
+                "failed" if execution_status == "failed" else "open",
                 1 if is_paper else 0,
                 order_id,
                 execution_status,

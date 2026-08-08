@@ -138,16 +138,19 @@ def auto_settle_positions(
 def _check_trailing_stop(pos, market: dict, is_paper: bool) -> bool:
     """
     Evaluate + apply the trailing-stop decision for one open position.
-    Returns True if the position was closed early this cycle (caller should not
-    also run the natural-settlement check against the same stale `pos` row).
+    Returns True only if the position was actually closed early this cycle (caller
+    should not also run the natural-settlement check against the same now-stale
+    `pos` row) — this reflects execute_trailing_stop()'s real outcome, not just
+    whether a close was attempted, since a close attempt can fail (e.g. Kalshi's
+    live contract count briefly unavailable) and natural settlement must still run
+    in that case rather than being silently skipped too.
     """
     from execution.risk_manager import evaluate_trailing_stop, execute_trailing_stop, ActionKind
 
     action = evaluate_trailing_stop(pos, market)
     if action.kind == ActionKind.NONE:
         return False
-    execute_trailing_stop(pos, action, is_paper)
-    return action.kind == ActionKind.TRIGGER_CLOSE
+    return execute_trailing_stop(pos, action, is_paper)
 
 
 # ── Closing Line Value ──────────────────────────────────────────────────────────

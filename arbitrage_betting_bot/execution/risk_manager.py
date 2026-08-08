@@ -108,16 +108,25 @@ def _fetch_live_contract_count(ticker: str) -> float | None:
         return None
 
 
-def execute_trailing_stop(pos, action: Action, is_paper: bool) -> None:
-    """Apply the decision from evaluate_trailing_stop(): update DB state or close the position."""
+def execute_trailing_stop(pos, action: Action, is_paper: bool) -> bool:
+    """
+    Apply the decision from evaluate_trailing_stop(): update DB state or close the
+    position. Returns True only when the position was actually closed this call —
+    the caller (auto_settle.py) uses this to decide whether to also skip natural
+    settlement that cycle. Previously the caller inferred "handled" from
+    action.kind alone, which was wrong whenever the close attempt itself failed
+    (e.g. Kalshi's live contract count briefly unavailable right around
+    settlement) — that let a position sit with no risk management applied at all,
+    for as long as the failure kept recurring.
+    """
     from storage.db import set_peak_price, close_position_early
 
     if action.kind == ActionKind.NONE:
-        return
+        return False
 
     if action.kind == ActionKind.UPDATE_PEAK:
         set_peak_price(pos["id"], action.peak_price)
-        return
+        return False
 
     # TRIGGER_CLOSE
     pos_id = pos["id"]
@@ -131,7 +140,7 @@ def execute_trailing_stop(pos, action: Action, is_paper: bool) -> None:
             "[PAPER] Trailing stop triggered: position #%d closed @ %.4f  P&L=$%.2f",
             pos_id, exit_price, pnl,
         )
-        return
+        return True
 
     contracts = _fetch_live_contract_count(ticker)
     if not contracts or contracts <= 0:
@@ -139,7 +148,7 @@ def execute_trailing_stop(pos, action: Action, is_paper: bool) -> None:
             "Trailing stop triggered for position #%d but no live Kalshi position "
             "found for %s — skipping close this cycle", pos_id, ticker,
         )
-        return
+        return False
 
     from execution.kalshi_executor import close_position
     order_id, status, reason, filled, fill_price, exit_fee = close_position(
@@ -150,7 +159,7 @@ def execute_trailing_stop(pos, action: Action, is_paper: bool) -> None:
             "Trailing stop close FAILED for position #%d (%s): %s — will retry next scan",
             pos_id, ticker, reason,
         )
-        return
+        return False
 
     if filled < contracts:
         # Partial-fill accounting isn't automated (v1 is a full-position-exit design,
@@ -162,7 +171,7 @@ def execute_trailing_stop(pos, action: Action, is_paper: bool) -> None:
             "contracts are still exposed on Kalshi.",
             pos_id, ticker, filled, contracts, fill_price, order_id,
         )
-        return
+        return False
 
     pnl = close_position_early(pos_id, fill_price, reason="trailing_stop", exit_fee=exit_fee)
     logger.info(
@@ -170,3 +179,4 @@ def execute_trailing_stop(pos, action: Action, is_paper: bool) -> None:
         "P&L=$%.2f  (order_id=%s, exit_fee=$%.4f)",
         pos_id, filled, fill_price, pnl, order_id, exit_fee,
     )
+    return True

@@ -3,13 +3,15 @@ Prevents correlated bets that could amplify losses.
 
 Rules (in order):
   1. Same game:  already have an open position on this exact event.
-  2. Same team:  already have an open position involving one of these teams.
+  2. Same team, same day: already have an open position involving one of these
+     teams, with a game on the same UTC calendar date.
   3. Exposure:   BankrollManager cap on total / per-sport exposure.
 """
 from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timezone
 
 import sys
 import os
@@ -76,14 +78,32 @@ class CorrelationTracker:
                 if pos["home_team"] == home and pos["away_team"] == away:
                     return False, f"Already have an open position on {home} vs {away}"
 
-        # Rule 2: same team — skip for arb pairs
+        # Rule 2: same team, same day — skip for arb pairs. Scoped to the same UTC
+        # calendar date rather than "any open position on this team, indefinitely" —
+        # a team's games days apart don't carry meaningful correlated risk, and the
+        # unscoped version was found blocking a real, qualifying bet for 2+ days
+        # against a completely unrelated game. If a position's commence_time can't
+        # be determined, fall back to the old conservative behavior (block).
         if not is_arb:
+            event_date = event.commence_time.astimezone(timezone.utc).date()
             for pos in open_positions:
-                if pos["home_team"] in (home, away) or pos["away_team"] in (home, away):
+                if pos["home_team"] not in (home, away) and pos["away_team"] not in (home, away):
+                    continue
+                same_day = True
+                pos_commence = pos["commence_time"]
+                if pos_commence:
+                    try:
+                        pos_dt = datetime.fromisoformat(pos_commence)
+                        if pos_dt.tzinfo is None:
+                            pos_dt = pos_dt.replace(tzinfo=timezone.utc)
+                        same_day = pos_dt.astimezone(timezone.utc).date() == event_date
+                    except ValueError:
+                        same_day = True
+                if same_day:
                     return (
                         False,
                         f"Correlated bet blocked — already exposed to "
-                        f"{pos['home_team']} or {pos['away_team']}",
+                        f"{pos['home_team']} or {pos['away_team']} on the same day",
                     )
 
         # Rule 3: bankroll exposure (always enforced, even for arb)

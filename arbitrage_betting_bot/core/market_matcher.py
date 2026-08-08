@@ -407,14 +407,24 @@ def match_events(
             # will always produce consensus=None — no point evaluating them.
             if km.bet_type == "totals" and km.threshold is not None:
                 sb_lines = _sportsbook_lines(best_event, "totals")
-                if sb_lines:
-                    closest = min(sb_lines, key=lambda x: abs(x - km.threshold))
-                    if abs(closest - km.threshold) > 0.26:
-                        logger.debug(
-                            "Skip %s — threshold %.1f not in sportsbook totals lines %s",
-                            km.ticker, km.threshold, sorted(sb_lines),
-                        )
-                        continue
+                if not sb_lines:
+                    # No sportsbook totals data at all for this event — nothing to
+                    # validate the threshold against, so there's no real consensus
+                    # to compare it to. Previously this fell through and matched
+                    # unfiltered; skip it instead, consistent with every other
+                    # no-consensus case in this file.
+                    logger.debug(
+                        "Skip %s — no sportsbook totals data for this event",
+                        km.ticker,
+                    )
+                    continue
+                closest = min(sb_lines, key=lambda x: abs(x - km.threshold))
+                if abs(closest - km.threshold) > 0.26:
+                    logger.debug(
+                        "Skip %s — threshold %.1f not in sportsbook totals lines %s",
+                        km.ticker, km.threshold, sorted(sb_lines),
+                    )
+                    continue
 
             elif km.bet_type == "spread" and km.threshold is not None and km.yes_team:
                 # For spreads, check that the covering team is listed at this
