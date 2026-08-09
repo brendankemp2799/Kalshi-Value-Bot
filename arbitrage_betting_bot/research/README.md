@@ -11,12 +11,19 @@ Everything reads `storage/betting_bot.db` read-only.
 ## Why no API cost
 
 This entire system runs through the `claude` CLI authenticated via your Claude Pro
-subscription (`claude auth status` → `authMethod: "claude.ai"`), not an API key. For
-unattended/scripted use, mint a long-lived subscription-backed token once:
+subscription (`claude auth status` → `authMethod: "claude.ai"`), not an API key.
 
-```
-claude setup-token
-```
+Auth for unattended/cron use: run `claude setup-token` once, interactively, on the
+machine that will run these scripts — completing that login persists a credential at
+`~/.claude/.credentials.json`, which cron picks up automatically (same user, same
+`$HOME`). **Note:** `setup-token` also prints a separate portable
+`CLAUDE_CODE_OAUTH_TOKEN` value explicitly meant for exactly this headless use case —
+in testing (2026-08-09) that value consistently returned `401 Invalid bearer token`
+here across multiple regenerations and a clean recreation, with root cause
+unresolved, while the persisted login credential worked immediately and reliably. So
+this system relies on the persisted-login path, not the token env var — see
+`research/_load_token.sh` for the (optional, currently unnecessary) fallback if a
+future Claude Code version fixes the token path and you want to use it instead.
 
 No `ANTHROPIC_API_KEY` is set or needed anywhere in this system. Usage still draws from
 your Pro plan's shared usage pool (the same one your interactive sessions use) — see
@@ -71,13 +78,12 @@ python3 research/metrics.py --check-thresholds  # the free daily check
 ## Scheduling it for real (not done automatically — you decide when)
 
 This should run on the droplet (167.172.148.64), not a laptop that sleeps overnight —
-the production DB already lives there and it's already always-on.
-
-One-time setup on the droplet:
-```bash
-# install the claude CLI, then:
-claude setup-token   # interactive — mints a subscription-backed token, no API key
-```
+the production DB already lives there and it's already always-on. Already done as of
+2026-08-09: `claude` CLI installed (`curl -fsSL https://claude.ai/install.sh | bash`),
+logged in via `claude setup-token`, `~/.local/bin` added to PATH, and
+`./research/run_weekly.sh` verified end-to-end against real production data under a
+fully wiped cron-equivalent environment (`env -i HOME=/root PATH=/usr/bin:/bin`) —
+this is not theoretical, it produced a real hypothesis file from live data.
 
 Then a crontab entry (`crontab -e` on the droplet):
 ```cron
