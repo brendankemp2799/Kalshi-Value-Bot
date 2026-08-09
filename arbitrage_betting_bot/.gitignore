@@ -1,0 +1,7 @@
+.env
+.claude_token
+__pycache__/
+*.pyc
+storage/betting_bot.db-shm
+storage/betting_bot.db-wal
+.DS_Store

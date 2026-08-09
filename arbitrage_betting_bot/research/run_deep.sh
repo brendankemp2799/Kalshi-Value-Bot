@@ -7,6 +7,7 @@
 # amount of Pro-plan usage investigating a long backlog.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source research/_load_token.sh
 
 MAX_HYPOTHESES="${MAX_HYPOTHESES:-3}"
 LOG="research/findings/run_log.jsonl"

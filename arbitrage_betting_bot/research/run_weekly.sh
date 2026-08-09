@@ -6,6 +6,7 @@
 # for how this is scheduled (or run manually: ./research/run_weekly.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source research/_load_token.sh
 
 mkdir -p research/findings
 LOG="research/findings/run_log.jsonl"
