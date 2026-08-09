@@ -31,6 +31,15 @@ MAX_DAILY_CAPITAL_RISK_PCT: float = 0.30  # Max % of bankroll staked in new posi
 # Kalshi has no native stop/conditional order type — this is simulated by polling
 # price each scan (piggybacked on auto_settle's existing per-position market fetch)
 # and placing a real closing order once price retraces to the trailing level.
+# DISABLED in production (.env) as of 2026-08-09 — see
+# research/experiments/2026-08-09-trailing-stop-vs-stoploss-only.md. Replaying all
+# 38 settled live positions' real intraday price paths through trailing-stop + the
+# still-enabled stop-loss showed EVERY threshold tested (flat 0.10, flat 0.15,
+# today's dynamic ramp) net-negative (-$1.83 to -$4.59), while stop-loss ALONE (no
+# trailing stop) netted +$18.70 over the same trades — trailing stop was cutting
+# real winners short more than it was preventing losses, at every threshold tried.
+# The tuning params below are kept for the record / in case this is re-enabled and
+# re-tested later, not because they're currently in effect.
 # Master switch — defaults off. Validate in paper mode before enabling live.
 ENABLE_TRAILING_STOP: bool = os.getenv("ENABLE_TRAILING_STOP", "false").lower() == "true"
 # Arm threshold is time-into-game dependent, not a flat constant (see
