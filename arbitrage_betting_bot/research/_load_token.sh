@@ -7,6 +7,12 @@
 #   claude setup-token
 #   echo "CLAUDE_CODE_OAUTH_TOKEN=<paste the token here>" > research/../.claude_token
 #   chmod 600 research/../.claude_token
+#
+# Also ensure the native `claude` install (~/.local/bin) is on PATH — cron (like
+# any non-interactive, non-login shell) never sources ~/.bashrc, so relying on that
+# alone silently breaks under cron even though it works fine interactively.
+export PATH="$HOME/.local/bin:$PATH"
+
 TOKEN_FILE="$(dirname "${BASH_SOURCE[0]}")/../.claude_token"
 if [ -f "$TOKEN_FILE" ]; then
     # shellcheck disable=SC1090
