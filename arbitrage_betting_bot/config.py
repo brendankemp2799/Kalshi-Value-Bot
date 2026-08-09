@@ -33,8 +33,16 @@ MAX_DAILY_CAPITAL_RISK_PCT: float = 0.30  # Max % of bankroll staked in new posi
 # and placing a real closing order once price retraces to the trailing level.
 # Master switch — defaults off. Validate in paper mode before enabling live.
 ENABLE_TRAILING_STOP: bool = os.getenv("ENABLE_TRAILING_STOP", "false").lower() == "true"
-TRAILING_STOP_ARM_MOVE: float = 0.10        # min favorable move (price units) before the stop arms
+TRAILING_STOP_ARM_MOVE: float = 0.15        # min favorable move (price units) before the stop arms
 TRAILING_STOP_LOCK_FRACTION: float = 0.35   # fraction of the move-from-entry protected once armed
+# ARM_MOVE raised from 0.10 to 0.15 on 2026-08-09 (research/experiments/2026-08-09-
+# trailing-stop-arm-threshold.md): of the 10 live trailing-stop closes to date, the 5
+# that armed on a <0.16 move netted -$0.41 combined (3 of 5 net losses despite the
+# "protection"), including position #262 (Baltimore/Texas Over 8.5), which armed on a
+# single 1-minute price whipsaw and closed for +$0.01 three minutes before the market
+# ran to 96-99c on the real game outcome. The 5 that armed on a >=0.16 move netted
+# +$0.27 combined. STOP_LOSS_MOVE below is unaffected and still backstops genuine
+# reversals regardless of whether the trailing stop ever arms.
 # Raised from 0.20 on 2026-08-08: real trailing-stop closes showed 0.20 protecting so
 # little of a typical ~16c move that Kalshi's fee (peaking ~30-60c, right where these
 # positions trade) consumed 80-100% of the captured slice — several genuine wins closed
