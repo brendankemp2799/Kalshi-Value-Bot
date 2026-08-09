@@ -163,7 +163,7 @@ def run_scan(
                 "skipping API fetch. Running auto-settle only.",
                 daily_staked, daily_risk_cap,
             )
-            auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=config.ENABLE_TRAILING_STOP)
+            auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=(config.ENABLE_TRAILING_STOP or config.ENABLE_STOP_LOSS))
             _run_reconciliation_if_live(paper, dry_run)
             bm.snapshot()
             _log_api_credits(logger)
@@ -177,7 +177,7 @@ def run_scan(
             exposure_pct * 100, config.MAX_TOTAL_EXPOSURE_PCT * 100,
         )
         if not dry_run:
-            auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=config.ENABLE_TRAILING_STOP)
+            auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=(config.ENABLE_TRAILING_STOP or config.ENABLE_STOP_LOSS))
             _run_reconciliation_if_live(paper, dry_run)
             bm.snapshot()
         _log_api_credits(logger)
@@ -191,7 +191,7 @@ def run_scan(
                 "Running auto-settle only.",
                 open_count, config.MAX_OPEN_POSITIONS,
             )
-            auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=config.ENABLE_TRAILING_STOP)
+            auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=(config.ENABLE_TRAILING_STOP or config.ENABLE_STOP_LOSS))
             _run_reconciliation_if_live(paper, dry_run)
             bm.snapshot()
             _log_api_credits(logger)
@@ -477,7 +477,7 @@ def run_scan(
 
     # Auto-settle any open positions whose Kalshi market has now resolved
     if not dry_run:
-        auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=config.ENABLE_TRAILING_STOP)
+        auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=(config.ENABLE_TRAILING_STOP or config.ENABLE_STOP_LOSS))
         _run_reconciliation_if_live(paper, dry_run)
 
     _log_api_credits(logger)
@@ -690,7 +690,7 @@ def _run_variable_loop(
                 try:
                     auto_settle_positions(
                         is_paper=paper, capture_closing_lines=False,
-                        manage_open_positions=config.ENABLE_TRAILING_STOP,
+                        manage_open_positions=(config.ENABLE_TRAILING_STOP or config.ENABLE_STOP_LOSS),
                     )
                     _run_reconciliation_if_live(paper, dry_run)
                 except Exception as e:
