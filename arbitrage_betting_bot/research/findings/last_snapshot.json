@@ -1,0 +1,52 @@
+{
+  "generated_at": "2026-08-09T18:43:05.516016+00:00",
+  "is_paper": false,
+  "n_settled": 0,
+  "n_open": 0,
+  "roi_pct": null,
+  "win_rate_pct": null,
+  "sharpe": {
+    "value": null,
+    "n": 0,
+    "note": "per-trade, not annualized; treat as noise below n~30"
+  },
+  "max_drawdown": {
+    "value": 0.0,
+    "n_snapshots": 5
+  },
+  "by_sport": [],
+  "by_bet_type": [],
+  "by_strategy": [],
+  "by_fill_type": [],
+  "by_close_reason": [],
+  "edge_calibration": [
+    {
+      "edge_bucket": "1.5-3%",
+      "n": 0,
+      "roi_pct": null,
+      "win_rate_pct": null
+    },
+    {
+      "edge_bucket": "3-5%",
+      "n": 0,
+      "roi_pct": null,
+      "win_rate_pct": null
+    },
+    {
+      "edge_bucket": "5-8%",
+      "n": 0,
+      "roi_pct": null,
+      "win_rate_pct": null
+    },
+    {
+      "edge_bucket": "8%+",
+      "n": 0,
+      "roi_pct": null,
+      "win_rate_pct": null
+    }
+  ],
+  "fees_and_fills": {
+    "n": 0
+  },
+  "sample_size_warning": "n_settled=0 \u2014 most statistics above are low-confidence below ~n=30. Treat single-digit-n breakdowns as anecdotes, not findings."
+}
