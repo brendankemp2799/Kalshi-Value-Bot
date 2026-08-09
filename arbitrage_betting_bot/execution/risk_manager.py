@@ -10,8 +10,14 @@ entry) and decide whether to close it. They're symmetric and independent:
   and once armed (peak has moved far enough favorably), trigger a full-position close
   if price retraces to the trailing stop level.
 
-      arm:   peak_price - entry_price >= config.TRAILING_STOP_ARM_MOVE
+      arm:   peak_price - entry_price >= _dynamic_arm_move(pos)
       stop:  entry_price + config.TRAILING_STOP_LOCK_FRACTION * (peak_price - entry_price)
+
+  The arm move itself is time-into-game dependent, not a flat constant — see
+  _dynamic_arm_move() below. A move minutes into a game has far more time to revert
+  than the same move with the game nearly over, so the threshold linearly ramps down
+  from config.TRAILING_STOP_ARM_MOVE_EARLY at kickoff to config.TRAILING_STOP_ARM_MOVE_LATE
+  by the sport's expected game duration (config.SPORT_EXPECTED_DURATION_MINUTES).
 
   The stop rises as peak_price rises — protects more of the gain the further a winner
   runs, with no cap on the upside while the position keeps working.
@@ -35,6 +41,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 
 import sys
@@ -75,10 +82,47 @@ def _achievable_exit_price(side: str, market: dict) -> float | None:
         return None
 
 
+def _dynamic_arm_move(pos) -> float:
+    """
+    Trailing-stop arm threshold as a function of elapsed time since game start —
+    larger (harder to arm, more tolerant of noise) near kickoff, smaller (arms more
+    readily, protects gains sooner) as the game approaches/passes its expected
+    duration. Linear ramp between config.TRAILING_STOP_ARM_MOVE_EARLY and
+    config.TRAILING_STOP_ARM_MOVE_LATE; clamped to that range outside [0, expected
+    duration] (pre-game and overtime/extra-innings both clamp rather than extrapolate).
+
+    Falls back to TRAILING_STOP_ARM_MOVE_EARLY (the safer, more tolerant bound) if
+    `commence_time` is missing or unparseable, same fallback convention as the
+    existing commence_time handling in execution/auto_settle.py.
+    """
+    commence_str = pos["commence_time"] if "commence_time" in pos.keys() else None
+    if not commence_str:
+        return config.TRAILING_STOP_ARM_MOVE_EARLY
+
+    try:
+        commence = datetime.fromisoformat(commence_str)
+        if commence.tzinfo is None:
+            commence = commence.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return config.TRAILING_STOP_ARM_MOVE_EARLY
+
+    sport = pos["sport"] if "sport" in pos.keys() else None
+    duration_minutes = config.SPORT_EXPECTED_DURATION_MINUTES.get(
+        sport, config.SPORT_EXPECTED_DURATION_DEFAULT_MINUTES
+    )
+
+    elapsed_minutes = (datetime.now(timezone.utc) - commence).total_seconds() / 60.0
+    elapsed_fraction = max(0.0, min(1.0, elapsed_minutes / duration_minutes))
+
+    early = config.TRAILING_STOP_ARM_MOVE_EARLY
+    late = config.TRAILING_STOP_ARM_MOVE_LATE
+    return early - elapsed_fraction * (early - late)
+
+
 def evaluate_trailing_stop(pos, market: dict) -> Action:
     """
     Pure decision function — no side effects, no I/O. `pos` is a positions row
-    (sqlite3.Row) with at least: side, market_price, peak_price.
+    (sqlite3.Row) with at least: side, market_price, peak_price, commence_time, sport.
     """
     side = (pos["side"] or "yes").lower()
     entry_price = pos["market_price"]
@@ -93,7 +137,7 @@ def evaluate_trailing_stop(pos, market: dict) -> Action:
     if achievable > peak_price + _EPS:
         return Action(kind=ActionKind.UPDATE_PEAK, peak_price=achievable)
 
-    armed = (peak_price - entry_price) >= config.TRAILING_STOP_ARM_MOVE - _EPS
+    armed = (peak_price - entry_price) >= _dynamic_arm_move(pos) - _EPS
     if not armed:
         return Action(kind=ActionKind.NONE)
 

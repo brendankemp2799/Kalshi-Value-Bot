@@ -95,3 +95,44 @@ Skeptic would likely flag, noted here proactively:
   appropriately tight).
 - Should be revisited by the normal pipeline once n grows, to either confirm 0.15 or
   find a better-supported value.
+
+## Addendum (2026-08-09): flat 0.15 superseded by a dynamic, time-into-game threshold
+
+User follow-up observation: a flat threshold treats a move identically regardless of
+when in the game it happens, but a swing minutes after a game starts has far more time
+(and far more remaining plays) to revert than the same swing with the game nearly over
+— exactly the mechanism behind #262 (armed 8 minutes into the game). Replaced the flat
+`TRAILING_STOP_ARM_MOVE = 0.15` with a linear ramp between two new constants,
+`TRAILING_STOP_ARM_MOVE_EARLY = 0.20` (at/near kickoff) and `TRAILING_STOP_ARM_MOVE_LATE
+= 0.08` (at/after the sport's expected game duration, via new
+`config.SPORT_EXPECTED_DURATION_MINUTES`), interpolated by elapsed fraction of expected
+duration. Implemented as `_dynamic_arm_move(pos)` in `execution/risk_manager.py`,
+replacing the single `config.TRAILING_STOP_ARM_MOVE` reference in
+`evaluate_trailing_stop()`. `TRAILING_STOP_LOCK_FRACTION` intentionally left flat at
+0.35 per explicit user scoping decision — tuning both parameters off the same n=10
+sample at once was judged too much surface area for the evidence available.
+
+**Verification performed** (see conversation record, not re-derived here): unit-style
+checks of `_dynamic_arm_move()` at elapsed=0 (returns EARLY), elapsed=full duration
+(returns LATE), elapsed=50% (returns midpoint), pre-game/future commence_time (clamps
+to EARLY), missing/unparseable commence_time (falls back to EARLY), and an unrecognized
+sport key (falls back to the 150-minute default duration) — all passed. Replayed
+position #262's real `commence_time`/`entry`/`peak` through `evaluate_trailing_stop()`
+at the exact moment (18:44 UTC, ~9 min post-kickoff) the real bot incorrectly closed
+it: dynamic arm move at that instant = 0.194, move-to-peak was only 0.10 → correctly
+does NOT arm (`ActionKind.NONE`), vs. the flat-0.15 fix which also happened to block
+this case but for a global-constant reason rather than a time-grounded one. Cross-check:
+the identical 0.12 move-to-peak from real position #245 does NOT arm at 10 minutes
+elapsed but DOES arm (and triggers close once price reaches the resulting stop level)
+at 150 minutes elapsed in the same game — confirms the "protect sooner late-game" half
+of the design, not just the "tolerate noise early" half.
+
+**Known additional caveat vs. the flat-threshold version**: the EARLY=0.20/LATE=0.08
+bounds and the linear-ramp shape are reasoned choices, not fit to any data (there isn't
+yet a real trailing-stop close under this new logic to fit against) — even more
+provisional than the already-thin flat-0.15 tuning above. `SPORT_EXPECTED_DURATION_MINUTES`
+values are rough real-world averages (not sourced from this project's own data) and
+don't account for extra innings/overtime variance beyond the simple clamp-at-1.0
+behavior. Revisit once trailing-stop closes accumulate under the new logic — in
+particular, check whether real closes cluster near the EARLY or LATE bound in a way
+that suggests the ramp should be reshaped (e.g. non-linear) rather than linear.

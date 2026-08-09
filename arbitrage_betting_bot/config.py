@@ -33,21 +33,48 @@ MAX_DAILY_CAPITAL_RISK_PCT: float = 0.30  # Max % of bankroll staked in new posi
 # and placing a real closing order once price retraces to the trailing level.
 # Master switch — defaults off. Validate in paper mode before enabling live.
 ENABLE_TRAILING_STOP: bool = os.getenv("ENABLE_TRAILING_STOP", "false").lower() == "true"
-TRAILING_STOP_ARM_MOVE: float = 0.15        # min favorable move (price units) before the stop arms
+# Arm threshold is time-into-game dependent, not a flat constant (see
+# _dynamic_arm_move() in execution/risk_manager.py) — linearly interpolated between
+# these two bounds by elapsed fraction of the sport's expected game duration below.
+TRAILING_STOP_ARM_MOVE_EARLY: float = 0.20  # min favorable move to arm, at/near game start
+TRAILING_STOP_ARM_MOVE_LATE: float = 0.08   # min favorable move to arm, at/after expected game end
 TRAILING_STOP_LOCK_FRACTION: float = 0.35   # fraction of the move-from-entry protected once armed
-# ARM_MOVE raised from 0.10 to 0.15 on 2026-08-09 (research/experiments/2026-08-09-
-# trailing-stop-arm-threshold.md): of the 10 live trailing-stop closes to date, the 5
-# that armed on a <0.16 move netted -$0.41 combined (3 of 5 net losses despite the
-# "protection"), including position #262 (Baltimore/Texas Over 8.5), which armed on a
-# single 1-minute price whipsaw and closed for +$0.01 three minutes before the market
-# ran to 96-99c on the real game outcome. The 5 that armed on a >=0.16 move netted
-# +$0.27 combined. STOP_LOSS_MOVE below is unaffected and still backstops genuine
-# reversals regardless of whether the trailing stop ever arms.
-# Raised from 0.20 on 2026-08-08: real trailing-stop closes showed 0.20 protecting so
-# little of a typical ~16c move that Kalshi's fee (peaking ~30-60c, right where these
-# positions trade) consumed 80-100% of the captured slice — several genuine wins closed
-# at breakeven or a small net loss. 0.35 leaves more room to run while still resistant to
-# the fee eating the whole locked-in gain.
+# Made dynamic on 2026-08-09 (research/experiments/2026-08-09-trailing-stop-arm-
+# threshold.md addendum): a flat threshold treats an early-game move and a late-game
+# move as the same signal, but they aren't — a swing minutes after a game starts has
+# far more time (and far more remaining plays) to revert than the same swing with the
+# game nearly over. EARLY=0.20 is more tolerant than the flat 0.15 this replaced,
+# specifically to survive the single-play whipsaw that motivated that fix (position
+# #262, Baltimore/Texas Over 8.5, armed on a 1-minute spike to 54c only 8 minutes into
+# the game, then got stopped out for $0.01 three minutes before the market ran to
+# 96-99c). LATE=0.08 arms more eagerly than the original flat 0.10 — with little game
+# time left for a real trend to keep developing, and genuine reversal risk (a
+# walk-off, a last-minute goal) still on the table, banking gains sooner is the safer
+# trade. Reasoned starting points, not fit to the n=10 trailing-stop-close sample by
+# search/optimization — revisit once more closes accumulate under this logic.
+# Flat-threshold history (0.10 -> 0.15 on 2026-08-09) kept for context: of the 10 live
+# trailing-stop closes to date, the 5 that armed on a <0.16 move netted -$0.41 combined
+# (3 of 5 net losses despite the "protection"); the 5 that armed on a >=0.16 move
+# netted +$0.27. STOP_LOSS_MOVE below is unaffected either way and still backstops
+# genuine reversals regardless of whether the trailing stop ever arms.
+# Raised from 0.20 on 2026-08-08 (LOCK_FRACTION, not ARM_MOVE): real trailing-stop
+# closes showed 0.20 protecting so little of a typical ~16c move that Kalshi's fee
+# (peaking ~30-60c, right where these positions trade) consumed 80-100% of the
+# captured slice — several genuine wins closed at breakeven or a small net loss. 0.35
+# leaves more room to run while still resistant to the fee eating the whole locked-in
+# gain.
+
+# Expected real-world game duration per sport (minutes), used only to compute the
+# dynamic trailing-stop arm move above — not used for scheduling/polling elsewhere.
+SPORT_EXPECTED_DURATION_MINUTES: dict[str, int] = {
+    "basketball_nba":            150,
+    "baseball_mlb":               190,
+    "icehockey_nhl":               150,
+    "soccer_usa_mls":              120,
+    "soccer_epl":                   120,
+    "soccer_uefa_champs_league":    120,
+}
+SPORT_EXPECTED_DURATION_DEFAULT_MINUTES: int = 150  # fallback for an unrecognized sport key
 # How often open positions are checked against Kalshi, independent of the Odds-API scan
 # cadence above. Kalshi's own APIs (market quotes, portfolio positions/fills) aren't
 # credit-metered, so this can run much faster than the Odds-API-driven scan without any
