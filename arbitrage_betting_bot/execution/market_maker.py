@@ -62,6 +62,22 @@ class MMAction:
     clip_dollars: float | None = None
 
 
+def _resting_notional() -> float:
+    """Total notional currently resting (placed, unfilled) across every leg in
+    _resting_quotes. BankrollManager.mm_exposure only sums FILLED positions from
+    the DB — it has no visibility into how much is simply resting on Kalshi's book
+    right now. A single tick can legitimately evaluate dozens of candidates, and
+    each one only ever got checked against the exposure cap in isolation, so
+    nothing stopped the SUM of everything resting at once from far exceeding the
+    intended cap even though no single candidate ever did on its own."""
+    total = 0.0
+    for legs in _resting_quotes.values():
+        for leg in (legs.get("yes"), legs.get("no")):
+            if leg:
+                total += leg["price"] * leg["count"]
+    return total
+
+
 def _net_inventory_contracts(ticker: str, is_paper: bool) -> float:
     """Net YES-equivalent contracts already held on this ticker from prior MM fills
     (positive = net long YES, negative = net long NO). Used to skew the reservation
@@ -210,6 +226,15 @@ def run_mm_tick(
     cached-as-too-wide candidate whose spread has since narrowed stops being
     quoted once it's back in directionally-tradeable territory.
 
+    Tracks a running total of filled-plus-resting notional across every candidate
+    processed this tick (starting from BankrollManager.mm_exposure + whatever was
+    already resting from the prior tick) and stops placing new quotes once it
+    would push that total past MM_MAX_EXPOSURE_PCT of bankroll — the per-candidate
+    check in CorrelationTracker.is_allowed() only ever sees one candidate's clip in
+    isolation, so on its own it can't prevent many simultaneously-resting
+    candidates from collectively exceeding the cap even though none of them do
+    individually.
+
     Returns the number of legs filled this tick.
     """
     from execution.kalshi_executor import (
@@ -218,6 +243,8 @@ def run_mm_tick(
 
     filled_count = 0
     seen_tickers: set[str] = set()
+    pending_notional = _resting_notional()  # carried over from the prior tick
+    cap_dollars = config.MM_MAX_EXPOSURE_PCT * bm.bankroll
 
     for candidate in mm_candidates:
         km = candidate["matched_event"].kalshi_market
@@ -240,6 +267,10 @@ def run_mm_tick(
             for side, leg in (("yes", prior.get("yes")), ("no", prior.get("no"))):
                 if not leg:
                     continue
+                # This leg's old notional is being resolved one way or another
+                # (filled and moved into bm.mm_exposure, or cancelled) — either
+                # way it's coming out of the "still just resting" running total.
+                pending_notional -= leg["price"] * leg["count"]
                 status = get_order_status(leg["order_id"])
                 filled = float(status.get("fill_count_fp", 0) or 0) if status else 0.0
                 if filled > 0:
@@ -273,8 +304,27 @@ def run_mm_tick(
             logger.debug("MM quote blocked for %s: %s", ticker, reason)
             continue
 
-        yes_count = max(1, math.floor(action.clip_dollars / action.yes_bid_price))
-        no_count = max(1, math.floor(action.clip_dollars / action.no_bid_price))
+        # clip_dollars is the total per-candidate commitment across BOTH legs (it's
+        # what's checked against the exposure cap), so each leg gets half of it —
+        # sizing each leg at the full clip_dollars would mean one candidate's two
+        # legs alone could total ~2x the cap.
+        per_leg_dollars = action.clip_dollars / 2.0
+        yes_count = max(1, math.floor(per_leg_dollars / action.yes_bid_price))
+        no_count = max(1, math.floor(per_leg_dollars / action.no_bid_price))
+        new_notional = yes_count * action.yes_bid_price + no_count * action.no_bid_price
+
+        # Aggregate cap, on top of is_allowed()'s per-candidate check above: would
+        # placing BOTH legs of THIS candidate, added to everything already filled
+        # (bm.mm_exposure, queried fresh so it reflects any fill just recorded a
+        # few lines up) plus everything still resting from earlier in this very
+        # tick (pending_notional), push total committed notional past the cap?
+        committed = bm.mm_exposure + (0.0 if is_paper else pending_notional)
+        if committed + new_notional > cap_dollars + 1e-6:
+            logger.debug(
+                "MM quote blocked for %s: aggregate exposure would reach $%.2f "
+                "(cap $%.2f)", ticker, committed + new_notional, cap_dollars,
+            )
+            continue
 
         if is_paper:
             # Paper mode never places real orders. A quote is treated as filled
@@ -310,5 +360,13 @@ def run_mm_tick(
             _record_fill(candidate, "no", action.no_bid_price, no_filled, no_fee, False,
                          order_id=no_order_id)
             filled_count += 1
+
+        # Whatever's left resting (not filled at placement) is real pending
+        # exposure for the rest of this tick's aggregate check.
+        pending_notional += sum(
+            leg["price"] * leg["count"]
+            for leg in (_resting_quotes[ticker]["yes"], _resting_quotes[ticker]["no"])
+            if leg
+        )
 
     return filled_count
