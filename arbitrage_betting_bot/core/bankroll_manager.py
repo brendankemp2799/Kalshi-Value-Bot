@@ -29,10 +29,20 @@ class BankrollManager:
         positions = db.get_open_positions(self.is_paper)
         return sum(float(p["stake"]) for p in positions if p["sport"] == sport)
 
-    def can_add_exposure(self, additional: float, sport: str) -> tuple[bool, str]:
+    @property
+    def mm_exposure(self) -> float:
+        positions = db.get_open_positions(self.is_paper)
+        return sum(float(p["stake"]) for p in positions if p["strategy"] == "market_making")
+
+    def can_add_exposure(self, additional: float, sport: str, is_mm: bool = False) -> tuple[bool, str]:
         """
         Check whether adding `additional` dollars more exposure is allowed.
         Returns (allowed, reason).
+
+        is_mm: also enforce MAX_MM_EXPOSURE_PCT — a sub-cap *within* the same shared
+        total/sport caps below, not a separate bankroll. Market making shares every
+        other exposure limit with the directional strategy; this just stops the new,
+        unvalidated execution mode from occupying too much of that shared pool at once.
         """
         new_total = self.total_at_risk + additional
         if new_total / self.bankroll > config.MAX_TOTAL_EXPOSURE_PCT:
@@ -49,6 +59,15 @@ class BankrollManager:
                 f"{sport} exposure would reach {new_sport_exp / self.bankroll * 100:.0f}% "
                 f"(max {config.MAX_SPORT_EXPOSURE_PCT * 100:.0f}%)",
             )
+
+        if is_mm:
+            new_mm_exp = self.mm_exposure + additional
+            if new_mm_exp / self.bankroll > config.MM_MAX_EXPOSURE_PCT:
+                return (
+                    False,
+                    f"Market-making exposure would reach {new_mm_exp / self.bankroll * 100:.0f}% "
+                    f"(max {config.MM_MAX_EXPOSURE_PCT * 100:.0f}%)",
+                )
 
         return True, "OK"
 
