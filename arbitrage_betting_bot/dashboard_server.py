@@ -239,31 +239,40 @@ def build_data() -> dict:
     by_sport: dict[str, dict] = defaultdict(
         lambda: {"staked": 0.0, "pnl": 0.0, "wins": 0, "losses": 0, "open": 0}
     )
+    by_strategy: dict[str, dict] = defaultdict(
+        lambda: {"staked": 0.0, "pnl": 0.0, "wins": 0, "losses": 0, "open": 0}
+    )
 
     for p in positions:
         if p["execution_status"] == "failed":
             failed_count += 1
             continue  # failed orders don't count toward stats
         sport = _short_sport(p["sport"])
+        strategy = p["strategy"] if "strategy" in p.keys() else "value_edge"
         stake = p["stake"]
         total_staked += stake
         by_sport[sport]["staked"] += stake
+        by_strategy[strategy]["staked"] += stake
 
         if p["status"] == "open":
             open_count += 1
             by_sport[sport]["open"] += 1
+            by_strategy[strategy]["open"] += 1
         else:
             pnl = p["pnl"]
             if pnl is not None:
                 total_pnl += pnl
                 by_sport[sport]["pnl"] += pnl
+                by_strategy[strategy]["pnl"] += pnl
                 settled += 1
                 if pnl >= 0:
                     wins += 1
                     by_sport[sport]["wins"] += 1
+                    by_strategy[strategy]["wins"] += 1
                 else:
                     losses += 1
                     by_sport[sport]["losses"] += 1
+                    by_strategy[strategy]["losses"] += 1
 
     roi = round(total_pnl / total_staked * 100, 2) if total_staked > 0 and settled > 0 else None
     win_rate = round(wins / settled * 100, 1) if settled > 0 else None
@@ -285,6 +294,25 @@ def build_data() -> dict:
         sport_rows.append({
             "sport": sport,
             "total": total,
+            "wins": w,
+            "losses": l,
+            "open": o,
+            "staked": round(staked, 2),
+            "pnl": round(pnl, 2) if settled_s > 0 else None,
+            "roi": roi_s,
+        })
+
+    # ── Strategy breakdown (value_edge vs market_making) ──────────────────────
+    strategy_rows = []
+    for strategy, s in sorted(by_strategy.items()):
+        staked = s["staked"]
+        pnl = s["pnl"]
+        w, l, o = s["wins"], s["losses"], s["open"]
+        settled_s = w + l
+        roi_s = round(pnl / staked * 100, 1) if staked > 0 and settled_s > 0 else None
+        strategy_rows.append({
+            "strategy": strategy,
+            "total": w + l + o,
             "wins": w,
             "losses": l,
             "open": o,
@@ -359,6 +387,7 @@ def build_data() -> dict:
             "spread": round(spread * 100, 1) if spread is not None else None,
             "exec_status": p["execution_status"] or "—",
             "entered": _fmt_dt(p["entered_at"]),
+            "strategy": p["strategy"] if "strategy" in p.keys() else "value_edge",
         })
 
     # ── Settled positions ────────────────────────────────────────────────────
@@ -387,6 +416,7 @@ def build_data() -> dict:
             "pnl": round(pnl_v, 2) if pnl_v is not None else None,
             "won": pnl_v is not None and pnl_v >= 0,
             "settled": _fmt_dt(p["settled_at"]),
+            "strategy": p["strategy"] if "strategy" in p.keys() else "value_edge",
         })
 
     # ── Recent detections ────────────────────────────────────────────────────
@@ -440,6 +470,7 @@ def build_data() -> dict:
         "bankroll_chart": {"labels": bk_labels, "bankroll": bk_values, "at_risk": bk_at_risk},
         "pnl_chart": {"labels": pnl_labels, "cumulative": pnl_cumulative},
         "sport_rows": sport_rows,
+        "strategy_rows": strategy_rows,
         "open_rows": open_rows,
         "failed_rows": failed_rows,
         "settled_rows": settled_rows[:30],
