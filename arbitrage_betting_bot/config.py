@@ -127,6 +127,14 @@ MM_QUOTE_HALF_SPREAD_FRACTION: float = 0.35  # how far inside the Kalshi spread 
 MM_FAIR_VALUE_BAND: tuple[float, float] = (0.15, 0.85)  # skip deep favorites/underdogs
 MM_INTERVAL_SECONDS: int = int(os.getenv("MM_INTERVAL_SECONDS", "30"))  # Kalshi-only requote tick
 
+# consensus_prob is only refreshed on full due-scans (up to POLL_INTERVAL_DEFAULT_
+# SECONDS apart), but the Kalshi-side spread is refreshed every MM_INTERVAL_SECONDS
+# tick — so a quote's center can be sitting on a stale sportsbook read even though
+# its width looks current. Both of these are zero-Odds-API-cost mitigations (using
+# only the free Kalshi feed already being polled every tick), not a rescan.
+MM_STALE_DRIFT_CANCEL: float = 0.05          # Kalshi mid move since candidate's scan -> pause quoting it
+MM_STALE_WIDEN_MAX_MULTIPLIER: float = 1.5   # half-spread multiplier at max staleness (full poll interval old)
+
 # ── Scheduling ────────────────────────────────────────────────────────────────
 # Variable-frequency polling: each sport is fetched at a rate based on its
 # nearest upcoming game. Sports with no game within 1 hour use the default

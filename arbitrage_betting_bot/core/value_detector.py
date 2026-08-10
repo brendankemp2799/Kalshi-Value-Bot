@@ -9,6 +9,7 @@ can show a full picture of why each bet was or wasn't placed.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
@@ -274,6 +275,11 @@ def _maybe_mm_candidate(
         "bookmaker_count": book_count,
         "consensus_std": std_dev,
         "kalshi_spread": me.kalshi_market.spread,
+        # When this candidate's consensus_prob was captured — run_mm_tick() reuses
+        # it unchanged for up to a full due-scan interval (see
+        # execution/market_maker.py's staleness handling), so this timestamp is
+        # what that logic measures age against.
+        "scanned_at": time.time(),
     })
 
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from dataclasses import dataclass
 from enum import Enum
 
@@ -106,6 +107,15 @@ def evaluate_mm_candidate(candidate: dict, net_inventory_contracts: float = 0.0,
     the account's real size is, instead of being sized as if the bankroll were
     always $1000 and then getting blocked downstream by BankrollManager's separate,
     correctly-real-balance-aware exposure check.
+
+    Widens the quote as candidate["scanned_at"] ages: consensus_prob is a snapshot
+    from whenever the last due-sport Odds API scan happened (up to
+    config.POLL_INTERVAL_DEFAULT_SECONDS ago), reused unchanged by every tick in
+    between — unlike kalshi_spread, which run_mm_tick() refreshes every tick. An
+    old snapshot deserves less confidence, so the quote sits further from its
+    (possibly stale) center rather than pricing with false precision. Missing
+    scanned_at (e.g. a candidate dict built directly, as in tests) is treated as
+    age zero — no widening, matches pre-staleness-handling behavior.
     """
     consensus = candidate.get("consensus_prob")
     spread = candidate.get("kalshi_spread")
@@ -125,7 +135,10 @@ def evaluate_mm_candidate(candidate: dict, net_inventory_contracts: float = 0.0,
     skew = max(-0.05, min(0.05, -0.01 * net_inventory_contracts))
     reservation = max(0.02, min(0.98, consensus + skew))
 
-    half = config.MM_QUOTE_HALF_SPREAD_FRACTION * spread
+    age = time.time() - candidate.get("scanned_at", time.time())
+    age_frac = min(1.0, max(0.0, age / config.POLL_INTERVAL_DEFAULT_SECONDS))
+    staleness_widen = 1.0 + (config.MM_STALE_WIDEN_MAX_MULTIPLIER - 1.0) * age_frac
+    half = config.MM_QUOTE_HALF_SPREAD_FRACTION * staleness_widen * spread
     yes_bid_price = round(max(0.01, reservation - half), 2)
     no_bid_price = round(max(0.01, 1.0 - min(0.99, reservation + half)), 2)
 
@@ -226,6 +239,14 @@ def run_mm_tick(
     cached-as-too-wide candidate whose spread has since narrowed stops being
     quoted once it's back in directionally-tradeable territory.
 
+    Also pauses quoting a candidate if Kalshi's own live mid has drifted more than
+    config.MM_STALE_DRIFT_CANCEL from where it was when this candidate's
+    consensus_prob was captured — a free early-warning signal (no extra Odds API
+    cost) that the sportsbook-derived reservation price evaluate_mm_candidate()
+    is quoting around may no longer reflect real fair value. See
+    evaluate_mm_candidate()'s age-based widening for the complementary mechanism
+    (quotes get wider, not just paused, as consensus_prob ages).
+
     Tracks a running total of filled-plus-resting notional across every candidate
     processed this tick (starting from BankrollManager.mm_exposure + whatever was
     already resting from the prior tick) and stops placing new quotes once it
@@ -291,6 +312,25 @@ def run_mm_tick(
         # config.MM_INTERVAL_SECONDS against the live book).
         max_spread = config.quality_filters(km.bet_type, is_draw=(km.bet_type == "h2h" and candidate["team_name"] == "Draw"))["max_kalshi_spread"]
         if live_km.spread <= max_spread:
+            continue
+
+        # Staleness trip-wire: consensus_prob (the quote's center) is a snapshot
+        # from this candidate's last due-sport scan, not refreshed by this tick —
+        # only kalshi_spread is. If Kalshi's own live price has already moved
+        # meaningfully since that scan, that's real evidence something changed
+        # (news, sharp money, lineups) even though we haven't paid for an Odds API
+        # call to confirm it. Pause quoting this candidate rather than keep
+        # resting a price built on a reference point the market has since moved
+        # away from — cheaper than a stale-quote adverse-selection loss, and
+        # costs nothing extra (both prices are already being fetched for free).
+        baseline_mid = (km.yes_bid + km.yes_ask) / 2.0
+        live_mid = (live_km.yes_bid + live_km.yes_ask) / 2.0
+        if abs(live_mid - baseline_mid) >= config.MM_STALE_DRIFT_CANCEL:
+            logger.debug(
+                "MM quote paused for %s: Kalshi mid drifted %.3f -> %.3f since "
+                "this candidate's last scan (>= %.2f threshold)",
+                ticker, baseline_mid, live_mid, config.MM_STALE_DRIFT_CANCEL,
+            )
             continue
 
         net_inventory = _net_inventory_contracts(ticker, is_paper)
