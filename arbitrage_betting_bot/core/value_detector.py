@@ -205,7 +205,17 @@ def detect_value(
     matched_events: list[MatchedEvent],
     min_edge: float = 0.0,
     scan_log: list[dict] | None = None,
+    mm_candidates: list[dict] | None = None,
 ) -> list[ValueOpportunity]:
+    """
+    mm_candidates: when provided, every matched market rejected specifically for
+    `spread_too_wide` (and no other reason) is also appended here with its already-
+    computed consensus/quality data — reused as-is by execution/market_maker.py so
+    market making shares the exact same fair-value computation as the directional
+    strategy instead of re-deriving it. See core/market_matcher.py's MatchedEvent
+    and config.QUALITY_FILTERS["*"]["max_kalshi_spread"] for what "too wide to cross
+    directionally" means.
+    """
     opportunities: list[ValueOpportunity] = []
 
     for me in matched_events:
@@ -229,21 +239,47 @@ def detect_value(
 
         # ── Route by bet type ─────────────────────────────────────────────────
         if km.bet_type == "totals":
-            _detect_totals(me, event, km, min_edge, opportunities, scan_log)
+            _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidates)
         elif km.bet_type == "spread":
-            _detect_spread(me, event, km, min_edge, opportunities, scan_log)
+            _detect_spread(me, event, km, min_edge, opportunities, scan_log, mm_candidates)
         elif me.kalshi_outcome == "tie":
-            _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log)
+            _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log, mm_candidates)
         else:
-            _detect_h2h(me, event, km, min_edge, opportunities, scan_log)
+            _detect_h2h(me, event, km, min_edge, opportunities, scan_log, mm_candidates)
 
     logger.debug("Found %d value opportunities with positive edge", len(opportunities))
     return opportunities
 
 
+def _maybe_mm_candidate(
+    mm_candidates: list[dict] | None,
+    me: MatchedEvent,
+    team_name: str,
+    consensus: float,
+    book_count: int,
+    std_dev: float,
+    status: str,
+    reason: str,
+) -> None:
+    """Append a market-making candidate iff the ONLY reason this market was rejected
+    is that Kalshi's spread is too wide to cross directionally — not low liquidity,
+    too few books, or high disagreement, all of which are just as disqualifying for
+    resting a quote as for taking a directional side."""
+    if mm_candidates is None or status != "spread_too_wide":
+        return
+    mm_candidates.append({
+        "matched_event": me,
+        "team_name": team_name,
+        "consensus_prob": consensus,
+        "bookmaker_count": book_count,
+        "consensus_std": std_dev,
+        "kalshi_spread": me.kalshi_market.spread,
+    })
+
+
 # ── H2H ───────────────────────────────────────────────────────────────────────
 
-def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
+def _detect_h2h(me, event, km, min_edge, opportunities, scan_log, mm_candidates=None):
     # Soccer is 3-way (home / away / draw). Kalshi issues one binary market per
     # team (e.g. "Miami wins YES/NO"). The NO side of that market means "Miami
     # does NOT win" — which includes draws — NOT "opponent wins." Evaluating the
@@ -273,6 +309,15 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
             logger.debug("Skip %s — %s", team, reason)
             _log(scan_log, me, team, None, consensus, book_count, std_dev, None,
                  status, reason)
+            # Only the team that IS the Kalshi ticker's YES side gives an
+            # unambiguous YES-side consensus — the other loop iteration re-derives
+            # the same ticker's price from the opposite (1 - bid) direction, which
+            # isn't a clean reservation-price input for a resting quote.
+            is_yes_side = (outcome == Outcome.HOME and me.kalshi_outcome == "yes") or \
+                          (outcome == Outcome.AWAY and me.kalshi_outcome == "no")
+            if is_yes_side:
+                _maybe_mm_candidate(mm_candidates, me, team, consensus, book_count,
+                                     std_dev, status, reason)
             continue
 
         if outcome == Outcome.HOME:
@@ -306,7 +351,7 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log):
                     team, edge*100, consensus*100, kalshi_price*100, book_count)
 
 
-def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log):
+def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log, mm_candidates=None):
     consensus, book_count, std_dev = consensus_stats(event.bookmakers, "Draw")
     if consensus is None:
         _log(scan_log, me, "Draw", None, None, 0, 0.0, None,
@@ -317,6 +362,8 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log):
         status, reason = qcheck
         _log(scan_log, me, "Draw", None, consensus, book_count, std_dev, None,
              status, reason)
+        _maybe_mm_candidate(mm_candidates, me, "Draw", consensus, book_count,
+                             std_dev, status, reason)
         return
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
     edge = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
@@ -341,7 +388,7 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log):
 
 # ── Totals ────────────────────────────────────────────────────────────────────
 
-def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
+def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidates=None):
     if km.threshold is None:
         reason = f"No threshold parsed from title: {km.title[:50]}"
         logger.debug("Skip totals %s — %s", km.ticker, reason)
@@ -385,6 +432,8 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log):
         status, reason = qcheck
         _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
              status, reason)
+        _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
+                             std_dev, status, reason)
         return
 
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
@@ -455,7 +504,7 @@ def _sb_team_match(kalshi_name: str, home: str, away: str) -> str:
     return home if _score(home) >= _score(away) else away
 
 
-def _detect_spread(me, event, km, min_edge, opportunities, scan_log):
+def _detect_spread(me, event, km, min_edge, opportunities, scan_log, mm_candidates=None):
     if km.threshold is None:
         reason = f"No threshold parsed from title: {km.title[:50]}"
         _log(scan_log, me, km.yes_team or "Spread", None, None,
@@ -484,6 +533,8 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log):
         status, reason = qcheck
         _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
              status, reason)
+        _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
+                             std_dev, status, reason)
         return
 
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
