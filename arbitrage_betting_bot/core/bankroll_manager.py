@@ -62,7 +62,15 @@ class BankrollManager:
 
         if is_mm:
             new_mm_exp = self.mm_exposure + additional
-            if new_mm_exp / self.bankroll > config.MM_MAX_EXPOSURE_PCT:
+            # Epsilon tolerance: mm_clip_size() rounds to the nearest cent, which can
+            # round UP a clip meant to sit exactly at the cap (e.g. $8.726 -> $8.73)
+            # just past it — the same class of float-boundary issue fixed elsewhere
+            # in this codebase for maker_only (see git history). Without this, a
+            # clip sized to fit the cap can still get rejected by a fraction of a
+            # cent. Half a cent, expressed relative to bankroll, covers the maximum
+            # possible cent-rounding error regardless of bankroll size.
+            _EPS = 0.005 / self.bankroll
+            if new_mm_exp / self.bankroll > config.MM_MAX_EXPOSURE_PCT + _EPS:
                 return (
                     False,
                     f"Market-making exposure would reach {new_mm_exp / self.bankroll * 100:.0f}% "

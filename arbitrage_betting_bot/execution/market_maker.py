@@ -77,10 +77,19 @@ def _net_inventory_contracts(ticker: str, is_paper: bool) -> float:
     return net
 
 
-def evaluate_mm_candidate(candidate: dict, net_inventory_contracts: float = 0.0) -> MMAction:
+def evaluate_mm_candidate(candidate: dict, net_inventory_contracts: float = 0.0,
+                           bankroll: float = config.BANKROLL) -> MMAction:
     """
     Pure decision function — no side effects, no I/O. `candidate` is one entry from
     core/value_detector.py::detect_value()'s mm_candidates output.
+
+    bankroll: the account's real available balance. mm_clip_size()'s own
+    bankroll-percentage cap defaults to config.BANKROLL (a static $1000 fallback,
+    not the real live balance) if not passed explicitly — run_mm_tick() always
+    passes the real bm.bankroll here so clip sizes actually shrink to fit whatever
+    the account's real size is, instead of being sized as if the bankroll were
+    always $1000 and then getting blocked downstream by BankrollManager's separate,
+    correctly-real-balance-aware exposure check.
     """
     consensus = candidate.get("consensus_prob")
     spread = candidate.get("kalshi_spread")
@@ -104,7 +113,7 @@ def evaluate_mm_candidate(candidate: dict, net_inventory_contracts: float = 0.0)
     yes_bid_price = round(max(0.01, reservation - half), 2)
     no_bid_price = round(max(0.01, 1.0 - min(0.99, reservation + half)), 2)
 
-    clip = mm_clip_size(spread)
+    clip = mm_clip_size(spread, bankroll=bankroll)
     if clip <= 0:
         return MMAction(kind=MMActionKind.NONE)
 
@@ -254,7 +263,7 @@ def run_mm_tick(
             continue
 
         net_inventory = _net_inventory_contracts(ticker, is_paper)
-        action = evaluate_mm_candidate(candidate, net_inventory)
+        action = evaluate_mm_candidate(candidate, net_inventory, bankroll=bm.bankroll)
         if action.kind == MMActionKind.NONE:
             continue
 
