@@ -38,13 +38,13 @@ from storage import db
 
 logger = logging.getLogger(__name__)
 
-# Process-local record of currently-resting (unfilled) quote orders, keyed by
-# ticker → {"yes_order_id": str | None, "no_order_id": str | None}. Not persisted:
-# if the bot restarts, any real orders still resting on Kalshi become untracked
-# here (though still visible/cancellable manually on Kalshi, and still subject to
-# the same reconciliation pass everything else goes through). Acceptable for a v1
-# that ships inert by default — same category of limitation as the module-level
-# series cache in data/kalshi_client.py.
+# Process-local record of currently-resting (unfilled-as-of-last-tick) quote
+# orders, keyed by ticker → {"yes": {"order_id", "price", "count"} | None,
+# "no": {...} | None}. Not persisted: if the bot restarts, any real orders still
+# resting on Kalshi become untracked here (though still visible/cancellable
+# manually on Kalshi, and still subject to the same reconciliation pass
+# everything else goes through) — cancel any resting orders manually before
+# restarting the process while MM is enabled to avoid orphaned duplicate quotes.
 _resting_quotes: dict[str, dict] = {}
 
 
@@ -138,7 +138,7 @@ def _candidate_opportunity(candidate: dict) -> ValueOpportunity:
 
 
 def _record_fill(candidate: dict, side: str, price: float, filled: float,
-                  fee_paid: float, is_paper: bool) -> None:
+                  fee_paid: float, is_paper: bool, order_id: str = "") -> None:
     me = candidate["matched_event"]
     event = me.odds_event
     km = me.kalshi_market
@@ -152,6 +152,7 @@ def _record_fill(candidate: dict, side: str, price: float, filled: float,
         stake=stake,
         market_price=price,
         is_paper=is_paper,
+        order_id=order_id,
         execution_status="paper" if is_paper else "submitted",
         market_ticker=km.ticker,
         side=side,
@@ -191,9 +192,20 @@ def run_mm_tick(
         kalshi_client.fetch_sports_markets() call this tick, so quotes reprice
         against the live book even between due-sport scans.
 
+    Before requoting, checks whether the prior tick's resting order(s) filled in
+    the meantime (get_order_status) and records any such fill before cancelling
+    the remainder — the normal way a maker quote fills is a counterparty crossing
+    it later, not instantly at placement, so this can't be skipped. Also re-checks
+    the live spread against the directional strategy's own max_kalshi_spread
+    threshold (not just MM_MIN_SPREAD_TO_QUOTE, calibrated to the same value) so a
+    cached-as-too-wide candidate whose spread has since narrowed stops being
+    quoted once it's back in directionally-tradeable territory.
+
     Returns the number of legs filled this tick.
     """
-    from execution.kalshi_executor import place_resting_quote, cancel_quote
+    from execution.kalshi_executor import (
+        place_resting_quote, cancel_quote, get_order_status, order_fee_paid,
+    )
 
     filled_count = 0
     seen_tickers: set[str] = set()
@@ -208,13 +220,38 @@ def run_mm_tick(
         live_km = fresh_kalshi.get(ticker, km)
         candidate = {**candidate, "kalshi_spread": live_km.spread}
 
-        # Cancel any quote left resting from the previous tick before repricing —
-        # cheap and avoids ever having two stale + fresh quotes resting at once.
+        # Before touching whatever was resting from the previous tick, check
+        # whether a real counterparty filled it in the meantime — the normal way
+        # a maker quote gets filled, not the immediate-at-placement edge case.
+        # Missing this meant real fills could go completely unrecorded (no
+        # bankroll accounting, no stop-loss, no correlation tracking) until an
+        # eventual reconciliation-mismatch log, with no automatic remediation.
         prior = _resting_quotes.pop(ticker, None)
         if prior and not is_paper:
-            for oid in (prior.get("yes_order_id"), prior.get("no_order_id")):
-                if oid:
-                    cancel_quote(oid)
+            for side, leg in (("yes", prior.get("yes")), ("no", prior.get("no"))):
+                if not leg:
+                    continue
+                status = get_order_status(leg["order_id"])
+                filled = float(status.get("fill_count_fp", 0) or 0) if status else 0.0
+                if filled > 0:
+                    fee = order_fee_paid(leg["order_id"])
+                    _record_fill(candidate, side, leg["price"], filled, fee, False,
+                                 order_id=leg["order_id"])
+                    filled_count += 1
+                if filled < leg["count"]:
+                    cancel_quote(leg["order_id"])
+
+        # Re-check the live spread against the SAME threshold the directional
+        # strategy uses to decide a market is too wide to cross — not just
+        # MM_MIN_SPREAD_TO_QUOTE, which is calibrated to the same value and so
+        # doesn't by itself stop MM from continuing to quote a market whose
+        # spread has narrowed back into directionally-tradeable territory since
+        # this candidate was cached (mm_candidates only refreshes on full
+        # due-scans, up to 45 min apart; this tick runs every
+        # config.MM_INTERVAL_SECONDS against the live book).
+        max_spread = config.quality_filters(km.bet_type, is_draw=(km.bet_type == "h2h" and candidate["team_name"] == "Draw"))["max_kalshi_spread"]
+        if live_km.spread <= max_spread:
+            continue
 
         net_inventory = _net_inventory_contracts(ticker, is_paper)
         action = evaluate_mm_candidate(candidate, net_inventory)
@@ -250,15 +287,19 @@ def run_mm_tick(
         no_order_id, no_filled, no_fee = place_resting_quote(ticker, "no", action.no_bid_price, no_count)
 
         _resting_quotes[ticker] = {
-            "yes_order_id": yes_order_id if yes_filled < yes_count else None,
-            "no_order_id": no_order_id if no_filled < no_count else None,
+            "yes": ({"order_id": yes_order_id, "price": action.yes_bid_price, "count": yes_count}
+                    if yes_filled < yes_count else None),
+            "no": ({"order_id": no_order_id, "price": action.no_bid_price, "count": no_count}
+                   if no_filled < no_count else None),
         }
 
         if yes_filled > 0:
-            _record_fill(candidate, "yes", action.yes_bid_price, yes_filled, yes_fee, False)
+            _record_fill(candidate, "yes", action.yes_bid_price, yes_filled, yes_fee, False,
+                         order_id=yes_order_id)
             filled_count += 1
         if no_filled > 0:
-            _record_fill(candidate, "no", action.no_bid_price, no_filled, no_fee, False)
+            _record_fill(candidate, "no", action.no_bid_price, no_filled, no_fee, False,
+                         order_id=no_order_id)
             filled_count += 1
 
     return filled_count
