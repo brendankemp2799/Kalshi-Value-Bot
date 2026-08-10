@@ -102,6 +102,31 @@ POSITION_MONITOR_INTERVAL_SECONDS: int = int(os.getenv("POSITION_MONITOR_INTERVA
 ENABLE_STOP_LOSS: bool = os.getenv("ENABLE_STOP_LOSS", "false").lower() == "true"
 STOP_LOSS_MOVE: float = 0.20   # adverse move (price units) from entry that triggers a cut
 
+# ── Market Making (passive two-sided quoting) ───────────────────────────────────
+# Unified with the directional strategy, not a separate bot: for any matched market
+# whose Kalshi spread is too wide to cross directionally (see max_kalshi_spread
+# above), rest quotes inside the spread instead and capture it net of Kalshi's maker
+# fee (25% of the taker formula — see KALSHI_TAKER_FEE_RATE_ESTIMATE below; there is
+# no maker rebate for a retail account). Fills flow into the same `positions` table
+# (positions.strategy='market_making') and are covered by the existing trailing-stop/
+# stop-loss risk management with no separate exit-risk code.
+#
+# Calibrated 2026-08-08 via mm_backtest.py against real Kalshi candlestick history
+# for 40 live matched wide-spread markets (~3 days of trading each, hourly candles):
+# half_spread_frac 0.25/0.35/0.5 all showed net positive simulated capture net of
+# fees, with 0.35 chosen as the conservative middle setting (0.25 fit this specific
+# small sample best but is closer to over-fit; 0.5's fill rate was too low to be
+# useful). Sample is small and noisy (one adverse-selection-heavy ticker dominated
+# the P&L swing) — revisit once real paper/live fills accumulate.
+# Master switch — defaults off. Validate in paper mode before enabling live.
+ENABLE_MARKET_MAKING: bool = os.getenv("ENABLE_MARKET_MAKING", "false").lower() == "true"
+MM_MAX_EXPOSURE_PCT: float = 0.05        # sub-cap within the shared bankroll (not a separate pot)
+MM_MAX_CLIP_DOLLARS: float = 15.0        # size per quote leg
+MM_MIN_SPREAD_TO_QUOTE: float = 0.05     # only quote where directional strategy wouldn't cross
+MM_QUOTE_HALF_SPREAD_FRACTION: float = 0.35  # how far inside the Kalshi spread to rest each quote
+MM_FAIR_VALUE_BAND: tuple[float, float] = (0.15, 0.85)  # skip deep favorites/underdogs
+MM_INTERVAL_SECONDS: int = int(os.getenv("MM_INTERVAL_SECONDS", "30"))  # Kalshi-only requote tick
+
 # ── Scheduling ────────────────────────────────────────────────────────────────
 # Variable-frequency polling: each sport is fetched at a rate based on its
 # nearest upcoming game. Sports with no game within 1 hour use the default

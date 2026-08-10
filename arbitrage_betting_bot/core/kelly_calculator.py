@@ -161,3 +161,30 @@ def calculate_kelly(
         bankroll=bankroll,
         has_edge=True,
     )
+
+
+def mm_clip_size(
+    kalshi_spread: float,
+    bankroll: float = config.BANKROLL,
+    max_clip_dollars: float = config.MM_MAX_CLIP_DOLLARS,
+    max_pct_bankroll: float = config.MAX_PCT_BANKROLL,
+) -> float:
+    """
+    Size one leg of a market-making quote. Kelly doesn't apply here — there's no
+    probability edge being sized, just spread capture — so size scales with how
+    much spread there is to capture instead: a wider Kalshi spread means more
+    captured per round-trip fill, which can justify a slightly larger clip, up to
+    a small hard cap (config.MM_MAX_CLIP_DOLLARS). This deliberately stays well
+    below a directional Kelly bet's typical size, since market making is a new,
+    unvalidated execution mode (see mm_backtest.py) sharing the same bankroll caps
+    as the proven directional strategy.
+
+    Scales linearly from 40% of the cap at the minimum quotable spread
+    (config.MM_MIN_SPREAD_TO_QUOTE) up to the full cap at 2x that spread.
+    """
+    min_spread = config.MM_MIN_SPREAD_TO_QUOTE
+    if kalshi_spread <= 0 or min_spread <= 0:
+        return 0.0
+    scale = min(1.0, max(0.4, kalshi_spread / (2.0 * min_spread)))
+    dollars = scale * max_clip_dollars
+    return round(min(dollars, max_clip_dollars, max_pct_bankroll * bankroll), 2)
