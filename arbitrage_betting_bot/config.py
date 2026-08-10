@@ -225,6 +225,17 @@ LIMIT_ORDER_TIMEOUT_DEFAULT_SECONDS: int = 600   # step 1 — game > 1 hour away
 LIMIT_ORDER_TIMEOUT_PRE_GAME_SECONDS: int = 300  # step 1 — within 1 hour
 LIMIT_ORDER_TIMEOUT_NEAR_GAME_SECONDS: int = 120 # step 1 — within 30 minutes
 LIMIT_ORDER_ASK_TIMEOUT_SECONDS: int = 30        # step 2 — GTC at ask (short; ask should fill fast)
+
+# While step 1's mid-price order rests, periodically re-check Kalshi's own live
+# price (free — no Odds API cost) instead of blindly waiting out the full timeout.
+# If the live price has moved against the resting order by PASSIVE_ADVERSE_MOVE_CANCEL
+# or more, cancel early and fall through to step 2 rather than risk filling at a
+# price the market has already moved past.
+PASSIVE_REPRICE_CHECK_INTERVAL_SECONDS: int = 30
+PASSIVE_ADVERSE_MOVE_CANCEL: float = 0.05
+# Edge this large is worth taking immediately rather than risking losing it while
+# step 1 waits for a passive fill — skip straight to step 2 (ask, immediate).
+LARGE_EDGE_SKIP_PASSIVE: float = 0.10
 FAILED_BET_COOLDOWN_SECONDS: int = int(os.getenv("FAILED_BET_COOLDOWN_SECONDS", "10800"))  # 3 hours
 MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.015"))  # Minimum NET edge after Kalshi taker fee
 

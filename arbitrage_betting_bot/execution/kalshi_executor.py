@@ -29,6 +29,10 @@ Fee model:
 
 Execution strategy:
   Step 1: GTC at mid price, adaptive timeout (2–10 min based on game time).
+          Skipped when edge >= config.LARGE_EDGE_SKIP_PASSIVE (large edges are
+          taken immediately rather than risked on a passive fill). While resting,
+          periodically re-checks the live Kalshi price and cancels early if it has
+          moved against us by config.PASSIVE_ADVERSE_MOVE_CANCEL or more.
   Step 2: GTC at ask price, short timeout (30 s).
 """
 from __future__ import annotations
@@ -144,6 +148,17 @@ def _limit_timeout(commence_time: datetime | None) -> int:
     return config.LIMIT_ORDER_TIMEOUT_DEFAULT_SECONDS
 
 
+def _fetch_ticker_price(ticker: str) -> tuple[float, float] | None:
+    """Best-effort live (yes_bid, yes_ask) lookup for repricing a resting order —
+    a network error here just skips that reprice check, it doesn't fail the order."""
+    try:
+        from data.kalshi_client import KalshiClient
+        return KalshiClient().fetch_ticker_price(ticker)
+    except Exception as e:
+        logger.debug("Reprice check: live price fetch failed for %s: %s", ticker, e)
+        return None
+
+
 def place_order(
     ticker: str,
     side: str,
@@ -151,6 +166,7 @@ def place_order(
     market_price: float,
     kalshi_spread: float = 0.0,
     commence_time: datetime | None = None,
+    edge: float | None = None,
 ) -> tuple[str, str, str, float, str, float]:
     """
     Place a Kalshi order using GTC limit orders.
@@ -162,6 +178,10 @@ def place_order(
         market_price:   ask price of the side we're buying (0.0 – 1.0)
         kalshi_spread:  bid-ask spread in dollars (used to compute mid price)
         commence_time:  game start time (UTC) — used to compute adaptive limit timeout
+        edge:           the opportunity's edge over market_price, if known. When
+                         >= config.LARGE_EDGE_SKIP_PASSIVE, step 1 is skipped
+                         entirely — the edge is worth taking now rather than
+                         risking it evaporating while a passive order rests.
 
     Returns:
         (order_id, execution_status, failure_reason, actual_stake, fill_type, fee_paid)
@@ -173,6 +193,11 @@ def place_order(
 
     Execution strategy:
         Step 1: GTC at mid price, adaptive timeout (2–10 min based on game time).
+                While resting, the live Kalshi price is periodically re-checked
+                (config.PASSIVE_REPRICE_CHECK_INTERVAL_SECONDS); if it has moved
+                against us by config.PASSIVE_ADVERSE_MOVE_CANCEL or more, the
+                order is cancelled early instead of waiting out the full timeout.
+                Skipped entirely when edge >= config.LARGE_EDGE_SKIP_PASSIVE.
         Step 2: GTC at ask price, short timeout (30 s) — this step crosses the book
                 immediately by design and often incurs a real taker fee.
     """
@@ -194,56 +219,88 @@ def place_order(
         yes_price_mid = round(min(0.99, yes_price_ask + kalshi_spread / 2.0), 2)
 
     # ── Step 1: GTC at mid price ──────────────────────────────────────────────
+    skip_passive = edge is not None and edge >= config.LARGE_EDGE_SKIP_PASSIVE
+    if skip_passive:
+        logger.info(
+            "Edge %.1f%% >= large-edge threshold %.1f%% — skipping passive mid step for %s, taking ask now",
+            edge * 100, config.LARGE_EDGE_SKIP_PASSIVE * 100, ticker,
+        )
+
     timeout = _limit_timeout(commence_time)
     client_order_id = str(uuid.uuid4())
-    try:
-        data = _place_raw_order(ticker, api_side, yes_price_mid, count, "good_till_canceled", client_order_id)
-        order_id = data.get("order_id", client_order_id)
-        filled = float(data.get("fill_count", 0) or 0)
+    if not skip_passive:
+        try:
+            data = _place_raw_order(ticker, api_side, yes_price_mid, count, "good_till_canceled", client_order_id)
+            order_id = data.get("order_id", client_order_id)
+            filled = float(data.get("fill_count", 0) or 0)
 
-        if filled >= count:
-            actual_stake = round(filled * price, 2)
-            fee_paid = _actual_fee_dollars(order_id)
-            fill_type = "taker" if fee_paid > 0 else "maker"
-            logger.info(
-                "Kalshi GTC mid fill (immediate): %s %s %g contracts @ %.4f  actual_stake=$%.2f  fee=$%.4f",
-                api_side.upper(), ticker, filled, yes_price_mid, actual_stake, fee_paid,
-            )
-            return order_id, "submitted", "", actual_stake, fill_type, fee_paid
+            if filled >= count:
+                actual_stake = round(filled * price, 2)
+                fee_paid = _actual_fee_dollars(order_id)
+                fill_type = "taker" if fee_paid > 0 else "maker"
+                logger.info(
+                    "Kalshi GTC mid fill (immediate): %s %s %g contracts @ %.4f  actual_stake=$%.2f  fee=$%.4f",
+                    api_side.upper(), ticker, filled, yes_price_mid, actual_stake, fee_paid,
+                )
+                return order_id, "submitted", "", actual_stake, fill_type, fee_paid
 
-        # Poll for fill up to adaptive timeout
-        deadline = time.time() + timeout
-        while time.time() < deadline and filled < count:
-            time.sleep(5)
-            status = _get_order_status(order_id)
-            if status:
-                filled = float(status.get("fill_count_fp", 0) or 0)
-                if filled >= count:
-                    break
+            # Poll for fill up to adaptive timeout, periodically re-checking the live
+            # Kalshi price so an adverse move doesn't leave us waiting out the full
+            # timeout on a price the market has already moved past.
+            deadline = time.time() + timeout
+            last_reprice_check = time.time()
+            early_cancel_reason = ""
+            while time.time() < deadline and filled < count:
+                time.sleep(5)
+                status = _get_order_status(order_id)
+                if status:
+                    filled = float(status.get("fill_count_fp", 0) or 0)
+                    if filled >= count:
+                        break
 
-        if filled > 0:
-            actual_stake = round(filled * price, 2)
-            fee_paid = _actual_fee_dollars(order_id)
-            fill_type = "taker" if fee_paid > 0 else "maker"
-            logger.info(
-                "Kalshi GTC mid fill: %s %s %g/%d contracts @ %.4f  actual_stake=$%.2f  fee=$%.4f (order_id=%s)",
-                api_side.upper(), ticker, filled, count, yes_price_mid, actual_stake, fee_paid, order_id,
-            )
+                now = time.time()
+                if now - last_reprice_check >= config.PASSIVE_REPRICE_CHECK_INTERVAL_SECONDS:
+                    last_reprice_check = now
+                    live = _fetch_ticker_price(ticker)
+                    if live is not None:
+                        live_yes_bid, live_yes_ask = live
+                        live_price = live_yes_ask if side == "yes" else (1.0 - live_yes_bid)
+                        if live_price - price >= config.PASSIVE_ADVERSE_MOVE_CANCEL:
+                            early_cancel_reason = (
+                                f"live price moved to {live_price:.2f} (resting at "
+                                f"{price:.2f}, mid order at {yes_price_mid:.2f})"
+                            )
+                            break
+
+            if filled > 0:
+                actual_stake = round(filled * price, 2)
+                fee_paid = _actual_fee_dollars(order_id)
+                fill_type = "taker" if fee_paid > 0 else "maker"
+                logger.info(
+                    "Kalshi GTC mid fill: %s %s %g/%d contracts @ %.4f  actual_stake=$%.2f  fee=$%.4f (order_id=%s)",
+                    api_side.upper(), ticker, filled, count, yes_price_mid, actual_stake, fee_paid, order_id,
+                )
+                _cancel_order(order_id)
+                return order_id, "submitted", "", actual_stake, fill_type, fee_paid
+
             _cancel_order(order_id)
-            return order_id, "submitted", "", actual_stake, fill_type, fee_paid
-
-        _cancel_order(order_id)
-        logger.info(
-            "Kalshi GTC mid unfilled after %ds — trying GTC at ask for %s",
-            timeout, ticker,
-        )
-    except requests.HTTPError as e:
-        code = e.response.status_code if e.response is not None else "?"
-        body = e.response.text if e.response is not None else ""
-        logger.warning("Kalshi GTC mid failed [%s] for %s — trying ask step", code, ticker)
-        logger.debug("GTC mid error body: %s", body[:300])
-    except requests.RequestException as e:
-        logger.warning("GTC mid network error for %s — trying ask step: %s", ticker, e)
+            if early_cancel_reason:
+                logger.info(
+                    "Kalshi GTC mid cancelled early for %s — %s — trying GTC at ask",
+                    ticker, early_cancel_reason,
+                )
+            else:
+                logger.info(
+                    "Kalshi GTC mid unfilled after %ds — trying GTC at ask for %s",
+                    timeout, ticker,
+                )
+        except requests.HTTPError as e:
+            code = e.response.status_code if e.response is not None else "?"
+            body = e.response.text if e.response is not None else ""
+            logger.warning("Kalshi GTC mid failed [%s] for %s — trying ask step", code, ticker)
+            logger.debug("GTC mid error body: %s", body[:300])
+        except requests.RequestException as e:
+            logger.warning("GTC mid network error for %s — trying ask step: %s", ticker, e)
 
     # ── Step 2: GTC at ask price ──────────────────────────────────────────────
     ask_timeout = config.LIMIT_ORDER_ASK_TIMEOUT_SECONDS

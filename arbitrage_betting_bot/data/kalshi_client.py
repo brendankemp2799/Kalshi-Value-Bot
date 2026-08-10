@@ -346,6 +346,25 @@ class KalshiClient:
             )
         return []
 
+    def fetch_ticker_price(self, ticker: str) -> tuple[float, float] | None:
+        """
+        Return (yes_bid, yes_ask) for a single market ticker, reusing the same
+        per-series fetch as fetch_sports_markets() (cheap, not credit-metered) —
+        without the sports-wide fetch and team-name parsing that entails. Used by
+        execution/kalshi_executor.py::place_order() to reprice a resting passive
+        order against the live book while it waits for a fill.
+        """
+        series_ticker = ticker.split("-")[0]
+        raw_markets = self._fetch_series_markets(series_ticker)
+        for raw in raw_markets:
+            if raw.get("ticker") == ticker:
+                yes_bid = self._parse_price(raw, "yes_bid_dollars", "yes_bid")
+                yes_ask = self._parse_price(raw, "yes_ask_dollars", "yes_ask")
+                if yes_bid is not None and yes_ask is not None:
+                    return yes_bid, yes_ask
+                return None
+        return None
+
     def fetch_sports_markets(
         self,
         sports: list[str] | None = None,
