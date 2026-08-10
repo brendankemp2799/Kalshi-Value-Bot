@@ -55,6 +55,14 @@ from execution.auto_settle import auto_settle_positions
 
 console = Console()
 
+# Most recent scan's market-making candidates (matched markets rejected only for
+# spread_too_wide, with their already-computed consensus). Reused as-is by the fast
+# MM requote tick in _run_variable_loop() so it never re-fetches sportsbook odds —
+# only re-centers when the next due-sport scan repopulates this. See
+# core/value_detector.py::detect_value()'s mm_candidates param and
+# execution/market_maker.py.
+_mm_candidates_cache: list[dict] = []
+
 
 def _update_scan_log(scan_log: list[dict], opp, status: str, reason: str) -> None:
     """Update the scan_log entry for a ValueOpportunity after Kelly/blocking decisions."""
@@ -221,7 +229,11 @@ def run_scan(
     # 3. Detect value (hard filters already applied inside detect_value)
     scan_id = datetime.utcnow().isoformat()
     scan_log: list[dict] = []
-    opportunities = detect_value(matched, min_edge=config.MIN_EDGE, scan_log=scan_log)
+    mm_cands: list[dict] = []
+    opportunities = detect_value(matched, min_edge=config.MIN_EDGE, scan_log=scan_log,
+                                  mm_candidates=mm_cands)
+    global _mm_candidates_cache
+    _mm_candidates_cache = mm_cands
     if not opportunities:
         if not dry_run:
             _finalise_scan_log(scan_log, scan_id)
@@ -674,6 +686,7 @@ def _run_variable_loop(
     _log_sport_intervals(sport_events, logger)
 
     last_position_check = time.time()
+    last_mm_check = time.time()
 
     # ── Main tick loop ──────────────────────────────────────────────────────
     try:
@@ -695,6 +708,22 @@ def _run_variable_loop(
                     _run_reconciliation_if_live(paper, dry_run)
                 except Exception as e:
                     logger.warning("Position-monitor tick failed: %s", e)
+
+            # Kalshi-only market-making requote tick — same shape as the position
+            # monitor above (fast, credit-free, independent of the Odds-API due
+            # check). Reuses _mm_candidates_cache from the most recent due-sport
+            # scan instead of re-fetching sportsbook odds. See
+            # execution/market_maker.py.
+            if (not dry_run and config.ENABLE_MARKET_MAKING
+                    and (now_ts - last_mm_check) >= config.MM_INTERVAL_SECONDS):
+                last_mm_check = now_ts
+                if _mm_candidates_cache:
+                    try:
+                        from execution.market_maker import run_mm_tick
+                        fresh_kalshi = {m.ticker: m for m in kalshi_client.fetch_sports_markets()}
+                        run_mm_tick(_mm_candidates_cache, fresh_kalshi, tracker, bm, paper)
+                    except Exception as e:
+                        logger.warning("Market-making tick failed: %s", e)
 
             due: list[str] = []
             for sport in config.SPORTS:
