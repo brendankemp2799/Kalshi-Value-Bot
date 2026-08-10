@@ -366,6 +366,82 @@ def place_order(
         return client_order_id, "failed", reason, 0.0, "", 0.0
 
 
+def get_order_status(order_id: str) -> dict | None:
+    """Public wrapper around _get_order_status() — used by market_maker.py to check
+    whether a resting quote has filled since it was placed."""
+    return _get_order_status(order_id)
+
+
+def order_fee_paid(order_id: str) -> float:
+    """Public wrapper around _actual_fee_dollars()."""
+    return _actual_fee_dollars(order_id)
+
+
+def cancel_quote(order_id: str) -> bool:
+    """Public wrapper around _cancel_order() — cancel a resting market-making quote."""
+    return _cancel_order(order_id)
+
+
+def place_resting_quote(
+    ticker: str,
+    side: str,
+    price: float,
+    count: int,
+) -> tuple[str, float, float]:
+    """
+    Rest a single plain GTC limit order for market making — deliberately NOT
+    place_order()'s two-step "escalate to cross the book if unfilled" behavior.
+    A market-making quote is meant to sit passively at a price we chose (inside the
+    spread, away from touch); if it doesn't fill, that's fine — the caller's requote
+    loop (execution/market_maker.py) will cancel and reprice it next tick, not chase
+    a fill by crossing the spread (that would defeat the purpose of quoting as a
+    maker instead of paying the taker fee).
+
+    Args:
+        ticker: Kalshi market ticker
+        side:   "yes" or "no" (internal convention) — the side we're buying
+        price:  desired price of `side` (0.0-1.0)
+        count:  contracts to quote
+
+    Returns:
+        (order_id, filled_count, fee_paid) — filled_count/fee_paid are usually 0 at
+        placement time (the whole point is to rest unfilled), but Kalshi may match
+        immediately if this price already crosses the live book, so both are
+        checked and returned rather than assumed zero.
+    """
+    if not config.KALSHI_API_KEY:
+        logger.error("KALSHI_API_KEY not set — cannot place quote")
+        return "", 0.0, 0.0
+
+    p = max(0.01, min(0.99, price))
+    if side == "yes":
+        api_side = "bid"
+        yes_price = p
+    else:
+        api_side = "ask"
+        yes_price = 1.0 - p
+
+    client_order_id = str(uuid.uuid4())
+    try:
+        data = _place_raw_order(ticker, api_side, yes_price, count, "good_till_canceled", client_order_id)
+        order_id = data.get("order_id", client_order_id)
+        filled = float(data.get("fill_count", 0) or 0)
+        fee_paid = _actual_fee_dollars(order_id) if filled > 0 else 0.0
+        logger.debug(
+            "MM quote resting: %s %s %g contracts @ %.4f (order_id=%s, filled=%g)",
+            api_side.upper(), ticker, count, yes_price, order_id, filled,
+        )
+        return order_id, filled, fee_paid
+    except requests.HTTPError as e:
+        code = e.response.status_code if e.response is not None else "?"
+        body = e.response.text if e.response is not None else ""
+        logger.warning("MM quote placement failed [%s] for %s: %s", code, ticker, body[:300])
+        return "", 0.0, 0.0
+    except requests.RequestException as e:
+        logger.warning("MM quote placement network error for %s: %s", ticker, e)
+        return "", 0.0, 0.0
+
+
 def close_position(
     ticker: str,
     side: str,
