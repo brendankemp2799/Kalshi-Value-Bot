@@ -304,14 +304,22 @@ def run_mm_tick(
             logger.debug("MM quote blocked for %s: %s", ticker, reason)
             continue
 
-        # clip_dollars is the total per-candidate commitment across BOTH legs (it's
-        # what's checked against the exposure cap), so each leg gets half of it —
-        # sizing each leg at the full clip_dollars would mean one candidate's two
-        # legs alone could total ~2x the cap.
-        per_leg_dollars = action.clip_dollars / 2.0
-        yes_count = max(1, math.floor(per_leg_dollars / action.yes_bid_price))
-        no_count = max(1, math.floor(per_leg_dollars / action.no_bid_price))
-        new_notional = yes_count * action.yes_bid_price + no_count * action.no_bid_price
+        # Both legs get the SAME contract count, not the same dollar amount. The
+        # whole reason two-sided quoting is close to risk-free is that
+        # yes_bid_price + no_bid_price < $1 (guaranteed by the half-spread math
+        # above) — so every MATCHED pair (one YES + one NO contract) costs less
+        # than $1 combined while exactly one of them pays out $1 at settlement,
+        # a guaranteed profit regardless of outcome. Sizing each leg by dividing
+        # clip_dollars by ITS OWN price (the old approach) breaks this: since the
+        # two prices differ, the same dollar budget buys different contract
+        # counts on each side, leaving the excess contracts on the cheaper side
+        # completely unhedged — a naked directional bet wearing a market-making
+        # costume, not the safe spread capture this is supposed to be.
+        pair_cost = action.yes_bid_price + action.no_bid_price
+        count = max(1, math.floor(action.clip_dollars / pair_cost)) if pair_cost > 0 else 0
+        yes_count = count
+        no_count = count
+        new_notional = count * pair_cost
 
         # Aggregate cap, on top of is_allowed()'s per-candidate check above: would
         # placing BOTH legs of THIS candidate, added to everything already filled
