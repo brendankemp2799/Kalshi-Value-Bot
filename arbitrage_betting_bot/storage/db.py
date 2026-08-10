@@ -157,6 +157,7 @@ def _migrate() -> None:
             ("close_reason", "ALTER TABLE positions ADD COLUMN close_reason TEXT"),
             ("entry_fee_paid", "ALTER TABLE positions ADD COLUMN entry_fee_paid REAL NOT NULL DEFAULT 0.0"),
             ("order_verified_at", "ALTER TABLE positions ADD COLUMN order_verified_at TEXT"),
+            ("strategy", "ALTER TABLE positions ADD COLUMN strategy TEXT NOT NULL DEFAULT 'value_edge'"),
         ]:
             if col not in existing:
                 conn.execute(ddl)
@@ -246,6 +247,7 @@ def add_position(
     failure_reason: str | None = None,
     fill_type: str = "taker",
     entry_fee_paid: float = 0.0,
+    strategy: str = "value_edge",
 ) -> int:
     with get_connection() as conn:
         cur = conn.execute(
@@ -256,8 +258,8 @@ def add_position(
                  order_id, execution_status, market_ticker, side,
                  edge, bookmaker_count, consensus_std, kalshi_spread, commence_time,
                  bet_type, threshold, bookmakers_json, failure_reason, fill_type,
-                 entry_fee_paid)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 entry_fee_paid, strategy)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 datetime.utcnow().isoformat(),
@@ -279,6 +281,7 @@ def add_position(
                 failure_reason,
                 fill_type,
                 entry_fee_paid,
+                strategy,
             ),
         )
         return cur.lastrowid
