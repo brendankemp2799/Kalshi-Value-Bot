@@ -45,6 +45,8 @@ class ValueOpportunity:
     market_url: str
     bookmaker_count: int
     consensus_std: float
+    maker_only: bool = False  # True: edge only clears the bar at mid (0% fee) --
+                               # execute_trade() must not fall back to crossing the ask
 
     @property
     def edge_pct(self) -> str:
@@ -105,26 +107,36 @@ def _eval_edge(
     ask_price: float,
     spread: float,
     min_edge: float,
-) -> float | None:
+) -> tuple[float, bool] | None:
     """
-    Return edge at ask price if it clears min_edge net of Kalshi's estimated fee,
-    else None. The returned value is still the RAW edge (consensus - ask_price) —
-    only the comparison threshold is fee-adjusted, not the stored value, since
-    downstream code (CLV backfill, calibration dashboard) reconstructs
-    consensus_prob as market_price + edge and would break if edge meant something
-    else here.
+    Return (edge, maker_only) for the best qualifying fill, else None. The
+    returned edge is still the RAW edge (consensus - price at the relevant
+    step) — only the comparison threshold is fee-adjusted, not the stored
+    value, since downstream code (CLV backfill, calibration dashboard)
+    reconstructs consensus_prob as market_price + edge.
 
-    Only bets where ask_edge clears the fee-adjusted bar are accepted. The executor
-    still tries to fill at mid first (maker, ~0% fee) for a better price, then falls
-    back to ask (crosses the book — real taker fee, see
-    core/kelly_calculator.py::fee_adjusted_breakeven_prob). Gating on the ask-price
-    case ensures step 2 always clears the bar too and prevents blocking scans on
-    illiquid mid-only fills.
+    Two acceptance paths, checked in order:
+      1. ask_edge clears the fee-adjusted bar (_effective_min_edge, worst-case
+         taker fee) -> maker_only=False. execute_trade() may safely try mid
+         first, then fall back to crossing the ask if unfilled -- even the
+         worst case (ask) is still worth it.
+      2. Otherwise, mid_edge (priced at the actual mid, ask_price - spread/2)
+         clears plain min_edge -> maker_only=True. Kalshi's own resting/maker
+         fills are confirmed genuinely 0% fee (see execution/kalshi_executor.py
+         fee model, verified against real settled fills and Kalshi's own fee
+         docs), so this is a real, if thinner, edge -- but crossing the ask
+         would NOT clear the bar, so execute_trade() must only attempt the
+         passive mid order and walk away (no bet, no cost) if it doesn't fill,
+         rather than crossing the spread into a losing trade.
     """
     ask_edge = consensus - ask_price
     _EPS = 1e-9  # floating-point tolerance: treat 1.9999999% as 2.0%
     if ask_edge >= _effective_min_edge(ask_price, min_edge) - _EPS:
-        return ask_edge
+        return ask_edge, False
+    mid_price = max(0.01, ask_price - spread / 2.0)
+    mid_edge = consensus - mid_price
+    if mid_edge >= min_edge - _EPS:
+        return mid_edge, True
     return None
 
 
@@ -140,6 +152,7 @@ def _log(
     status: str,
     reason: str,
     kalshi_side: str | None = None,
+    maker_only: bool = False,
 ) -> None:
     """Append one candidate record to scan_log if provided.
 
@@ -180,7 +193,7 @@ def _log(
         "edge":            round(edge, 4) if edge is not None else None,
         "status":          status,
         "reason":          reason,
-        "maker_only":      0,
+        "maker_only":      1 if maker_only else 0,
         "commence_time":   event.commence_time.isoformat(),
         "bookmakers_json": _json.dumps(event.bookmakers),
     })
@@ -354,24 +367,26 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log, mm_candidates=
             else:
                 kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
 
-        edge = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
-        if edge is None:
+        result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
+        if result is None:
             best_edge = consensus - kalshi_price
             eff_min = _effective_min_edge(kalshi_price, min_edge)
             reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
             _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
                  best_edge, "no_edge", reason, kalshi_side)
             continue
+        edge, maker_only = result
         opportunities.append(ValueOpportunity(
             matched_event=me, outcome=outcome, team_name=team,
             consensus_prob=consensus, market_price=kalshi_price, edge=edge,
             market_url=_kalshi_url(km.ticker, km.event_ticker),
             bookmaker_count=book_count, consensus_std=std_dev,
+            maker_only=maker_only,
         ))
         _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
-             edge, "value", "Edge found — bet placed", kalshi_side)
-        logger.debug("VALUE H2H: %s — edge %.1f%% net  (consensus %.1f%% vs price %.1f%%, books=%d)",
-                    team, edge*100, consensus*100, kalshi_price*100, book_count)
+             edge, "value", "Edge found — bet placed", kalshi_side, maker_only=maker_only)
+        logger.debug("VALUE H2H: %s — edge %.1f%% net  (consensus %.1f%% vs price %.1f%%, maker_only=%s, books=%d)",
+                    team, edge*100, consensus*100, kalshi_price*100, maker_only, book_count)
 
 
 def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log, mm_candidates=None):
@@ -391,24 +406,26 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log, mm_candida
                              std_dev, status, reason)
         return
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
-    edge = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
-    if edge is None:
+    result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
+    if result is None:
         best_edge = consensus - kalshi_price
         eff_min = _effective_min_edge(kalshi_price, min_edge)
         reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
              best_edge, "no_edge", reason, kalshi_side)
         return
+    edge, maker_only = result
     opportunities.append(ValueOpportunity(
         matched_event=me, outcome=Outcome.DRAW, team_name="Draw",
         consensus_prob=consensus, market_price=kalshi_price, edge=edge,
         market_url=_kalshi_url(km.ticker, km.event_ticker),
         bookmaker_count=book_count, consensus_std=std_dev,
+        maker_only=maker_only,
     ))
     _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
-         edge, "value", "Edge found — bet placed", kalshi_side)
-    logger.debug("VALUE DRAW: %s vs %s — edge %.1f%% net",
-                event.home_team, event.away_team, edge*100)
+         edge, "value", "Edge found — bet placed", kalshi_side, maker_only=maker_only)
+    logger.debug("VALUE DRAW: %s vs %s — edge %.1f%% net (maker_only=%s)",
+                event.home_team, event.away_team, edge*100, maker_only)
 
 
 # ── Totals ────────────────────────────────────────────────────────────────────
@@ -462,48 +479,52 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidat
         return
 
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
-    edge = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
-    if edge is None:
+    result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
+    if result is None:
         best_edge = consensus - kalshi_price
         eff_min = _effective_min_edge(kalshi_price, min_edge)
         reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              best_edge, "no_edge", reason, "yes")
     else:
+        edge, maker_only = result
         opportunities.append(ValueOpportunity(
             matched_event=me, outcome=outcome_type, team_name=label,
             consensus_prob=consensus, market_price=kalshi_price, edge=edge,
             market_url=_kalshi_url(km.ticker, km.event_ticker),
             bookmaker_count=book_count, consensus_std=std_dev,
+            maker_only=maker_only,
         ))
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-             edge, "value", "Edge found — bet placed", "yes")
-        logger.debug("VALUE TOTALS: %s (%s vs %s) — edge %.1f%% net",
-                    label, event.home_team, event.away_team, edge*100)
+             edge, "value", "Edge found — bet placed", "yes", maker_only=maker_only)
+        logger.debug("VALUE TOTALS: %s (%s vs %s) — edge %.1f%% net (maker_only=%s)",
+                    label, event.home_team, event.away_team, edge*100, maker_only)
 
     # ── Also evaluate the NO side (Under) of this Over market ─────────────────
     if direction_label == "Over":
         no_label = f"Under {km.threshold}"
         no_consensus = 1.0 - consensus
         no_price = (1.0 - km.yes_bid) if km.yes_bid > 0 else (1.0 - km.yes_price)
-        no_edge = _eval_edge(no_consensus, no_price, km.spread, min_edge)
-        if no_edge is None:
+        no_result = _eval_edge(no_consensus, no_price, km.spread, min_edge)
+        if no_result is None:
             no_best = no_consensus - no_price
             eff_min = _effective_min_edge(no_price, min_edge)
             reason = f"Edge {no_best*100:.2f}% net below minimum {eff_min*100:.2f}%"
             _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
                  no_best, "no_edge", reason, "no")
         else:
+            no_edge, no_maker_only = no_result
             opportunities.append(ValueOpportunity(
                 matched_event=me, outcome=Outcome.NO_OVER, team_name=no_label,
                 consensus_prob=no_consensus, market_price=no_price, edge=no_edge,
                 market_url=_kalshi_url(km.ticker, km.event_ticker),
                 bookmaker_count=book_count, consensus_std=std_dev,
+                maker_only=no_maker_only,
             ))
             _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
-                 no_edge, "value", "Edge found on NO side — bet placed", "no")
-            logger.debug("VALUE TOTALS (NO/Under): %s (%s vs %s) — edge %.1f%% net",
-                        no_label, event.home_team, event.away_team, no_edge*100)
+                 no_edge, "value", "Edge found on NO side — bet placed", "no", maker_only=no_maker_only)
+            logger.debug("VALUE TOTALS (NO/Under): %s (%s vs %s) — edge %.1f%% net (maker_only=%s)",
+                        no_label, event.home_team, event.away_team, no_edge*100, no_maker_only)
 
 
 # ── Spread ────────────────────────────────────────────────────────────────────
@@ -563,23 +584,25 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log, mm_candidat
         return
 
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
-    edge = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
-    if edge is None:
+    result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
+    if result is None:
         best_edge = consensus - kalshi_price
         eff_min = _effective_min_edge(kalshi_price, min_edge)
         reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              best_edge, "no_edge", reason, "yes")
         return
+    edge, maker_only = result
     opportunities.append(ValueOpportunity(
         matched_event=me, outcome=Outcome.COVER, team_name=label,
         consensus_prob=consensus, market_price=kalshi_price, edge=edge,
         market_url=_kalshi_url(km.ticker, km.event_ticker),
         bookmaker_count=book_count, consensus_std=std_dev,
+        maker_only=maker_only,
     ))
     _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-         edge, "value", "Edge found — bet placed", "yes")
-    logger.debug("VALUE SPREAD: %s (%s vs %s) — edge %.1f%% net",
-                label, event.home_team, event.away_team, edge*100)
+         edge, "value", "Edge found — bet placed", "yes", maker_only=maker_only)
+    logger.debug("VALUE SPREAD: %s (%s vs %s) — edge %.1f%% net (maker_only=%s)",
+                label, event.home_team, event.away_team, edge*100, maker_only)
 
 

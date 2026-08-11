@@ -229,9 +229,26 @@ def quality_filters(bet_type: str, is_draw: bool = False) -> dict:
 # (entry_fee_paid), rather than estimated with a formula — a formula got this wrong
 # before. Execution is two-step: (1) GTC at mid, adaptive timeout; (2) GTC at ask,
 # short timeout — step 2 crosses the book by design and often incurs a real fee.
-LIMIT_ORDER_TIMEOUT_DEFAULT_SECONDS: int = 600   # step 1 — game > 1 hour away
-LIMIT_ORDER_TIMEOUT_PRE_GAME_SECONDS: int = 300  # step 1 — within 1 hour
-LIMIT_ORDER_TIMEOUT_NEAR_GAME_SECONDS: int = 120 # step 1 — within 30 minutes
+# Step 2 is skipped for maker_only opportunities (core/value_detector.py::
+# _eval_edge) — those only clear the edge bar at the fee-free mid price, so a step-1
+# order that goes unfilled just gives up rather than crossing into a losing trade.
+#
+# Timeouts widened 2026-08-11 (was 600/300/120s): checked 10 days of real GTC-mid
+# attempts and found every fill was either immediate or never happened at all within
+# the old window (zero fills detected mid-wait via polling) — so length wasn't
+# clearly the constraint, but the sample is small (14 attempts) and there's no
+# evidence a longer wait costs anything for the *edge* itself (the adverse-move
+# reprice check below still bails early regardless of the overall timeout). The real
+# cost is structural, not financial: main.py's tick loop is single-threaded and
+# blocks on ThreadPoolExecutor until every concurrent order this scan resolves, which
+# also delays MM requoting and position risk-management checks bot-wide for that
+# whole window — so DEFAULT/PRE_GAME (lots of slack vs. their 45min/10min poll
+# cadence) got more patience, NEAR_GAME (120s) was left alone since it's already
+# close to its own 2min poll cadence and is exactly the tier where staying
+# responsive matters most.
+LIMIT_ORDER_TIMEOUT_DEFAULT_SECONDS: int = 900   # step 1 — game > 1 hour away (was 600)
+LIMIT_ORDER_TIMEOUT_PRE_GAME_SECONDS: int = 450  # step 1 — within 1 hour (was 300)
+LIMIT_ORDER_TIMEOUT_NEAR_GAME_SECONDS: int = 120 # step 1 — within 30 minutes (unchanged)
 LIMIT_ORDER_ASK_TIMEOUT_SECONDS: int = 30        # step 2 — GTC at ask (short; ask should fill fast)
 
 # While step 1's mid-price order rests, periodically re-check Kalshi's own live

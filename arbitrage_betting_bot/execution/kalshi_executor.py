@@ -167,6 +167,7 @@ def place_order(
     kalshi_spread: float = 0.0,
     commence_time: datetime | None = None,
     edge: float | None = None,
+    maker_only: bool = False,
 ) -> tuple[str, str, str, float, str, float]:
     """
     Place a Kalshi order using GTC limit orders.
@@ -182,6 +183,13 @@ def place_order(
                          >= config.LARGE_EDGE_SKIP_PASSIVE, step 1 is skipped
                          entirely — the edge is worth taking now rather than
                          risking it evaporating while a passive order rests.
+                         Ignored when maker_only=True (see below).
+        maker_only:     True when the opportunity's edge only clears the bar at
+                         the mid price (0% fee) — see core/value_detector.py::
+                         _eval_edge(). Crossing to ask would not be worth it, so
+                         step 1 is never skipped regardless of `edge`, and if it
+                         goes unfilled, this gives up instead of falling back to
+                         step 2 — no bet is better than a fee-negative one.
 
     Returns:
         (order_id, execution_status, failure_reason, actual_stake, fill_type, fee_paid)
@@ -197,9 +205,11 @@ def place_order(
                 (config.PASSIVE_REPRICE_CHECK_INTERVAL_SECONDS); if it has moved
                 against us by config.PASSIVE_ADVERSE_MOVE_CANCEL or more, the
                 order is cancelled early instead of waiting out the full timeout.
-                Skipped entirely when edge >= config.LARGE_EDGE_SKIP_PASSIVE.
+                Skipped entirely when edge >= config.LARGE_EDGE_SKIP_PASSIVE
+                (never skipped when maker_only=True).
         Step 2: GTC at ask price, short timeout (30 s) — this step crosses the book
-                immediately by design and often incurs a real taker fee.
+                immediately by design and often incurs a real taker fee. Skipped
+                entirely when maker_only=True.
     """
     if not config.KALSHI_API_KEY:
         logger.error("KALSHI_API_KEY not set — cannot place order")
@@ -219,7 +229,7 @@ def place_order(
         yes_price_mid = round(min(0.99, yes_price_ask + kalshi_spread / 2.0), 2)
 
     # ── Step 1: GTC at mid price ──────────────────────────────────────────────
-    skip_passive = edge is not None and edge >= config.LARGE_EDGE_SKIP_PASSIVE
+    skip_passive = (not maker_only) and edge is not None and edge >= config.LARGE_EDGE_SKIP_PASSIVE
     if skip_passive:
         logger.info(
             "Edge %.1f%% >= large-edge threshold %.1f%% — skipping passive mid step for %s, taking ask now",
@@ -284,6 +294,16 @@ def place_order(
                 return order_id, "submitted", "", actual_stake, fill_type, fee_paid
 
             _cancel_order(order_id)
+            if maker_only:
+                reason = (
+                    f"GTC mid cancelled early — {early_cancel_reason}" if early_cancel_reason
+                    else f"GTC mid unfilled after {timeout}s"
+                )
+                logger.info(
+                    "Kalshi GTC mid unfilled for %s — maker_only, giving up (no ask fallback): %s",
+                    ticker, reason,
+                )
+                return order_id, "failed", reason, 0.0, "", 0.0
             if early_cancel_reason:
                 logger.info(
                     "Kalshi GTC mid cancelled early for %s — %s — trying GTC at ask",
@@ -297,9 +317,15 @@ def place_order(
         except requests.HTTPError as e:
             code = e.response.status_code if e.response is not None else "?"
             body = e.response.text if e.response is not None else ""
+            if maker_only:
+                logger.warning("Kalshi GTC mid failed [%s] for %s — maker_only, giving up", code, ticker)
+                return client_order_id, "failed", f"GTC mid HTTP {code}", 0.0, "", 0.0
             logger.warning("Kalshi GTC mid failed [%s] for %s — trying ask step", code, ticker)
             logger.debug("GTC mid error body: %s", body[:300])
         except requests.RequestException as e:
+            if maker_only:
+                logger.warning("GTC mid network error for %s — maker_only, giving up: %s", ticker, e)
+                return client_order_id, "failed", f"GTC mid network error: {str(e)[:200]}", 0.0, "", 0.0
             logger.warning("GTC mid network error for %s — trying ask step: %s", ticker, e)
 
     # ── Step 2: GTC at ask price ──────────────────────────────────────────────
