@@ -44,18 +44,22 @@ import config
 logger = logging.getLogger(__name__)
 
 
-def _fee_adjusted_b_and_l(price: float) -> tuple[float, float]:
+def _fee_adjusted_b_and_l(
+    price: float, fee_rate: float = config.KALSHI_TAKER_FEE_RATE_ESTIMATE,
+) -> tuple[float, float]:
     """
     Net win odds (b_net) and net loss multiplier (L_net) for a binary contract at
-    `price`, after Kalshi's estimated taker fee (config.KALSHI_TAKER_FEE_RATE_ESTIMATE),
-    which is charged on stake regardless of outcome.
+    `price`, after a fee rate charged on stake regardless of outcome. Defaults to
+    Kalshi's estimated taker fee; callers sizing a maker_only opportunity (see
+    core/value_detector.py::_eval_edge) should pass fee_rate=0.0 -- those only ever
+    execute at the fee-free mid price, never the ask, so sizing them with the
+    worst-case taker rate understates real edge and can wrongly reject a good bet.
 
     Derivation, per $1 staked (N = 1/price contracts):
       win:  payout = N = 1/price; fee = RATE*(1-price); net profit = payout - fee - 1
             => b_net = (1-price)*(1 - RATE*price) / price
       lose: payout = 0; fee still charged => net loss = 1 + RATE*(1-price) = L_net
     """
-    fee_rate = config.KALSHI_TAKER_FEE_RATE_ESTIMATE
     b_net = (1.0 - price) * (1.0 - fee_rate * price) / price
     l_net = 1.0 + fee_rate * (1.0 - price)
     return b_net, l_net
@@ -89,18 +93,23 @@ def calculate_kelly(
     max_bet_dollars: float = config.MAX_BET_DOLLARS,
     max_pct_bankroll: float = config.MAX_PCT_BANKROLL,
     consensus_std: float = 0.0,
+    fee_rate: float = config.KALSHI_TAKER_FEE_RATE_ESTIMATE,
 ) -> BetSizing:
     """
     Calculate recommended bet size using fractional Kelly Criterion.
 
     consensus_prob: estimated true probability (from de-vigged sportsbooks)
-    market_price:   the prediction market's ask price (0-1) — the price
-                    value_detector's edge check qualifies against, and the
-                    floor execution guarantees via the ask-price fallback
-                    step. A better mid-price fill is a bonus, not something
-                    to size for.
+    market_price:   the price sizing should assume it pays (0-1) — the ask price
+                    for a normal opportunity (the floor execution guarantees via
+                    the ask-price fallback step; a better mid-price fill is a
+                    bonus, not something to size for), or the mid price for a
+                    maker_only opportunity (see core/value_detector.py::
+                    _eval_edge) -- those have no ask fallback, mid IS the floor.
     consensus_std:  weighted std dev across books — used to discount bet size
                     when books disagree (higher uncertainty = smaller fraction)
+    fee_rate:       fee assumed for sizing. Defaults to Kalshi's estimated taker
+                    rate; pass 0.0 for maker_only opportunities, which only ever
+                    execute at the fee-free mid price.
     """
     p = consensus_prob
     q = 1.0 - p
@@ -116,14 +125,14 @@ def calculate_kelly(
             has_edge=False,
         )
 
-    b_net, l_net = _fee_adjusted_b_and_l(effective_price)
+    b_net, l_net = _fee_adjusted_b_and_l(effective_price, fee_rate)
 
     full_kelly = (p * b_net - q * l_net) / (b_net * l_net)
 
     if full_kelly <= 0:
         logger.debug(
-            "Kelly ≤ 0 (%.4f) — no edge. consensus=%.3f ask=%.3f",
-            full_kelly, consensus_prob, effective_price,
+            "Kelly ≤ 0 (%.4f) — no edge. consensus=%.3f price=%.3f fee_rate=%.3f",
+            full_kelly, consensus_prob, effective_price, fee_rate,
         )
         return BetSizing(
             full_kelly_fraction=full_kelly,
@@ -150,8 +159,8 @@ def calculate_kelly(
     recommended = max(recommended, 0.0)
 
     logger.debug(
-        "Kelly: full=%.3f unc_factor=%.2f frac=%.3f raw=$%.2f capped=$%.2f (std=%.3f ask=%.3f)",
-        full_kelly, uncertainty_factor, frac_kelly, raw_dollars, recommended, consensus_std, effective_price,
+        "Kelly: full=%.3f unc_factor=%.2f frac=%.3f raw=$%.2f capped=$%.2f (std=%.3f price=%.3f fee_rate=%.3f)",
+        full_kelly, uncertainty_factor, frac_kelly, raw_dollars, recommended, consensus_std, effective_price, fee_rate,
     )
 
     return BetSizing(

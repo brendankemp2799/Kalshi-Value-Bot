@@ -261,11 +261,19 @@ def run_scan(
 
     scored = []
     for opp in opportunities:
+        # consensus_prob - edge reconstructs whichever price _eval_edge() actually
+        # validated the edge against: opp.market_price (ask) for a normal
+        # opportunity, or the mid price for a maker_only one (see core/
+        # value_detector.py::_eval_edge) -- those never touch the ask, so sizing
+        # them at ask price with the worst-case taker fee understates real edge
+        # and wrongly rejects good bets at this step. fee_rate=0 for maker_only
+        # matches reality: those only ever execute at the fee-free mid price.
         sizing = calculate_kelly(
             consensus_prob=opp.consensus_prob,
-            market_price=opp.market_price,
+            market_price=opp.consensus_prob - opp.edge,
             bankroll=bm.bankroll,
             consensus_std=opp.consensus_std,
+            fee_rate=0.0 if opp.maker_only else config.KALSHI_TAKER_FEE_RATE_ESTIMATE,
         )
         if not sizing.has_edge:
             logger.debug("Kelly says no edge for %s — skipping", opp.team_name)
