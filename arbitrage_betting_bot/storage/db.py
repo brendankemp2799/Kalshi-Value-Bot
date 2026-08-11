@@ -115,6 +115,29 @@ def init_db() -> None:
                 remaining       INTEGER,
                 used_this_scan  INTEGER
             );
+
+            -- Long-lived (never pruned, unlike scan_log) record of every scanned
+            -- candidate that had both a Kalshi price and a sportsbook consensus --
+            -- i.e. enough to later score individual books' predictive accuracy
+            -- against the real outcome, for ALL scanned candidates rather than just
+            -- the ones that became bets. See research/experiments/2026-08-11-
+            -- book-weight-validation.md for why this exists.
+            CREATE TABLE IF NOT EXISTS book_probability_log (
+                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                scanned_at              TEXT NOT NULL,
+                sport                   TEXT NOT NULL,
+                bet_type                TEXT NOT NULL,
+                team_name               TEXT NOT NULL,
+                threshold               REAL,
+                kalshi_ticker           TEXT NOT NULL,
+                kalshi_side             TEXT,
+                consensus_prob          REAL,
+                bookmaker_count         INTEGER,
+                bookmakers_json         TEXT,
+                commence_time           TEXT,
+                actual_outcome          REAL,
+                outcome_check_attempts  INTEGER NOT NULL DEFAULT 0
+            );
         """)
     _migrate()
     logger.info("Database initialized at %s", DB_PATH)
@@ -508,6 +531,60 @@ def set_closing_lines(
             WHERE id = ?
             """,
             (kalshi_close_price, consensus_close_prob, position_id),
+        )
+
+
+def log_book_probabilities(entries: list[dict]) -> None:
+    """
+    Persist a long-lived copy of every scanned candidate that had both a Kalshi
+    price and a sportsbook consensus (kalshi_side is only set once a side has
+    been resolved -- see core/value_detector.py::_log()). Unlike scan_log (wiped
+    every scan), these rows accumulate indefinitely so book accuracy can
+    eventually be tested against a real, less selection-biased sample than just
+    the candidates that became bets.
+    """
+    rows = [e for e in entries
+            if e.get("consensus_prob") is not None and e.get("kalshi_side") is not None]
+    if not rows:
+        return
+    with get_connection() as conn:
+        conn.executemany(
+            """
+            INSERT INTO book_probability_log
+                (scanned_at, sport, bet_type, team_name, threshold, kalshi_ticker,
+                 kalshi_side, consensus_prob, bookmaker_count, bookmakers_json, commence_time)
+            VALUES
+                (:scanned_at, :sport, :bet_type, :team_name, :threshold, :kalshi_ticker,
+                 :kalshi_side, :consensus_prob, :bookmaker_count, :bookmakers_json, :commence_time)
+            """,
+            rows,
+        )
+
+
+def get_pending_book_probability_outcomes(max_attempts: int = 5) -> list[sqlite3.Row]:
+    """Logged candidates whose real outcome hasn't been resolved yet, under the retry cap."""
+    with get_connection() as conn:
+        return conn.execute(
+            """
+            SELECT * FROM book_probability_log
+            WHERE actual_outcome IS NULL
+              AND outcome_check_attempts < ?
+            """,
+            (max_attempts,),
+        ).fetchall()
+
+
+def set_book_probability_outcome(log_id: int, actual_outcome: float | None) -> None:
+    """Record the real (Kalshi-resolved) outcome for a logged candidate and bump
+    the attempt count -- same retry-capped shape as set_closing_lines above."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE book_probability_log
+            SET actual_outcome = ?, outcome_check_attempts = outcome_check_attempts + 1
+            WHERE id = ?
+            """,
+            (actual_outcome, log_id),
         )
 
 

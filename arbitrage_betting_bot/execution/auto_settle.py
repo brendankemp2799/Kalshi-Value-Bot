@@ -30,6 +30,8 @@ from storage.db import (
     settle_position,
     get_positions_pending_closing_lines,
     set_closing_lines,
+    get_pending_book_probability_outcomes,
+    set_book_probability_outcome,
 )
 from data.kalshi_auth import auth_headers
 from data.kalshi_client import KalshiClient
@@ -138,6 +140,10 @@ def auto_settle_positions(
             _capture_closing_lines()
         except Exception as e:
             logger.warning("Closing-line capture failed: %s", e)
+        try:
+            _backfill_book_probability_outcomes()
+        except Exception as e:
+            logger.warning("Book-probability outcome backfill failed: %s", e)
 
     return settled_count
 
@@ -273,3 +279,43 @@ def _capture_closing_lines() -> None:
             f"{kalshi_close:.3f}" if kalshi_close is not None else "—",
             f"{consensus_close:.3f}" if consensus_close is not None else "—",
         )
+
+
+def _backfill_book_probability_outcomes() -> None:
+    """
+    Resolve the real outcome for book_probability_log rows that don't have one
+    yet (retry-capped — see get_pending_book_probability_outcomes). No Odds API
+    calls involved, only Kalshi's own market-resolution endpoint (same
+    _fetch_market() the settlement loop above already uses) — this just extends
+    the same "does this ticker have a published result yet" check to tickers we
+    never held a position in, so book accuracy can eventually be scored against
+    every scanned candidate, not just ones that became bets. See
+    research/experiments/2026-08-11-book-weight-validation.md.
+    """
+    pending = get_pending_book_probability_outcomes()
+    if not pending:
+        return
+
+    ticker_to_market: dict[str, dict | None] = {}
+    for row in pending:
+        ticker = row["kalshi_ticker"]
+        if ticker not in ticker_to_market:
+            ticker_to_market[ticker] = _fetch_market(ticker)
+
+    resolved_count = 0
+    for row in pending:
+        market = ticker_to_market.get(row["kalshi_ticker"])
+        if not market:
+            continue
+        result = (market.get("result") or "").lower()
+        if result not in ("yes", "no", "void"):
+            continue  # still open — leave for next attempt, don't burn a retry
+        if result == "void":
+            set_book_probability_outcome(row["id"], None)  # bumps attempts, eventually falls off the retry cap
+            continue
+        actual = 1.0 if result == (row["kalshi_side"] or "").lower() else 0.0
+        set_book_probability_outcome(row["id"], actual)
+        resolved_count += 1
+
+    if resolved_count:
+        logger.info("Resolved %d book-probability-log outcome(s).", resolved_count)

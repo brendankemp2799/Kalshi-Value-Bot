@@ -139,8 +139,18 @@ def _log(
     edge: float | None,
     status: str,
     reason: str,
+    kalshi_side: str | None = None,
 ) -> None:
-    """Append one candidate record to scan_log if provided."""
+    """Append one candidate record to scan_log if provided.
+
+    kalshi_side: "yes" or "no" -- which side of the Kalshi ticker kalshi_price
+    was quoted for (None when no side has been resolved yet, e.g. the
+    low_volume rejection in detect_value() before routing to a bet-type
+    handler). Used by storage/db.py::log_book_probabilities() to later compare
+    a book's probability against Kalshi's own eventual yes/no resolution for
+    this exact ticker -- see research/experiments/2026-08-11-book-weight-
+    validation.md for why this is being collected.
+    """
     if scan_log is None:
         return
     import json as _json
@@ -159,6 +169,7 @@ def _log(
         "bet_type":        km.bet_type,
         "threshold":       km.threshold,
         "kalshi_ticker":   km.ticker,
+        "kalshi_side":     kalshi_side,
         "kalshi_spread":   round(km.spread, 4),
         "kalshi_volume":   round(km.volume, 0),
         "kalshi_price":    round(kalshi_price, 4) if kalshi_price is not None else None,
@@ -303,10 +314,18 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log, mm_candidates=
 
         consensus, book_count, std_dev = consensus_stats(event.bookmakers, team)
 
+        # Whether `team`'s probability is being read off the ticker's actual YES
+        # side (yes_ask) or derived from the NO side (1 - yes_bid) — same
+        # condition used below to pick kalshi_price, hoisted so every _log() call
+        # in this function (including early-rejection paths) can record it.
+        is_yes_side = (outcome == Outcome.HOME and me.kalshi_outcome == "yes") or \
+                      (outcome == Outcome.AWAY and me.kalshi_outcome == "no")
+        kalshi_side = "yes" if is_yes_side else "no"
+
         if consensus is None:
             logger.debug("No consensus prob for %s — skipping", team)
             _log(scan_log, me, team, None, None, 0, 0.0, None,
-                 "no_consensus", "No sportsbook data for this team")
+                 "no_consensus", "No sportsbook data for this team", kalshi_side)
             continue
 
         qcheck = _quality_check(km, book_count, std_dev, "h2h")
@@ -314,13 +333,11 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log, mm_candidates=
             status, reason = qcheck
             logger.debug("Skip %s — %s", team, reason)
             _log(scan_log, me, team, None, consensus, book_count, std_dev, None,
-                 status, reason)
+                 status, reason, kalshi_side)
             # Only the team that IS the Kalshi ticker's YES side gives an
             # unambiguous YES-side consensus — the other loop iteration re-derives
             # the same ticker's price from the opposite (1 - bid) direction, which
             # isn't a clean reservation-price input for a resting quote.
-            is_yes_side = (outcome == Outcome.HOME and me.kalshi_outcome == "yes") or \
-                          (outcome == Outcome.AWAY and me.kalshi_outcome == "no")
             if is_yes_side:
                 _maybe_mm_candidate(mm_candidates, me, team, consensus, book_count,
                                      std_dev, status, reason)
@@ -343,7 +360,7 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log, mm_candidates=
             eff_min = _effective_min_edge(kalshi_price, min_edge)
             reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
             _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
-                 best_edge, "no_edge", reason)
+                 best_edge, "no_edge", reason, kalshi_side)
             continue
         opportunities.append(ValueOpportunity(
             matched_event=me, outcome=outcome, team_name=team,
@@ -352,22 +369,24 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log, mm_candidates=
             bookmaker_count=book_count, consensus_std=std_dev,
         ))
         _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
-             edge, "value", "Edge found — bet placed")
+             edge, "value", "Edge found — bet placed", kalshi_side)
         logger.debug("VALUE H2H: %s — edge %.1f%% net  (consensus %.1f%% vs price %.1f%%, books=%d)",
                     team, edge*100, consensus*100, kalshi_price*100, book_count)
 
 
 def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log, mm_candidates=None):
+    # Draw is always priced directly off the ticker's own YES side.
+    kalshi_side = "yes"
     consensus, book_count, std_dev = consensus_stats(event.bookmakers, "Draw")
     if consensus is None:
         _log(scan_log, me, "Draw", None, None, 0, 0.0, None,
-             "no_consensus", "No sportsbook data for Draw")
+             "no_consensus", "No sportsbook data for Draw", kalshi_side)
         return
     qcheck = _quality_check(km, book_count, std_dev, "h2h", is_draw=True)
     if qcheck:
         status, reason = qcheck
         _log(scan_log, me, "Draw", None, consensus, book_count, std_dev, None,
-             status, reason)
+             status, reason, kalshi_side)
         _maybe_mm_candidate(mm_candidates, me, "Draw", consensus, book_count,
                              std_dev, status, reason)
         return
@@ -378,7 +397,7 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log, mm_candida
         eff_min = _effective_min_edge(kalshi_price, min_edge)
         reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
-             best_edge, "no_edge", reason)
+             best_edge, "no_edge", reason, kalshi_side)
         return
     opportunities.append(ValueOpportunity(
         matched_event=me, outcome=Outcome.DRAW, team_name="Draw",
@@ -387,7 +406,7 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log, mm_candida
         bookmaker_count=book_count, consensus_std=std_dev,
     ))
     _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
-         edge, "value", "Edge found — bet placed")
+         edge, "value", "Edge found — bet placed", kalshi_side)
     logger.debug("VALUE DRAW: %s vs %s — edge %.1f%% net",
                 event.home_team, event.away_team, edge*100)
 
@@ -431,13 +450,13 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidat
             {k: sorted(set(v))[:5] for k, v in present_keys.items()},
         )
         _log(scan_log, me, label, None, None, 0, 0.0, None,
-             "no_consensus", f"No sportsbook totals data for {label}")
+             "no_consensus", f"No sportsbook totals data for {label}", "yes")
         return
     qcheck = _quality_check(km, book_count, std_dev, "totals")
     if qcheck:
         status, reason = qcheck
         _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
-             status, reason)
+             status, reason, "yes")
         _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
                              std_dev, status, reason)
         return
@@ -449,7 +468,7 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidat
         eff_min = _effective_min_edge(kalshi_price, min_edge)
         reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-             best_edge, "no_edge", reason)
+             best_edge, "no_edge", reason, "yes")
     else:
         opportunities.append(ValueOpportunity(
             matched_event=me, outcome=outcome_type, team_name=label,
@@ -458,7 +477,7 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidat
             bookmaker_count=book_count, consensus_std=std_dev,
         ))
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-             edge, "value", "Edge found — bet placed")
+             edge, "value", "Edge found — bet placed", "yes")
         logger.debug("VALUE TOTALS: %s (%s vs %s) — edge %.1f%% net",
                     label, event.home_team, event.away_team, edge*100)
 
@@ -473,7 +492,7 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidat
             eff_min = _effective_min_edge(no_price, min_edge)
             reason = f"Edge {no_best*100:.2f}% net below minimum {eff_min*100:.2f}%"
             _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
-                 no_best, "no_edge", reason)
+                 no_best, "no_edge", reason, "no")
         else:
             opportunities.append(ValueOpportunity(
                 matched_event=me, outcome=Outcome.NO_OVER, team_name=no_label,
@@ -482,7 +501,7 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidat
                 bookmaker_count=book_count, consensus_std=std_dev,
             ))
             _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
-                 no_edge, "value", "Edge found on NO side — bet placed")
+                 no_edge, "value", "Edge found on NO side — bet placed", "no")
             logger.debug("VALUE TOTALS (NO/Under): %s (%s vs %s) — edge %.1f%% net",
                         no_label, event.home_team, event.away_team, no_edge*100)
 
@@ -532,13 +551,13 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log, mm_candidat
 
     if consensus is None:
         _log(scan_log, me, label, None, None, 0, 0.0, None,
-             "no_consensus", f"No sportsbook spread data for {label}")
+             "no_consensus", f"No sportsbook spread data for {label}", "yes")
         return
     qcheck = _quality_check(km, book_count, std_dev, "spread")
     if qcheck:
         status, reason = qcheck
         _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
-             status, reason)
+             status, reason, "yes")
         _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
                              std_dev, status, reason)
         return
@@ -550,7 +569,7 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log, mm_candidat
         eff_min = _effective_min_edge(kalshi_price, min_edge)
         reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-             best_edge, "no_edge", reason)
+             best_edge, "no_edge", reason, "yes")
         return
     opportunities.append(ValueOpportunity(
         matched_event=me, outcome=Outcome.COVER, team_name=label,
@@ -559,7 +578,7 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log, mm_candidat
         bookmaker_count=book_count, consensus_std=std_dev,
     ))
     _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-         edge, "value", "Edge found — bet placed")
+         edge, "value", "Edge found — bet placed", "yes")
     logger.debug("VALUE SPREAD: %s (%s vs %s) — edge %.1f%% net",
                 label, event.home_team, event.away_team, edge*100)
 

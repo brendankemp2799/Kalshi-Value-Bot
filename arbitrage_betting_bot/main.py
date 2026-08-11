@@ -41,7 +41,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 import config
-from storage.db import init_db, log_opportunity, log_alert, add_position, get_daily_stake_total, count_open_positions, log_scan_results, mark_scan_start, get_api_credits, update_bot_heartbeat
+from storage.db import init_db, log_opportunity, log_alert, add_position, get_daily_stake_total, count_open_positions, log_scan_results, log_book_probabilities, mark_scan_start, get_api_credits, update_bot_heartbeat
 from execution.trade_executor import execute_trade, resolve_side
 from data.odds_fetcher import OddsAPIClient, _in_season
 from data.kalshi_client import KalshiClient
@@ -81,6 +81,9 @@ def _finalise_scan_log(scan_log: list[dict], scan_id: str) -> None:
     for entry in scan_log:
         entry["scanned_at"] = now
     log_scan_results(scan_id, scan_log)
+    # Long-lived copy for book-accuracy research (scan_log itself is wiped every
+    # scan) -- see storage/db.py::log_book_probabilities().
+    log_book_probabilities(scan_log)
 
 
 def setup_logging(verbose: bool = False) -> None:
