@@ -245,7 +245,7 @@ PASSIVE_ADVERSE_MOVE_CANCEL: float = 0.05
 # step 1 waits for a passive fill — skip straight to step 2 (ask, immediate).
 LARGE_EDGE_SKIP_PASSIVE: float = 0.10
 FAILED_BET_COOLDOWN_SECONDS: int = int(os.getenv("FAILED_BET_COOLDOWN_SECONDS", "10800"))  # 3 hours
-MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.015"))  # Minimum NET edge after Kalshi taker fee
+MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.01"))  # Minimum NET edge after Kalshi taker fee
 
 # Pre-trade fee ESTIMATE, used only for the edge gate and Kelly sizing — before a bet
 # is placed we don't yet know whether it'll fill via step 1 (mid, maker, ~0% fee) or
