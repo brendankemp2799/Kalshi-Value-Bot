@@ -588,6 +588,25 @@ def set_book_probability_outcome(log_id: int, actual_outcome: float | None) -> N
         )
 
 
+def get_probability_movement(kalshi_ticker: str, kalshi_side: str) -> list[sqlite3.Row]:
+    """
+    All book_probability_log readings for one specific (ticker, side) outcome,
+    oldest first -- the raw consensus_prob time series a line-movement/steam
+    signal is computed from. kalshi_side is part of the key because a single
+    ticker can have both a yes leg and a no leg logged separately (e.g. Over/
+    Under on the same totals ticker -- see core/value_detector.py::_log()).
+    """
+    with get_connection() as conn:
+        return conn.execute(
+            """
+            SELECT * FROM book_probability_log
+            WHERE kalshi_ticker = ? AND kalshi_side = ?
+            ORDER BY scanned_at ASC
+            """,
+            (kalshi_ticker, kalshi_side),
+        ).fetchall()
+
+
 # ── Dashboard Queries ─────────────────────────────────────────────────────────
 
 def get_all_positions(is_paper: bool = False) -> list[sqlite3.Row]:
