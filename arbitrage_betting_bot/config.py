@@ -24,7 +24,18 @@ MAX_BET_DOLLARS: float = 100.0        # Hard dollar cap per bet
 MAX_PCT_BANKROLL: float = 0.05        # Max 5% of bankroll per single bet
 MAX_TOTAL_EXPOSURE_PCT: float = 0.30  # Max 30% of bankroll deployed at once
 MAX_SPORT_EXPOSURE_PCT: float = 0.15  # Max 15% of bankroll in one sport
-MAX_OPEN_POSITIONS: int = 10          # Max simultaneous open positions — exposure % is the primary gate
+MAX_OPEN_POSITIONS: int = 40          # Backstop circuit-breaker only (e.g. a bug placing runaway
+                                       # duplicate positions) -- exposure % (below) and correlation
+                                       # rules (core/correlation_tracker.py) are the real, bankroll-
+                                       # aware risk gates and are always enforced independently of
+                                       # this. Was 10, which at real stake sizes bound ~4x tighter
+                                       # than MAX_TOTAL_EXPOSURE_PCT ever would, and unlike the %
+                                       # caps doesn't scale with bankroll at all. Confirmed live
+                                       # (2026-08-11): 10 open positions totaled just 7.1% of
+                                       # bankroll, games 3.8-11.3 days out (no same-day correlation
+                                       # either) -- the count cap was the only thing blocking further
+                                       # scanning, and hitting it skips the Odds API fetch and
+                                       # detect_value() entirely, not just new bets.
 MAX_DAILY_CAPITAL_RISK_PCT: float = 0.30  # Max % of bankroll staked in new positions per calendar day (UTC)
 
 # ── Trailing Stop (mid-position exit risk management) ──────────────────────────
