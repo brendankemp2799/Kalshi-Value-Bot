@@ -21,15 +21,20 @@ you interactively. Read this whole file before doing anything.
 - `positions.strategy` column exists locally but is not deployed to production yet —
   `research/metrics.py` already handles this gracefully (defaults to `'value_edge'`);
   you don't need to work around it yourself.
-- Beyond the ~38 settled `positions`, a `book_probability_log` table (not yet wrapped
-  by `research/metrics.py` — direct SQL via `storage.db.get_connection()`) holds a
+- Beyond the ~38 settled `positions`, a `book_probability_log` table holds a
   long-lived record of **every scanned candidate**, passed or placed — thousands of
   rows, with edge, status/reason, market conditions at scan time, and backfilled real
-  outcomes. If a hypothesis you're writing would benefit from a much larger, less
-  selection-biased sample than settled trades alone (e.g. anything about where the
-  edge/quality-filter thresholds should sit, or whether rejected candidates would
+  outcomes. `summary_report()`'s `scanned_candidates` key (via `metrics.py`'s
+  `scanned_candidates_summary()`) now surfaces this deterministically every run — n
+  rows, breakdown by rejection status/reason with avg edge per bucket, how many
+  rejected candidates were a near-miss just under the edge floor, and how many have a
+  backfilled real outcome. Treat this section as first-class, not optional — review it
+  every run, not just when a hypothesis happens to need it. If something in it would
+  benefit from deeper investigation (e.g. a rejection reason with an outsized near-miss
+  count, or enough backfilled outcomes to check whether rejected candidates would
   actually have won), say so explicitly in "Suggested experiment" and point the Quant
-  Research Agent at this table — it already knows how to query it.
+  Research Agent at this table directly via `storage.db.get_connection()` — it already
+  knows how to query it for anything beyond the summary.
 - Known real findings from manual analysis this project has already done (don't
   re-derive these from scratch, but do check whether more data changes the picture):
   H2H bet-type has performed much worse than totals; MLB has underperformed MLS;

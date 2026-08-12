@@ -168,6 +168,68 @@ def breakdown_by(positions: list[dict], key: str) -> list[dict]:
     return sorted(out, key=lambda x: -(x["n"] or 0))
 
 
+def load_scanned_candidates() -> list[dict]:
+    """Every row in book_probability_log -- not just settled bets, every candidate
+    the bot ever scored a Kalshi price against a sportsbook consensus for, passed or
+    placed. Rows predating the 2026-08-11 schema widening have edge/status/reason
+    etc. as None; callers should filter on those explicitly rather than assume
+    presence. See storage/db.py::log_book_probabilities()."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM book_probability_log").fetchall()
+    return [dict(r) for r in rows]
+
+
+def scanned_candidates_summary() -> dict:
+    """Deterministic breakdown of book_probability_log, the general scanned-candidate
+    archive (widened 2026-08-11 from a narrower book-calibration-only table). This is
+    a much larger, less selection-biased sample than `positions` (every candidate
+    evaluated, not just the ones that became bets) -- useful for questions about
+    where the edge/quality-filter thresholds should sit, not for realized P&L (most
+    rows never became a bet, so they have no pnl/stake to report)."""
+    rows = load_scanned_candidates()
+    n_total = len(rows)
+    widened = [r for r in rows if r.get("edge") is not None]
+    n_widened = len(widened)
+
+    by_status: dict = {}
+    for r in widened:
+        key = r.get("status") or "value"  # placed candidates have status=NULL, reason=NULL
+        by_status.setdefault(key, []).append(r)
+    status_breakdown = [
+        {"status": status, "n": len(group),
+         "avg_edge_pct": round(sum(r["edge"] for r in group) / len(group) * 100, 2)}
+        for status, group in sorted(by_status.items(), key=lambda kv: -len(kv[1]))
+    ]
+
+    near_miss_lo, near_miss_hi = 0.0, 0.015  # below today's MIN_EDGE=1% floor with margin
+    rejected = [r for r in widened if r.get("position_id") is None]
+    near_miss = [r for r in rejected
+                 if r.get("edge") is not None and near_miss_lo <= r["edge"] < near_miss_hi]
+
+    placed = [r for r in widened if r.get("position_id") is not None]
+    with_outcome = [r for r in widened if r.get("actual_outcome") is not None]
+
+    return {
+        "n_total_rows": n_total,
+        "n_widened_schema": n_widened,
+        "note": (
+            f"{n_total - n_widened} rows predate the 2026-08-11 schema widening and "
+            "only have book-calibration fields (no edge/status/reason)."
+            if n_total > n_widened else
+            "All rows have the widened schema."
+        ),
+        "by_status": status_breakdown,
+        "n_rejected_near_miss_sub_1.5pct_edge": len(near_miss),
+        "n_placed_linked_to_position": len(placed),
+        "n_with_backfilled_outcome": len(with_outcome),
+        "sample_size_warning": (
+            f"n_widened_schema={n_widened} — this dataset only started accumulating "
+            "widened rows on 2026-08-11; treat early breakdowns as a first look, not "
+            "a conclusion, until it's had more scan cycles to build up."
+        ),
+    }
+
+
 def fee_and_fill_stats(positions: list[dict]) -> dict:
     settled = [p for p in positions if p.get("pnl") is not None]
     n = len(settled)
@@ -210,6 +272,7 @@ def summary_report(is_paper: bool = False) -> dict:
         "by_close_reason": breakdown_by([p for p in positions if p.get("close_reason")], "close_reason"),
         "edge_calibration": edge_calibration(positions),
         "fees_and_fills": fee_and_fill_stats(positions),
+        "scanned_candidates": scanned_candidates_summary(),
         "sample_size_warning": (
             f"n_settled={n} — most statistics above are low-confidence below ~n=30. "
             "Treat single-digit-n breakdowns as anecdotes, not findings."

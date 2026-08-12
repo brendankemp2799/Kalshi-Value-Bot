@@ -1,7 +1,13 @@
 .env
 .claude_token
+.claude_token.save
 __pycache__/
 *.pyc
 storage/betting_bot.db-shm
 storage/betting_bot.db-wal
 .DS_Store
+mm_backtest_cache.json
+research/findings/run_log.jsonl
+research/findings/threshold_check.log
+research/findings/cron.log
+research/findings/manual_run_stderr.log
