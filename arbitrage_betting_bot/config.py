@@ -147,6 +147,16 @@ NEAR_GAME_THRESHOLD_MINUTES: int     = int(os.getenv("NEAR_GAME_THRESHOLD_MINUTE
 # Back-compat alias (used by --once path and any external tooling)
 POLL_INTERVAL_SECONDS: int = POLL_INTERVAL_DEFAULT_SECONDS
 
+# On startup, skip a sport's initial full fetch if it was already fetched
+# (per the persisted timestamp in storage/db.py::sport_poll_state) within this
+# many seconds -- a redeploy shouldn't force a fresh Odds API fetch of every
+# in-season sport if the last one was moments ago. Deliberately tight (matches
+# the shortest real polling tier, near-game) so this only dedupes back-to-back
+# restarts, never risks operating on stale data during a genuinely time-
+# sensitive window. Added 2026-08-11 after finding 6 same-night redeploys had
+# each forced a full unconditional re-fetch regardless of actual staleness.
+STARTUP_REFETCH_SKIP_WINDOW_SECONDS: int = 120
+
 # ── Sports to Monitor ─────────────────────────────────────────────────────────
 # Full list: https://the-odds-api.com/sports-odds-data/sports-apis.html
 SPORTS: list[str] = [

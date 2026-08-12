@@ -13,7 +13,7 @@ import logging
 import sqlite3
 import sys
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -116,6 +116,16 @@ def init_db() -> None:
                 used_this_scan  INTEGER
             );
 
+            -- Persists each sport's last-fetch time across process restarts so a
+            -- redeploy doesn't force an immediate full re-fetch of every in-season
+            -- sport regardless of how recently it was actually polled -- the
+            -- in-memory last_fetched dict in main.py's tick loop used to reset to
+            -- empty on every restart. See config.STARTUP_REFETCH_SKIP_WINDOW_SECONDS.
+            CREATE TABLE IF NOT EXISTS sport_poll_state (
+                sport            TEXT PRIMARY KEY,
+                last_fetched_at  REAL NOT NULL
+            );
+
             -- Long-lived (never pruned, unlike scan_log) record of every scanned
             -- candidate that had both a Kalshi price and a sportsbook consensus --
             -- i.e. enough to later score individual books' predictive accuracy
@@ -181,6 +191,7 @@ def _migrate() -> None:
             ("entry_fee_paid", "ALTER TABLE positions ADD COLUMN entry_fee_paid REAL NOT NULL DEFAULT 0.0"),
             ("order_verified_at", "ALTER TABLE positions ADD COLUMN order_verified_at TEXT"),
             ("strategy", "ALTER TABLE positions ADD COLUMN strategy TEXT NOT NULL DEFAULT 'value_edge'"),
+            ("closing_line_last_attempt_at", "ALTER TABLE positions ADD COLUMN closing_line_last_attempt_at TEXT"),
         ]:
             if col not in existing:
                 conn.execute(ddl)
@@ -502,8 +513,20 @@ def mark_order_verified(position_id: int) -> None:
 
 # ── Closing Line Value ──────────────────────────────────────────────────────────
 
-def get_positions_pending_closing_lines(max_attempts: int = 3) -> list[sqlite3.Row]:
-    """Closed positions still missing closing-line data, under the retry cap."""
+def get_positions_pending_closing_lines(
+    max_attempts: int = 3, cooldown_hours: float = 2.0,
+) -> list[sqlite3.Row]:
+    """
+    Closed positions still missing closing-line data, under the retry cap and
+    past the retry cooldown. The cooldown matters because each attempt costs a
+    real Odds API historical-odds call (~10 credits, more than a full live
+    scan) -- without it, a position becomes eligible again on every due-scan
+    (as often as every 2 minutes during near-game polling), which can burn
+    through the whole retry cap in minutes on a historical snapshot that
+    likely isn't posted yet. Real settled positions have already exhausted
+    all 3 attempts with nothing to show for it (see git history 2026-08-11).
+    """
+    cutoff = (datetime.utcnow() - timedelta(hours=cooldown_hours)).isoformat()
     with get_connection() as conn:
         return conn.execute(
             """
@@ -511,8 +534,9 @@ def get_positions_pending_closing_lines(max_attempts: int = 3) -> list[sqlite3.R
             WHERE status = 'closed'
               AND consensus_close_prob IS NULL
               AND closing_line_attempts < ?
+              AND (closing_line_last_attempt_at IS NULL OR closing_line_last_attempt_at <= ?)
             """,
-            (max_attempts,),
+            (max_attempts, cutoff),
         ).fetchall()
 
 
@@ -521,16 +545,19 @@ def set_closing_lines(
     kalshi_close_price: float | None,
     consensus_close_prob: float | None,
 ) -> None:
-    """Record closing-line values for a settled position and bump the attempt count."""
+    """Record closing-line values for a settled position, bump the attempt
+    count, and stamp the attempt time (win or lose) so the retry cooldown in
+    get_positions_pending_closing_lines() has something to measure against."""
     with get_connection() as conn:
         conn.execute(
             """
             UPDATE positions
             SET kalshi_close_price = ?, consensus_close_prob = ?,
-                closing_line_attempts = closing_line_attempts + 1
+                closing_line_attempts = closing_line_attempts + 1,
+                closing_line_last_attempt_at = ?
             WHERE id = ?
             """,
-            (kalshi_close_price, consensus_close_prob, position_id),
+            (kalshi_close_price, consensus_close_prob, datetime.utcnow().isoformat(), position_id),
         )
 
 
@@ -783,6 +810,28 @@ def get_bot_heartbeat() -> str | None:
             return row["last_seen"] if row else None
         except Exception:
             return None
+
+
+def get_last_fetched_at(sport: str) -> float | None:
+    """Unix timestamp of the last successful Odds API fetch for this sport,
+    persisted across process restarts -- see sport_poll_state in init_db()."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT last_fetched_at FROM sport_poll_state WHERE sport = ?", (sport,)
+        ).fetchone()
+        return row["last_fetched_at"] if row else None
+
+
+def set_last_fetched_at(sport: str, timestamp: float) -> None:
+    """Record when this sport was last fetched from the Odds API."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO sport_poll_state (sport, last_fetched_at) VALUES (?, ?)
+            ON CONFLICT(sport) DO UPDATE SET last_fetched_at = excluded.last_fetched_at
+            """,
+            (sport, timestamp),
+        )
 
 
 def get_api_credits() -> sqlite3.Row | None:

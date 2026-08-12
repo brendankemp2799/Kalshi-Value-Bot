@@ -41,7 +41,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 import config
-from storage.db import init_db, log_opportunity, log_alert, add_position, get_daily_stake_total, count_open_positions, log_scan_results, log_book_probabilities, mark_scan_start, get_api_credits, update_bot_heartbeat
+from storage.db import init_db, log_opportunity, log_alert, add_position, get_daily_stake_total, count_open_positions, log_scan_results, log_book_probabilities, mark_scan_start, get_api_credits, update_bot_heartbeat, get_last_fetched_at, set_last_fetched_at
 from execution.trade_executor import execute_trade, resolve_side
 from data.odds_fetcher import OddsAPIClient, _in_season
 from data.kalshi_client import KalshiClient
@@ -671,11 +671,28 @@ def _run_variable_loop(
     last_fetched: dict[str, float] = {}   # sport → unix timestamp of last fetch
 
     # ── Initial full fetch ──────────────────────────────────────────────────
+    # Skip sports fetched very recently per the persisted timestamp (e.g. this
+    # process just restarted for a redeploy moments after the last real fetch)
+    # rather than unconditionally re-fetching every in-season sport on every
+    # startup — that was burning real credits on redundant fetches with every
+    # restart, independent of whether the data was actually stale. The skip
+    # window is deliberately tight (config.STARTUP_REFETCH_SKIP_WINDOW_SECONDS,
+    # matches the shortest real polling tier) so this only dedupes back-to-back
+    # restarts; a skipped sport just has no cached events until its normal
+    # due-check fires naturally, same as any other point between polls.
     mark_scan_start()
     now_ts = time.time()
     for i, sport in enumerate(config.SPORTS):
         if not _in_season(sport):
             logger.debug("Skipping %s — off season", sport)
+            continue
+        persisted = get_last_fetched_at(sport)
+        if persisted is not None and (now_ts - persisted) < config.STARTUP_REFETCH_SKIP_WINDOW_SECONDS:
+            logger.debug(
+                "Skipping startup fetch for %s — fetched %.0fs ago (< %ds skip window)",
+                sport, now_ts - persisted, config.STARTUP_REFETCH_SKIP_WINDOW_SECONDS,
+            )
+            last_fetched[sport] = persisted
             continue
         if i > 0:
             time.sleep(1)  # avoid 429 between sports
@@ -683,6 +700,7 @@ def _run_variable_loop(
         sport_events[sport] = odds_client.fetch_odds(sport, markets=markets)
         sport_kalshi[sport] = kalshi_client.fetch_sports_markets(sports=[sport])
         last_fetched[sport] = now_ts
+        set_last_fetched_at(sport, now_ts)
 
     all_events  = [e for evs in sport_events.values() for e in evs]
     all_kalshi  = [m for ms  in sport_kalshi.values()  for m in ms]
@@ -762,6 +780,7 @@ def _run_variable_loop(
                 sport_events[sport] = odds_client.fetch_odds(sport, markets=markets)
                 sport_kalshi[sport] = kalshi_client.fetch_sports_markets(sports=[sport])
                 last_fetched[sport] = now_ts
+                set_last_fetched_at(sport, now_ts)
 
             all_events = [e for evs in sport_events.values() for e in evs]
             all_kalshi = [m for ms  in sport_kalshi.values()  for m in ms]

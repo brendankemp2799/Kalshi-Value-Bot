@@ -218,18 +218,30 @@ def _fetch_kalshi_closing_price(pos) -> float | None:
         return None
 
 
+_BET_TYPE_TO_MARKET_KEY = {"h2h": "h2h", "totals": "totals", "spread": "spreads"}
+
+
 def _fetch_consensus_closing_prob(pos) -> float | None:
     """
     Sportsbook consensus probability (same de-vig method as entry-time edge)
     for our side, at the historical odds snapshot closest to game start.
+
+    Requests only the ONE market this position actually needs (bet_type ->
+    market_key), not all of h2h,totals,spreads -- historical odds calls cost
+    real credits (~10/call, see OddsAPIClient.fetch_historical_odds), and the
+    other two markets' data was always discarded unused.
     """
     sport = pos["sport"]
     commence_str = pos["commence_time"]
     if not sport or not commence_str:
         return None
+    bet_type = pos["bet_type"] or "h2h"
+    market_key = _BET_TYPE_TO_MARKET_KEY.get(bet_type)
+    if market_key is None:
+        return None
     try:
         date_iso = commence_str.replace("+00:00", "Z")
-        events = OddsAPIClient().fetch_historical_odds(sport, date_iso, "h2h,totals,spreads")
+        events = OddsAPIClient().fetch_historical_odds(sport, date_iso, market_key)
         home, away = pos["home_team"], pos["away_team"]
         event = next(
             (e for e in events if e.get("home_team") == home and e.get("away_team") == away),
@@ -238,21 +250,18 @@ def _fetch_consensus_closing_prob(pos) -> float | None:
         if event is None:
             return None
 
-        bet_type = pos["bet_type"] or "h2h"
         team_name = pos["team_name"] or ""
         threshold = pos["threshold"]
 
         if bet_type == "h2h":
             outcome_name = "Draw" if team_name == "Draw" else team_name
-            market_key, point = "h2h", None
+            point = None
         elif bet_type == "totals":
             outcome_name = "Over" if team_name.lower().startswith("over") else "Under"
-            market_key, point = "totals", threshold
-        elif bet_type == "spread":
+            point = threshold
+        else:  # spread
             covering = home if team_name.startswith(home) else away
-            outcome_name, market_key, point = covering, "spreads", threshold
-        else:
-            return None
+            outcome_name, point = covering, threshold
 
         consensus, _book_count, _std = consensus_stats(
             event.get("bookmakers", []), outcome_name, market_key=market_key, point=point,
