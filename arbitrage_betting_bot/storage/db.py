@@ -197,6 +197,32 @@ def _migrate() -> None:
                 conn.execute(ddl)
                 logger.debug("Migration: added positions.%s", col)
 
+        # book_probability_log migrations -- widening it from a narrow book-
+        # calibration table into a general archive of every scanned candidate
+        # (passed or placed), so future experiments aren't limited to the ~40
+        # candidates that became real bets. See core/value_detector.py::_log()
+        # for where these values already exist per-candidate, and
+        # research/experiments/2026-08-11-book-weight-validation.md for why
+        # this table exists at all.
+        bpl_existing = {row[1] for row in conn.execute("PRAGMA table_info(book_probability_log)").fetchall()}
+        for col, ddl in [
+            ("home_team",     "ALTER TABLE book_probability_log ADD COLUMN home_team TEXT"),
+            ("away_team",     "ALTER TABLE book_probability_log ADD COLUMN away_team TEXT"),
+            ("kalshi_price",  "ALTER TABLE book_probability_log ADD COLUMN kalshi_price REAL"),
+            ("kalshi_spread", "ALTER TABLE book_probability_log ADD COLUMN kalshi_spread REAL"),
+            ("kalshi_volume", "ALTER TABLE book_probability_log ADD COLUMN kalshi_volume REAL"),
+            ("limit_price",   "ALTER TABLE book_probability_log ADD COLUMN limit_price REAL"),
+            ("edge",          "ALTER TABLE book_probability_log ADD COLUMN edge REAL"),
+            ("status",        "ALTER TABLE book_probability_log ADD COLUMN status TEXT"),
+            ("reason",        "ALTER TABLE book_probability_log ADD COLUMN reason TEXT"),
+            ("maker_only",    "ALTER TABLE book_probability_log ADD COLUMN maker_only INTEGER NOT NULL DEFAULT 0"),
+            ("scan_id",       "ALTER TABLE book_probability_log ADD COLUMN scan_id TEXT"),
+            ("position_id",   "ALTER TABLE book_probability_log ADD COLUMN position_id INTEGER"),
+        ]:
+            if col not in bpl_existing:
+                conn.execute(ddl)
+                logger.debug("Migration: added book_probability_log.%s", col)
+
 
 # ── Opportunities ─────────────────────────────────────────────────────────────
 
@@ -561,14 +587,20 @@ def set_closing_lines(
         )
 
 
-def log_book_probabilities(entries: list[dict]) -> None:
+def log_book_probabilities(scan_id: str, entries: list[dict]) -> None:
     """
     Persist a long-lived copy of every scanned candidate that had both a Kalshi
     price and a sportsbook consensus (kalshi_side is only set once a side has
     been resolved -- see core/value_detector.py::_log()). Unlike scan_log (wiped
-    every scan), these rows accumulate indefinitely so book accuracy can
-    eventually be tested against a real, less selection-biased sample than just
-    the candidates that became bets.
+    every scan), these rows accumulate indefinitely -- not just for book-accuracy
+    research (the table's original purpose), but as a general archive of every
+    evaluated candidate (edge, market conditions, why it was rejected or placed)
+    for future experimentation against a real, less selection-biased sample than
+    just the candidates that became bets.
+
+    scan_id is stamped onto every row (not part of the entry dicts themselves --
+    only the caller in main.py knows it) so link_book_probability_to_position()
+    can later find the exact row for a candidate that became a real bet.
     """
     rows = [e for e in entries
             if e.get("consensus_prob") is not None and e.get("kalshi_side") is not None]
@@ -579,12 +611,38 @@ def log_book_probabilities(entries: list[dict]) -> None:
             """
             INSERT INTO book_probability_log
                 (scanned_at, sport, bet_type, team_name, threshold, kalshi_ticker,
-                 kalshi_side, consensus_prob, bookmaker_count, bookmakers_json, commence_time)
+                 kalshi_side, consensus_prob, bookmaker_count, bookmakers_json, commence_time,
+                 home_team, away_team, kalshi_price, kalshi_spread, kalshi_volume,
+                 limit_price, edge, status, reason, maker_only, scan_id)
             VALUES
                 (:scanned_at, :sport, :bet_type, :team_name, :threshold, :kalshi_ticker,
-                 :kalshi_side, :consensus_prob, :bookmaker_count, :bookmakers_json, :commence_time)
+                 :kalshi_side, :consensus_prob, :bookmaker_count, :bookmakers_json, :commence_time,
+                 :home_team, :away_team, :kalshi_price, :kalshi_spread, :kalshi_volume,
+                 :limit_price, :edge, :status, :reason, :maker_only, :scan_id)
             """,
-            rows,
+            [{**row, "scan_id": scan_id} for row in rows],
+        )
+
+
+def link_book_probability_to_position(
+    scan_id: str, kalshi_ticker: str, team_name: str, position_id: int,
+) -> None:
+    """
+    Stamp position_id onto the book_probability_log row for a candidate that
+    just became a real bet, so realized economics (stake, fill_type, pnl,
+    closing lines) can be read via a join to positions instead of duplicated
+    here. (scan_id, kalshi_ticker, team_name) is the same composite key
+    main.py::_update_scan_log() already relies on to find one candidate's row
+    within a single scan -- exact, no timestamp-matching needed.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE book_probability_log
+            SET position_id = ?
+            WHERE scan_id = ? AND kalshi_ticker = ? AND team_name = ?
+            """,
+            (position_id, scan_id, kalshi_ticker, team_name),
         )
 
 

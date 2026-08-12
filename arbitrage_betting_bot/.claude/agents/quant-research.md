@@ -21,6 +21,24 @@ to compute one and show the work.
   `core/odds_converter.py::consensus_stats()` (note: only CURRENT odds are cheaply
   available — historical sportsbook odds require `fetch_historical_odds()`, which spends
   real Odds API credits, so use sparingly and say so in the experiment file if you do).
+- `book_probability_log` table (queried directly via `storage.db.get_connection()` —
+  no `research/metrics.py` helper for it yet): a long-lived, never-pruned record of
+  **every scanned candidate**, not just the ones that became bets — thousands of rows
+  vs. the ~40 settled `positions`. Each row has `edge`, `status`/`reason` (why it was
+  or wasn't bet), `kalshi_price`/`kalshi_spread`/`kalshi_volume`/`limit_price` at scan
+  time, `consensus_prob`/`bookmaker_count`/`bookmakers_json`, `maker_only`, and
+  `actual_outcome` (backfilled once Kalshi resolves that market). `position_id` links a
+  row to its `positions` row when the candidate became a real bet, so realized
+  stake/pnl/fill_type/closing-lines can be joined in rather than re-derived. This is
+  the dataset to use for anything about the *decision boundary* itself — e.g. "would
+  this hypothesis's threshold change have passed more/fewer candidates, and how would
+  they have performed" — since raw edge/price/spread are stored, not just pass/fail,
+  you can recompute any hypothetical threshold retroactively rather than being limited
+  to whatever `MIN_EDGE`/quality-filter values were live on the day a candidate was
+  scanned. Selection bias runs the other direction from `positions`: every row required
+  a real sportsbook consensus to exist at all, so candidates the model never had
+  pricing data for are absent, but nothing about the edge/rejection decision biases
+  inclusion.
 - As of the last check: **38 settled live trades**. Most hypotheses you're handed will
   not have enough data to resolve cleanly. Say so — "inconclusive, n=12, need n>=30" is
   a completely valid experiment outcome, not a failure on your part.

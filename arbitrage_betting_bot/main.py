@@ -41,7 +41,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 import config
-from storage.db import init_db, log_opportunity, log_alert, add_position, get_daily_stake_total, count_open_positions, log_scan_results, log_book_probabilities, mark_scan_start, get_api_credits, update_bot_heartbeat, get_last_fetched_at, set_last_fetched_at
+from storage.db import init_db, log_opportunity, log_alert, add_position, get_daily_stake_total, count_open_positions, log_scan_results, log_book_probabilities, link_book_probability_to_position, mark_scan_start, get_api_credits, update_bot_heartbeat, get_last_fetched_at, set_last_fetched_at
 from execution.trade_executor import execute_trade, resolve_side
 from data.odds_fetcher import OddsAPIClient, _in_season
 from data.kalshi_client import KalshiClient
@@ -81,9 +81,10 @@ def _finalise_scan_log(scan_log: list[dict], scan_id: str) -> None:
     for entry in scan_log:
         entry["scanned_at"] = now
     log_scan_results(scan_id, scan_log)
-    # Long-lived copy for book-accuracy research (scan_log itself is wiped every
-    # scan) -- see storage/db.py::log_book_probabilities().
-    log_book_probabilities(scan_log)
+    # Long-lived copy for research (scan_log itself is wiped every scan) --
+    # every candidate evaluated, not just ones that became bets. See
+    # storage/db.py::log_book_probabilities().
+    log_book_probabilities(scan_id, scan_log)
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -378,7 +379,7 @@ def run_scan(
             _price = max(0.01, min(0.99, opp.market_price))
             _count = max(1, math.floor(sizing.recommended_dollars / _price))
             actual_stake = round(_count * _price, 2)
-            add_position(
+            paper_position_id = add_position(
                 sport=event.sport_key,
                 home_team=event.home_team,
                 away_team=event.away_team,
@@ -399,6 +400,13 @@ def run_scan(
                 threshold=opp.matched_event.kalshi_market.threshold,
                 bookmakers_json=json.dumps(event.bookmakers),
             )
+            try:
+                link_book_probability_to_position(scan_id, ticker, opp.team_name, paper_position_id)
+            except Exception as e:
+                logger.warning(
+                    "link_book_probability_to_position failed for paper position #%d: %s",
+                    paper_position_id, e,
+                )
             logger.info("[PAPER] Position logged: %s $%.2f on Kalshi",
                         opp.team_name, sizing.recommended_dollars)
         elif opp_id:
@@ -437,7 +445,7 @@ def run_scan(
                 # than silently lose track of a real Kalshi order.
                 event = opp.matched_event.odds_event
                 try:
-                    add_position(
+                    position_id = add_position(
                         sport=event.sport_key,
                         home_team=event.home_team,
                         away_team=event.away_team,
@@ -470,6 +478,18 @@ def run_scan(
                         order_id, ticker, exec_status, actual_stake, e, exc_info=True,
                     )
                     continue
+
+                # Best-effort link back to the book_probability_log row this position
+                # came from, so research can join realized stake/pnl/closing-lines to
+                # the candidate that generated them without duplicating that data.
+                # Non-critical -- the position itself is already safely recorded above.
+                try:
+                    link_book_probability_to_position(scan_id, ticker, opp.team_name, position_id)
+                except Exception as e:
+                    logger.warning(
+                        "link_book_probability_to_position failed for position #%d: %s",
+                        position_id, e,
+                    )
 
                 # Stage 3: alerts/logging — the position is already safely recorded,
                 # so a failure here is a nuisance, not a tracking loss.
