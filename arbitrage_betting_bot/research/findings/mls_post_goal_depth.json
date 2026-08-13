@@ -1,0 +1,886 @@
+{
+ "generated_at": "2026-08-13T06:00:25.319992Z",
+ "window_s": 30,
+ "events": [
+  {
+   "match": "Portland Timbers @ Seattle Sounders FC",
+   "rule": "A2",
+   "move_c": 24.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.24000000000000002,
+     "contracts": 6803.849999999999,
+     "dollars": 1632.924
+    },
+    "5": {
+     "entry": 0.24000000000000002,
+     "contracts": 7450.289999999999,
+     "dollars": 1788.0695999999998
+    },
+    "30": {
+     "entry": 0.2,
+     "contracts": 2916.4500000000016,
+     "dollars": 583.2900000000003
+    }
+   }
+  },
+  {
+   "match": "New York City FC @ Columbus Crew",
+   "rule": "A2",
+   "move_c": 26.999999999999996,
+   "per_delay": {
+    "1": {
+     "entry": 0.42,
+     "contracts": 29.0,
+     "dollars": 12.18
+    },
+    "5": {
+     "entry": 0.42,
+     "contracts": 0.0,
+     "dollars": 0.0
+    },
+    "30": {
+     "entry": 0.49,
+     "contracts": 405.28000000000003,
+     "dollars": 198.58720000000002
+    }
+   }
+  },
+  {
+   "match": "Chicago Fire FC @ Inter Miami CF",
+   "rule": "A1",
+   "move_c": 6.999999999999995,
+   "per_delay": {
+    "1": {
+     "entry": 0.41000000000000003,
+     "contracts": 1932.8300000000002,
+     "dollars": 792.4603000000001
+    },
+    "5": {
+     "entry": 0.42,
+     "contracts": 1897.28,
+     "dollars": 796.8575999999999
+    },
+    "30": {
+     "entry": 0.41000000000000003,
+     "contracts": 1700.7200000000003,
+     "dollars": 697.2952000000001
+    }
+   }
+  },
+  {
+   "match": "Chicago Fire FC @ Inter Miami CF",
+   "rule": "A2",
+   "move_c": 29.000000000000004,
+   "per_delay": {
+    "1": {
+     "entry": 0.53,
+     "contracts": 4463.71,
+     "dollars": 2365.7663000000002
+    },
+    "5": {
+     "entry": 0.54,
+     "contracts": 1.0,
+     "dollars": 0.54
+    },
+    "30": {
+     "entry": 0.64,
+     "contracts": 2300.7500000000005,
+     "dollars": 1472.4800000000002
+    }
+   }
+  },
+  {
+   "match": "Chicago Fire FC @ Inter Miami CF",
+   "rule": "A2",
+   "move_c": 64.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.62,
+     "contracts": 653.05,
+     "dollars": 404.89099999999996
+    },
+    "5": {
+     "entry": 0.74,
+     "contracts": 20694.3,
+     "dollars": 15313.782
+    },
+    "30": {
+     "entry": 0.86,
+     "contracts": 50035.58999999998,
+     "dollars": 43030.607399999986
+    }
+   }
+  },
+  {
+   "match": "D.C. United @ Houston Dynamo FC",
+   "rule": "A1",
+   "move_c": 25.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.64,
+     "contracts": 21.0,
+     "dollars": 13.44
+    },
+    "5": {
+     "entry": 0.61,
+     "contracts": 0.0,
+     "dollars": 0.0
+    },
+    "30": {
+     "entry": 0.75,
+     "contracts": 464.42999999999995,
+     "dollars": 348.3225
+    }
+   }
+  },
+  {
+   "match": "CF Montr\u00e9al @ Nashville SC",
+   "rule": "A2",
+   "move_c": 44.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.51,
+     "contracts": 1793.0,
+     "dollars": 914.4300000000001
+    },
+    "5": {
+     "entry": 0.54,
+     "contracts": 363.0,
+     "dollars": 196.02
+    },
+    "30": {
+     "entry": 0.61,
+     "contracts": 25097.69,
+     "dollars": 15309.5909
+    }
+   }
+  },
+  {
+   "match": "Minnesota United FC @ Sporting Kansas City",
+   "rule": "A2",
+   "move_c": 26.000000000000007,
+   "per_delay": {
+    "1": {
+     "entry": 0.47000000000000003,
+     "contracts": 17.0,
+     "dollars": 7.99
+    },
+    "5": {
+     "entry": 0.51,
+     "contracts": 42.0,
+     "dollars": 21.42
+    },
+    "30": {
+     "entry": 0.49,
+     "contracts": 16.0,
+     "dollars": 7.84
+    }
+   }
+  },
+  {
+   "match": "Seattle Sounders FC @ Austin FC",
+   "rule": "A2",
+   "move_c": 20.999999999999996,
+   "per_delay": {
+    "1": {
+     "entry": 0.56,
+     "contracts": 51.76,
+     "dollars": 28.9856
+    },
+    "5": {
+     "entry": 0.72,
+     "contracts": 1682.2299999999998,
+     "dollars": 1211.2055999999998
+    },
+    "30": {
+     "entry": 0.65,
+     "contracts": 561.87,
+     "dollars": 365.2155
+    }
+   }
+  },
+  {
+   "match": "Seattle Sounders FC @ Austin FC",
+   "rule": "A2",
+   "move_c": 82.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.4,
+     "contracts": 1012.06,
+     "dollars": 404.824
+    },
+    "5": {
+     "entry": 0.24000000000000002,
+     "contracts": 0.0,
+     "dollars": 0.0
+    },
+    "30": {
+     "entry": 0.85,
+     "contracts": 8306.769999999999,
+     "dollars": 7060.754499999998
+    }
+   }
+  },
+  {
+   "match": "FC Dallas @ Portland Timbers",
+   "rule": "A2",
+   "move_c": 30.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.45,
+     "contracts": 478.0,
+     "dollars": 215.1
+    },
+    "5": {
+     "entry": 0.47000000000000003,
+     "contracts": 216.0,
+     "dollars": 101.52000000000001
+    },
+    "30": {
+     "entry": 0.59,
+     "contracts": 401.0,
+     "dollars": 236.58999999999997
+    }
+   }
+  },
+  {
+   "match": "FC Dallas @ Portland Timbers",
+   "rule": "A2",
+   "move_c": -6.000000000000001,
+   "per_delay": {
+    "1": {
+     "entry": 0.13,
+     "contracts": 3182.5599999999995,
+     "dollars": 413.73279999999994
+    },
+    "5": {
+     "entry": 0.14,
+     "contracts": 5424.3099999999995,
+     "dollars": 759.4034
+    },
+    "30": {
+     "entry": 0.14,
+     "contracts": 8138.42,
+     "dollars": 1139.3788000000002
+    }
+   }
+  },
+  {
+   "match": "Orlando City SC @ San Jose Earthquakes",
+   "rule": "A2",
+   "move_c": 18.999999999999996,
+   "per_delay": {
+    "1": {
+     "entry": 0.37,
+     "contracts": 0.0,
+     "dollars": 0.0
+    },
+    "5": {
+     "entry": 0.48,
+     "contracts": 1430.8500000000004,
+     "dollars": 686.8080000000001
+    },
+    "30": {
+     "entry": 0.42,
+     "contracts": 6639.179999999999,
+     "dollars": 2788.4556
+    }
+   }
+  },
+  {
+   "match": "FC Cincinnati @ Columbus Crew",
+   "rule": "A2",
+   "move_c": 22.000000000000004,
+   "per_delay": {
+    "1": {
+     "entry": 0.54,
+     "contracts": 412.0,
+     "dollars": 222.48000000000002
+    },
+    "5": {
+     "entry": 0.59,
+     "contracts": 1347.31,
+     "dollars": 794.9128999999999
+    },
+    "30": {
+     "entry": 0.5700000000000001,
+     "contracts": 1723.27,
+     "dollars": 982.2639000000001
+    }
+   }
+  },
+  {
+   "match": "FC Cincinnati @ Columbus Crew",
+   "rule": "A2",
+   "move_c": 28.000000000000004,
+   "per_delay": {
+    "1": {
+     "entry": 0.54,
+     "contracts": 25.0,
+     "dollars": 13.5
+    },
+    "5": {
+     "entry": 0.62,
+     "contracts": 2244.52,
+     "dollars": 1391.6024
+    },
+    "30": {
+     "entry": 0.5700000000000001,
+     "contracts": 1053.91,
+     "dollars": 600.7287000000001
+    }
+   }
+  },
+  {
+   "match": "Inter Miami CF @ CF Montr\u00e9al",
+   "rule": "A1",
+   "move_c": 24.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.65,
+     "contracts": 8473.179999999998,
+     "dollars": 5507.566999999999
+    },
+    "5": {
+     "entry": 0.64,
+     "contracts": 6346.16,
+     "dollars": 4061.5424
+    },
+    "30": {
+     "entry": 0.66,
+     "contracts": 7719.300000000001,
+     "dollars": 5094.738000000001
+    }
+   }
+  },
+  {
+   "match": "Toronto FC @ D.C. United",
+   "rule": "A2",
+   "move_c": 24.999999999999993,
+   "per_delay": {
+    "1": {
+     "entry": 0.74,
+     "contracts": 524.27,
+     "dollars": 387.9598
+    },
+    "5": {
+     "entry": 0.7,
+     "contracts": 500.0,
+     "dollars": 350.0
+    },
+    "30": {
+     "entry": 0.7,
+     "contracts": 2150.09,
+     "dollars": 1505.063
+    }
+   }
+  },
+  {
+   "match": "Toronto FC @ D.C. United",
+   "rule": "A2",
+   "move_c": 88.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.33,
+     "contracts": 15.0,
+     "dollars": 4.95
+    },
+    "5": {
+     "entry": 0.36,
+     "contracts": 35.0,
+     "dollars": 12.6
+    },
+    "30": {
+     "entry": 0.59,
+     "contracts": 386.46,
+     "dollars": 228.01139999999998
+    }
+   }
+  },
+  {
+   "match": "Chicago Fire FC @ New York City FC",
+   "rule": "A2",
+   "move_c": 21.000000000000004,
+   "per_delay": {
+    "1": {
+     "entry": 0.48,
+     "contracts": 434.0,
+     "dollars": 208.32
+    },
+    "5": {
+     "entry": 0.58,
+     "contracts": 60.0,
+     "dollars": 34.8
+    },
+    "30": {
+     "entry": 0.64,
+     "contracts": 4.09,
+     "dollars": 2.6176
+    }
+   }
+  },
+  {
+   "match": "Chicago Fire FC @ New York City FC",
+   "rule": "A2",
+   "move_c": 24.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.56,
+     "contracts": 172.22,
+     "dollars": 96.4432
+    },
+    "5": {
+     "entry": 0.53,
+     "contracts": 59.13,
+     "dollars": 31.338900000000002
+    },
+    "30": {
+     "entry": 0.62,
+     "contracts": 424.22,
+     "dollars": 263.01640000000003
+    }
+   }
+  },
+  {
+   "match": "Seattle Sounders FC @ Philadelphia Union",
+   "rule": "A1",
+   "move_c": 25.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.65,
+     "contracts": 662.0899999999999,
+     "dollars": 430.35849999999994
+    },
+    "5": {
+     "entry": 0.64,
+     "contracts": 428.8399999999999,
+     "dollars": 274.45759999999996
+    },
+    "30": {
+     "entry": 0.74,
+     "contracts": 5808.0,
+     "dollars": 4297.92
+    }
+   }
+  },
+  {
+   "match": "Austin FC @ Houston Dynamo FC",
+   "rule": "A1",
+   "move_c": 19.999999999999996,
+   "per_delay": {
+    "1": {
+     "entry": 0.71,
+     "contracts": 1881.51,
+     "dollars": 1335.8720999999998
+    },
+    "5": {
+     "entry": 0.71,
+     "contracts": 1662.51,
+     "dollars": 1180.3821
+    },
+    "30": {
+     "entry": 0.71,
+     "contracts": 136.73,
+     "dollars": 97.07829999999998
+    }
+   }
+  },
+  {
+   "match": "Nashville SC @ Orlando City SC",
+   "rule": "A2",
+   "move_c": 58.00000000000001,
+   "per_delay": {
+    "1": {
+     "entry": 0.54,
+     "contracts": 142.07999999999998,
+     "dollars": 76.72319999999999
+    },
+    "5": {
+     "entry": 0.6,
+     "contracts": 979.6599999999997,
+     "dollars": 587.7959999999998
+    },
+    "30": {
+     "entry": 0.71,
+     "contracts": 5043.239999999999,
+     "dollars": 3580.700399999999
+    }
+   }
+  },
+  {
+   "match": "Real Salt Lake @ Portland Timbers",
+   "rule": "A2",
+   "move_c": 20.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.51,
+     "contracts": 11650.270000000002,
+     "dollars": 5941.637700000001
+    },
+    "5": {
+     "entry": 0.5,
+     "contracts": 11828.310000000003,
+     "dollars": 5914.155000000002
+    },
+    "30": {
+     "entry": 0.48,
+     "contracts": 2845.770000000001,
+     "dollars": 1365.9696000000004
+    }
+   }
+  },
+  {
+   "match": "Real Salt Lake @ Portland Timbers",
+   "rule": "A1",
+   "move_c": 37.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.5700000000000001,
+     "contracts": 2242.82,
+     "dollars": 1278.4074000000003
+    },
+    "5": {
+     "entry": 0.56,
+     "contracts": 2618.75,
+     "dollars": 1466.5000000000002
+    },
+    "30": {
+     "entry": 0.55,
+     "contracts": 1609.01,
+     "dollars": 884.9555
+    }
+   }
+  },
+  {
+   "match": "LA Galaxy @ San Jose Earthquakes",
+   "rule": "A2",
+   "move_c": 17.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.41000000000000003,
+     "contracts": 656.5,
+     "dollars": 269.165
+    },
+    "5": {
+     "entry": 0.48,
+     "contracts": 2328.209999999999,
+     "dollars": 1117.5407999999995
+    },
+    "30": {
+     "entry": 0.46,
+     "contracts": 3807.1600000000003,
+     "dollars": 1751.2936000000002
+    }
+   }
+  },
+  {
+   "match": "Toronto FC @ New York City FC",
+   "rule": "A1",
+   "move_c": 18.000000000000004,
+   "per_delay": {
+    "1": {
+     "entry": 0.66,
+     "contracts": 104.0,
+     "dollars": 68.64
+    },
+    "5": {
+     "entry": 0.72,
+     "contracts": 455.25,
+     "dollars": 327.78
+    },
+    "30": {
+     "entry": 0.74,
+     "contracts": 5782.15,
+     "dollars": 4278.790999999999
+    }
+   }
+  },
+  {
+   "match": "New England Revolution @ CF Montr\u00e9al",
+   "rule": "A2",
+   "move_c": 25.000000000000007,
+   "per_delay": {
+    "1": {
+     "entry": 0.48,
+     "contracts": 514.51,
+     "dollars": 246.9648
+    },
+    "5": {
+     "entry": 0.39,
+     "contracts": 92.03,
+     "dollars": 35.8917
+    },
+    "30": {
+     "entry": 0.45,
+     "contracts": 278.57,
+     "dollars": 125.3565
+    }
+   }
+  },
+  {
+   "match": "Nashville SC @ D.C. United",
+   "rule": "A2",
+   "move_c": 28.000000000000004,
+   "per_delay": {
+    "1": {
+     "entry": 0.46,
+     "contracts": 2.0,
+     "dollars": 0.92
+    },
+    "5": {
+     "entry": 0.55,
+     "contracts": 8479.539999999999,
+     "dollars": 4663.747
+    },
+    "30": {
+     "entry": 0.61,
+     "contracts": 2007.8,
+     "dollars": 1224.758
+    }
+   }
+  },
+  {
+   "match": "Columbus Crew @ Inter Miami CF",
+   "rule": "A1",
+   "move_c": 18.000000000000004,
+   "per_delay": {
+    "1": {
+     "entry": 0.65,
+     "contracts": 0.0,
+     "dollars": 0.0
+    },
+    "5": {
+     "entry": 0.74,
+     "contracts": 330.14,
+     "dollars": 244.3036
+    },
+    "30": {
+     "entry": 0.76,
+     "contracts": 1945.6199999999997,
+     "dollars": 1478.6711999999998
+    }
+   }
+  },
+  {
+   "match": "Columbus Crew @ Inter Miami CF",
+   "rule": "A1",
+   "move_c": 23.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.73,
+     "contracts": 6501.510000000001,
+     "dollars": 4746.1023000000005
+    },
+    "5": {
+     "entry": 0.76,
+     "contracts": 7760.510000000001,
+     "dollars": 5897.987600000001
+    },
+    "30": {
+     "entry": 0.63,
+     "contracts": 2424.94,
+     "dollars": 1527.7122
+    }
+   }
+  },
+  {
+   "match": "Charlotte FC @ Chicago Fire FC",
+   "rule": "A2",
+   "move_c": 40.00000000000001,
+   "per_delay": {
+    "1": {
+     "entry": 0.5700000000000001,
+     "contracts": 0.0,
+     "dollars": 0.0
+    },
+    "5": {
+     "entry": 0.73,
+     "contracts": 343.18,
+     "dollars": 250.5214
+    },
+    "30": {
+     "entry": 0.8,
+     "contracts": 862.1400000000001,
+     "dollars": 689.7120000000001
+    }
+   }
+  },
+  {
+   "match": "Houston Dynamo FC @ Sporting Kansas City",
+   "rule": "A1",
+   "move_c": 31.000000000000007,
+   "per_delay": {
+    "1": {
+     "entry": 0.62,
+     "contracts": 1397.5900000000004,
+     "dollars": 866.5058000000002
+    },
+    "5": {
+     "entry": 0.62,
+     "contracts": 1646.5900000000004,
+     "dollars": 1020.8858000000002
+    },
+    "30": {
+     "entry": 0.61,
+     "contracts": 1374.84,
+     "dollars": 838.6524
+    }
+   }
+  },
+  {
+   "match": "Austin FC @ Colorado Rapids",
+   "rule": "A2",
+   "move_c": 86.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.26,
+     "contracts": 0.0,
+     "dollars": 0.0
+    },
+    "5": {
+     "entry": 0.49,
+     "contracts": 0.0,
+     "dollars": 0.0
+    },
+    "30": {
+     "entry": 0.75,
+     "contracts": 4923.909999999999,
+     "dollars": 3692.932499999999
+    }
+   }
+  },
+  {
+   "match": "San Jose Earthquakes @ FC Cincinnati",
+   "rule": "A2",
+   "move_c": 23.0,
+   "per_delay": {
+    "1": {
+     "entry": 0.3,
+     "contracts": 390.67,
+     "dollars": 117.201
+    },
+    "5": {
+     "entry": 0.3,
+     "contracts": 390.67,
+     "dollars": 117.201
+    },
+    "30": {
+     "entry": 0.46,
+     "contracts": 121.25,
+     "dollars": 55.775000000000006
+    }
+   }
+  },
+  {
+   "match": "San Jose Earthquakes @ FC Cincinnati",
+   "rule": "A2",
+   "move_c": 30.000000000000004,
+   "per_delay": {
+    "1": {
+     "entry": 0.46,
+     "contracts": 105.0,
+     "dollars": 48.300000000000004
+    },
+    "5": {
+     "entry": 0.46,
+     "contracts": 20.0,
+     "dollars": 9.200000000000001
+    },
+    "30": {
+     "entry": 0.59,
+     "contracts": 3878.439999999999,
+     "dollars": 2288.2795999999994
+    }
+   }
+  },
+  {
+   "match": "San Jose Earthquakes @ FC Cincinnati",
+   "rule": "A2",
+   "move_c": 84.00000000000001,
+   "per_delay": {
+    "1": {
+     "entry": 0.25,
+     "contracts": 275.66,
+     "dollars": 68.915
+    },
+    "5": {
+     "entry": 0.25,
+     "contracts": 275.66,
+     "dollars": 68.915
+    },
+    "30": {
+     "entry": 0.3,
+     "contracts": 2473.03,
+     "dollars": 741.909
+    }
+   }
+  },
+  {
+   "match": "Seattle Sounders FC @ Portland Timbers",
+   "rule": "A2",
+   "move_c": 20.999999999999996,
+   "per_delay": {
+    "1": {
+     "entry": 0.44,
+     "contracts": 0.0,
+     "dollars": 0.0
+    },
+    "5": {
+     "entry": 0.48,
+     "contracts": 486.90999999999997,
+     "dollars": 233.71679999999998
+    },
+    "30": {
+     "entry": 0.48,
+     "contracts": 112.0,
+     "dollars": 53.76
+    }
+   }
+  },
+  {
+   "match": "Seattle Sounders FC @ Portland Timbers",
+   "rule": "A2",
+   "move_c": 61.00000000000001,
+   "per_delay": {
+    "1": {
+     "entry": 0.39,
+     "contracts": 2132.86,
+     "dollars": 831.8154000000001
+    },
+    "5": {
+     "entry": 0.36,
+     "contracts": 2257.5500000000006,
+     "dollars": 812.7180000000002
+    },
+    "30": {
+     "entry": 0.33,
+     "contracts": 8780.110000000002,
+     "dollars": 2897.4363000000008
+    }
+   }
+  },
+  {
+   "match": "Houston Dynamo FC @ New England Revolution",
+   "rule": "A2",
+   "move_c": 28.999999999999996,
+   "per_delay": {
+    "1": {
+     "entry": 0.5,
+     "contracts": 0.0,
+     "dollars": 0.0
+    },
+    "5": {
+     "entry": 0.56,
+     "contracts": 939.03,
+     "dollars": 525.8568
+    },
+    "30": {
+     "entry": 0.55,
+     "contracts": 902.54,
+     "dollars": 496.39700000000005
+    }
+   }
+  }
+ ]
+}

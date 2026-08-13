@@ -1,0 +1,9404 @@
+{
+ "generated_at": "2026-08-13T16:25:17.110794Z",
+ "lam_home": 1.482608695652174,
+ "lam_away": 1.0565217391304347,
+ "n_matches": 230,
+ "trades": {
+  "CD-UNDER@45'": [
+   {
+    "match": "Toronto FC @ CF Montr\u00e9al",
+    "date": "2026-07-16",
+    "cost": 0.78,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.78,
+    "pnl_c": 20.799
+   },
+   {
+    "match": "Atlanta United FC @ Nashville SC",
+    "date": "2026-07-17",
+    "cost": 0.76,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.76,
+    "pnl_c": 22.723
+   },
+   {
+    "match": "Toronto FC @ New England Revolution",
+    "date": "2026-07-22",
+    "cost": 0.75,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.75,
+    "pnl_c": 23.688
+   },
+   {
+    "match": "CF Montr\u00e9al @ Nashville SC",
+    "date": "2026-07-22",
+    "cost": 0.82,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.82,
+    "pnl_c": 16.967
+   },
+   {
+    "match": "San Diego FC @ Colorado Rapids",
+    "date": "2026-07-22",
+    "cost": 0.75,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.75,
+    "pnl_c": 23.688
+   },
+   {
+    "match": "FC Dallas @ Portland Timbers",
+    "date": "2026-07-22",
+    "cost": 0.63,
+    "won": false,
+    "fair": 0.8641,
+    "mkt": 0.63,
+    "pnl_c": -64.632
+   },
+   {
+    "match": "Inter Miami CF @ CF Montr\u00e9al",
+    "date": "2026-07-25",
+    "cost": 0.68,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.68,
+    "pnl_c": 30.477
+   },
+   {
+    "match": "Vancouver Whitecaps @ Minnesota United FC",
+    "date": "2026-07-25",
+    "cost": 0.72,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.72,
+    "pnl_c": 26.589
+   },
+   {
+    "match": "Colorado Rapids @ St. Louis CITY SC",
+    "date": "2026-07-25",
+    "cost": 0.73,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.73,
+    "pnl_c": 25.62
+   },
+   {
+    "match": "Nashville SC @ Orlando City SC",
+    "date": "2026-07-25",
+    "cost": 0.72,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.72,
+    "pnl_c": 26.589
+   },
+   {
+    "match": "FC Dallas @ San Diego FC",
+    "date": "2026-07-25",
+    "cost": 0.66,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.66,
+    "pnl_c": 32.429
+   },
+   {
+    "match": "Houston Dynamo FC @ Sporting Kansas City",
+    "date": "2026-08-01",
+    "cost": 0.81,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.81,
+    "pnl_c": 17.923
+   },
+   {
+    "match": "Real Salt Lake @ St. Louis CITY SC",
+    "date": "2026-08-01",
+    "cost": 0.75,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.75,
+    "pnl_c": 23.688
+   },
+   {
+    "match": "Austin FC @ Colorado Rapids",
+    "date": "2026-08-01",
+    "cost": 0.78,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.78,
+    "pnl_c": 20.799
+   },
+   {
+    "match": "FC Dallas @ LA Galaxy",
+    "date": "2026-08-01",
+    "cost": 0.7,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.7,
+    "pnl_c": 28.53
+   },
+   {
+    "match": "Houston Dynamo FC @ New England Revolution",
+    "date": "2026-08-08",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "Vasco da Gama @ Vit\u00f3ria",
+    "date": "2026-07-16",
+    "cost": 0.82,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.82,
+    "pnl_c": 16.967
+   },
+   {
+    "match": "Bahia @ Atl\u00e9tico-MG",
+    "date": "2026-07-21",
+    "cost": 0.57,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.57,
+    "pnl_c": 41.284
+   },
+   {
+    "match": "Vit\u00f3ria @ Botafogo",
+    "date": "2026-07-23",
+    "cost": 0.8,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.8,
+    "pnl_c": 18.88
+   },
+   {
+    "match": "Internacional @ Athletico-PR",
+    "date": "2026-07-25",
+    "cost": 0.83,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.83,
+    "pnl_c": 16.012
+   },
+   {
+    "match": "S\u00e3o Paulo @ Flamengo",
+    "date": "2026-07-26",
+    "cost": 0.82,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.82,
+    "pnl_c": 16.967
+   },
+   {
+    "match": "Fluminense @ Gr\u00eamio",
+    "date": "2026-07-26",
+    "cost": 0.82,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.82,
+    "pnl_c": 16.967
+   },
+   {
+    "match": "Coritiba @ Red Bull Bragantino",
+    "date": "2026-07-26",
+    "cost": 0.82,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.82,
+    "pnl_c": 16.967
+   },
+   {
+    "match": "Atl\u00e9tico-MG @ Palmeiras",
+    "date": "2026-07-26",
+    "cost": 0.84,
+    "won": false,
+    "fair": 0.8641,
+    "mkt": 0.84,
+    "pnl_c": -84.941
+   },
+   {
+    "match": "Bahia @ Fluminense",
+    "date": "2026-07-29",
+    "cost": 0.8,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.8,
+    "pnl_c": 18.88
+   },
+   {
+    "match": "Palmeiras @ Vit\u00f3ria",
+    "date": "2026-07-29",
+    "cost": 0.45,
+    "won": false,
+    "fair": 0.8641,
+    "mkt": 0.45,
+    "pnl_c": -46.732
+   },
+   {
+    "match": "Athletico-PR @ Corinthians",
+    "date": "2026-07-30",
+    "cost": 0.9,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.9,
+    "pnl_c": 9.37
+   },
+   {
+    "match": "Cruzeiro @ Coritiba",
+    "date": "2026-07-30",
+    "cost": 0.83,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.83,
+    "pnl_c": 16.012
+   },
+   {
+    "match": "S\u00e3o Paulo @ Gr\u00eamio",
+    "date": "2026-08-08",
+    "cost": 0.88,
+    "won": false,
+    "fair": 0.8641,
+    "mkt": 0.88,
+    "pnl_c": -88.739
+   },
+   {
+    "match": "Vasco da Gama @ Bahia",
+    "date": "2026-08-09",
+    "cost": 0.82,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.82,
+    "pnl_c": 16.967
+   },
+   {
+    "match": "Internacional @ Palmeiras",
+    "date": "2026-08-09",
+    "cost": 0.8,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.8,
+    "pnl_c": 18.88
+   },
+   {
+    "match": "Corinthians @ Red Bull Bragantino",
+    "date": "2026-08-09",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "Central C\u00f3rdoba (Santiago del Estero) @ Gimnasia (Mendoza)",
+    "date": "2026-07-24",
+    "cost": 0.86,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.86,
+    "pnl_c": 13.157
+   },
+   {
+    "match": "Instituto (C\u00f3rdoba) @ V\u00e9lez Sarsfield",
+    "date": "2026-07-24",
+    "cost": 0.87,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.87,
+    "pnl_c": 12.208
+   },
+   {
+    "match": "Banfield @ Hurac\u00e1n",
+    "date": "2026-07-24",
+    "cost": 0.86,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.86,
+    "pnl_c": 13.157
+   },
+   {
+    "match": "Tigre @ Estudiantes de R\u00edo Cuarto",
+    "date": "2026-07-25",
+    "cost": 0.94,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.94,
+    "pnl_c": 5.605
+   },
+   {
+    "match": "Talleres (C\u00f3rdoba) @ Newell's Old Boys",
+    "date": "2026-07-25",
+    "cost": 0.89,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.89,
+    "pnl_c": 10.315
+   },
+   {
+    "match": "San Lorenzo @ Lan\u00fas",
+    "date": "2026-07-25",
+    "cost": 0.89,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.89,
+    "pnl_c": 10.315
+   },
+   {
+    "match": "Independiente Rivadavia @ Atl\u00e9tico Tucum\u00e1n",
+    "date": "2026-07-26",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "Independiente @ Estudiantes de La Plata",
+    "date": "2026-07-26",
+    "cost": 0.86,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.86,
+    "pnl_c": 13.157
+   },
+   {
+    "match": "Sarmiento (Jun\u00edn) @ Banfield",
+    "date": "2026-07-28",
+    "cost": 0.88,
+    "won": false,
+    "fair": 0.8641,
+    "mkt": 0.88,
+    "pnl_c": -88.739
+   },
+   {
+    "match": "Gimnasia (Mendoza) @ San Lorenzo",
+    "date": "2026-07-28",
+    "cost": 0.9,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.9,
+    "pnl_c": 9.37
+   },
+   {
+    "match": "Racing Club @ Rosario Central",
+    "date": "2026-07-28",
+    "cost": 0.85,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.85,
+    "pnl_c": 14.107
+   },
+   {
+    "match": "River Plate @ Gimnasia La Plata",
+    "date": "2026-07-29",
+    "cost": 0.87,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.87,
+    "pnl_c": 12.208
+   },
+   {
+    "match": "Atl\u00e9tico Tucum\u00e1n @ Central C\u00f3rdoba (Santiago del Estero)",
+    "date": "2026-07-30",
+    "cost": 0.9,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.9,
+    "pnl_c": 9.37
+   },
+   {
+    "match": "Banfield @ Estudiantes de R\u00edo Cuarto",
+    "date": "2026-08-01",
+    "cost": 0.89,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.89,
+    "pnl_c": 10.315
+   },
+   {
+    "match": "Uni\u00f3n (Santa Fe) @ Gimnasia (Mendoza)",
+    "date": "2026-08-01",
+    "cost": 0.73,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.73,
+    "pnl_c": 25.62
+   },
+   {
+    "match": "Argentinos Juniors @ Belgrano (C\u00f3rdoba)",
+    "date": "2026-08-01",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "Barracas Central @ Deportivo Riestra",
+    "date": "2026-08-02",
+    "cost": 0.94,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.94,
+    "pnl_c": 5.605
+   },
+   {
+    "match": "Instituto (C\u00f3rdoba) @ Lan\u00fas",
+    "date": "2026-08-02",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "Independiente @ V\u00e9lez Sarsfield",
+    "date": "2026-08-03",
+    "cost": 0.85,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.85,
+    "pnl_c": 14.107
+   },
+   {
+    "match": "Atl\u00e9tico Tucum\u00e1n @ Hurac\u00e1n",
+    "date": "2026-08-03",
+    "cost": 0.89,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.89,
+    "pnl_c": 10.315
+   },
+   {
+    "match": "Estudiantes de La Plata @ Boca Juniors",
+    "date": "2026-08-05",
+    "cost": 0.84,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.84,
+    "pnl_c": 15.059
+   },
+   {
+    "match": "Belgrano (C\u00f3rdoba) @ Tigre",
+    "date": "2026-08-05",
+    "cost": 0.91,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.91,
+    "pnl_c": 8.427
+   },
+   {
+    "match": "Aldosivi @ Rosario Central",
+    "date": "2026-08-07",
+    "cost": 0.84,
+    "won": false,
+    "fair": 0.8641,
+    "mkt": 0.84,
+    "pnl_c": -84.941
+   },
+   {
+    "match": "Sarmiento (Jun\u00edn) @ Atl\u00e9tico Tucum\u00e1n",
+    "date": "2026-08-08",
+    "cost": 0.88,
+    "won": false,
+    "fair": 0.8641,
+    "mkt": 0.88,
+    "pnl_c": -88.739
+   },
+   {
+    "match": "Hurac\u00e1n @ San Lorenzo",
+    "date": "2026-08-09",
+    "cost": 0.92,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.92,
+    "pnl_c": 7.485
+   },
+   {
+    "match": "Barracas Central @ Gimnasia La Plata",
+    "date": "2026-08-09",
+    "cost": 0.9,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.9,
+    "pnl_c": 9.37
+   },
+   {
+    "match": "Lan\u00fas @ Talleres (C\u00f3rdoba)",
+    "date": "2026-08-11",
+    "cost": 0.9,
+    "won": false,
+    "fair": 0.8641,
+    "mkt": 0.9,
+    "pnl_c": -90.63
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shanghai Shenhua",
+    "date": "2026-07-18",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "Qingdao West Coast @ Liaoning Tieren",
+    "date": "2026-07-25",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Beijing Guoan @ Chengdu Rongcheng",
+    "date": "2026-07-26",
+    "cost": 0.74,
+    "won": false,
+    "fair": 0.8641,
+    "mkt": 0.74,
+    "pnl_c": -75.347
+   },
+   {
+    "match": "Wuhan Three Towns @ Chengdu Rongcheng",
+    "date": "2026-08-01",
+    "cost": 0.66,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.66,
+    "pnl_c": 32.429
+   },
+   {
+    "match": "Chongqing Tonglianglong @ Shenzhen Xinpengcheng",
+    "date": "2026-08-02",
+    "cost": 0.85,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.85,
+    "pnl_c": 14.107
+   },
+   {
+    "match": "Shanghai Shenhua @ Qingdao Hainiu",
+    "date": "2026-08-08",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "Chengdu Rongcheng @ Yunnan Yukun",
+    "date": "2026-08-08",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "Qingdao West Coast @ Henan",
+    "date": "2026-08-09",
+    "cost": 0.78,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.78,
+    "pnl_c": 20.799
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shandong Taishan",
+    "date": "2026-08-09",
+    "cost": 0.8,
+    "won": false,
+    "fair": 0.8641,
+    "mkt": 0.8,
+    "pnl_c": -81.12
+   },
+   {
+    "match": "Quer\u00e9taro @ FC Dallas",
+    "date": "2026-08-05",
+    "cost": 0.8,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.8,
+    "pnl_c": 18.88
+   },
+   {
+    "match": "Le\u00f3n @ Nashville SC",
+    "date": "2026-08-05",
+    "cost": 0.81,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.81,
+    "pnl_c": 17.923
+   },
+   {
+    "match": "Atlas @ Charlotte FC",
+    "date": "2026-08-07",
+    "cost": 0.82,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.82,
+    "pnl_c": 16.967
+   },
+   {
+    "match": "Pumas UNAM @ FC Cincinnati",
+    "date": "2026-08-07",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   },
+   {
+    "match": "Minnesota United FC @ Tigres UANL",
+    "date": "2026-08-07",
+    "cost": 0.74,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.74,
+    "pnl_c": 24.653
+   },
+   {
+    "match": "FC Dallas @ Guadalajara",
+    "date": "2026-08-08",
+    "cost": 0.76,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.76,
+    "pnl_c": 22.723
+   },
+   {
+    "match": "LAFC @ Toluca",
+    "date": "2026-08-08",
+    "cost": 0.78,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.78,
+    "pnl_c": 20.799
+   },
+   {
+    "match": "Pachuca @ Charlotte FC",
+    "date": "2026-08-11",
+    "cost": 0.72,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.72,
+    "pnl_c": 26.589
+   }
+  ],
+  "POIS-UNDER@45'": [
+   {
+    "match": "Toronto FC @ CF Montr\u00e9al",
+    "date": "2026-07-16",
+    "cost": 0.78,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.78,
+    "pnl_c": 20.799
+   },
+   {
+    "match": "Portland Timbers @ Seattle Sounders FC",
+    "date": "2026-07-16",
+    "cost": 0.41,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.41,
+    "pnl_c": -42.693
+   },
+   {
+    "match": "Atlanta United FC @ Nashville SC",
+    "date": "2026-07-17",
+    "cost": 0.76,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.76,
+    "pnl_c": 22.723
+   },
+   {
+    "match": "LAFC @ LA Galaxy",
+    "date": "2026-07-17",
+    "cost": 0.25,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.25,
+    "pnl_c": -26.312
+   },
+   {
+    "match": "New York City FC @ Columbus Crew",
+    "date": "2026-07-22",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Chicago Fire FC @ Inter Miami CF",
+    "date": "2026-07-22",
+    "cost": 0.11,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.11,
+    "pnl_c": -11.685
+   },
+   {
+    "match": "Toronto FC @ New England Revolution",
+    "date": "2026-07-22",
+    "cost": 0.75,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.75,
+    "pnl_c": 23.688
+   },
+   {
+    "match": "Red Bull New York @ Philadelphia Union",
+    "date": "2026-07-22",
+    "cost": 0.14,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.14,
+    "pnl_c": -14.843
+   },
+   {
+    "match": "D.C. United @ Houston Dynamo FC",
+    "date": "2026-07-22",
+    "cost": 0.46,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.46,
+    "pnl_c": 52.261
+   },
+   {
+    "match": "Minnesota United FC @ Sporting Kansas City",
+    "date": "2026-07-22",
+    "cost": 0.44,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.44,
+    "pnl_c": -45.725
+   },
+   {
+    "match": "Seattle Sounders FC @ Austin FC",
+    "date": "2026-07-22",
+    "cost": 0.18,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.18,
+    "pnl_c": -19.033
+   },
+   {
+    "match": "San Diego FC @ Colorado Rapids",
+    "date": "2026-07-22",
+    "cost": 0.75,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.75,
+    "pnl_c": 23.688
+   },
+   {
+    "match": "St. Louis CITY SC @ LA Galaxy",
+    "date": "2026-07-22",
+    "cost": 0.37,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.37,
+    "pnl_c": -38.632
+   },
+   {
+    "match": "Real Salt Lake @ LAFC",
+    "date": "2026-07-22",
+    "cost": 0.15,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.15,
+    "pnl_c": -15.893
+   },
+   {
+    "match": "FC Dallas @ Portland Timbers",
+    "date": "2026-07-22",
+    "cost": 0.63,
+    "won": false,
+    "fair": 0.8641,
+    "mkt": 0.63,
+    "pnl_c": -64.632
+   },
+   {
+    "match": "Orlando City SC @ San Jose Earthquakes",
+    "date": "2026-07-22",
+    "cost": 0.09,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.09,
+    "pnl_c": -9.573
+   },
+   {
+    "match": "Charlotte FC @ Red Bull New York",
+    "date": "2026-07-25",
+    "cost": 0.14,
+    "won": true,
+    "fair": 0.281,
+    "mkt": 0.14,
+    "pnl_c": 85.157
+   },
+   {
+    "match": "FC Cincinnati @ Columbus Crew",
+    "date": "2026-07-25",
+    "cost": 0.15,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.15,
+    "pnl_c": -15.893
+   },
+   {
+    "match": "Inter Miami CF @ CF Montr\u00e9al",
+    "date": "2026-07-25",
+    "cost": 0.68,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.68,
+    "pnl_c": 30.477
+   },
+   {
+    "match": "Toronto FC @ D.C. United",
+    "date": "2026-07-25",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Atlanta United FC @ New England Revolution",
+    "date": "2026-07-25",
+    "cost": 0.18,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.18,
+    "pnl_c": -19.033
+   },
+   {
+    "match": "Seattle Sounders FC @ Philadelphia Union",
+    "date": "2026-07-25",
+    "cost": 0.48,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.48,
+    "pnl_c": 50.253
+   },
+   {
+    "match": "Vancouver Whitecaps @ Minnesota United FC",
+    "date": "2026-07-25",
+    "cost": 0.72,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.72,
+    "pnl_c": 26.589
+   },
+   {
+    "match": "Colorado Rapids @ St. Louis CITY SC",
+    "date": "2026-07-25",
+    "cost": 0.73,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.73,
+    "pnl_c": 25.62
+   },
+   {
+    "match": "Nashville SC @ Orlando City SC",
+    "date": "2026-07-25",
+    "cost": 0.72,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.72,
+    "pnl_c": 26.589
+   },
+   {
+    "match": "FC Dallas @ San Diego FC",
+    "date": "2026-07-25",
+    "cost": 0.66,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.66,
+    "pnl_c": 32.429
+   },
+   {
+    "match": "Sporting Kansas City @ LAFC",
+    "date": "2026-07-25",
+    "cost": 0.15,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.15,
+    "pnl_c": -15.893
+   },
+   {
+    "match": "Real Salt Lake @ Portland Timbers",
+    "date": "2026-07-25",
+    "cost": 0.34,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.34,
+    "pnl_c": -35.571
+   },
+   {
+    "match": "LA Galaxy @ San Jose Earthquakes",
+    "date": "2026-07-25",
+    "cost": 0.41,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.41,
+    "pnl_c": 57.307
+   },
+   {
+    "match": "Toronto FC @ New York City FC",
+    "date": "2026-07-31",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "New England Revolution @ CF Montr\u00e9al",
+    "date": "2026-08-01",
+    "cost": 0.14,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.14,
+    "pnl_c": -14.843
+   },
+   {
+    "match": "Nashville SC @ D.C. United",
+    "date": "2026-08-01",
+    "cost": 0.21,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.21,
+    "pnl_c": -22.161
+   },
+   {
+    "match": "Atlanta United FC @ Philadelphia Union",
+    "date": "2026-08-01",
+    "cost": 0.35,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.35,
+    "pnl_c": -36.593
+   },
+   {
+    "match": "Orlando City SC @ Red Bull New York",
+    "date": "2026-08-01",
+    "cost": 0.08,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.08,
+    "pnl_c": -8.515
+   },
+   {
+    "match": "LAFC @ Vancouver Whitecaps",
+    "date": "2026-08-01",
+    "cost": 0.42,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.42,
+    "pnl_c": 56.295
+   },
+   {
+    "match": "Columbus Crew @ Inter Miami CF",
+    "date": "2026-08-01",
+    "cost": 0.13,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.13,
+    "pnl_c": -13.792
+   },
+   {
+    "match": "Charlotte FC @ Chicago Fire FC",
+    "date": "2026-08-01",
+    "cost": 0.15,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.15,
+    "pnl_c": -15.893
+   },
+   {
+    "match": "San Diego FC @ Minnesota United FC",
+    "date": "2026-08-01",
+    "cost": 0.43,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.43,
+    "pnl_c": 55.284
+   },
+   {
+    "match": "Houston Dynamo FC @ Sporting Kansas City",
+    "date": "2026-08-01",
+    "cost": 0.81,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.81,
+    "pnl_c": 17.923
+   },
+   {
+    "match": "Real Salt Lake @ St. Louis CITY SC",
+    "date": "2026-08-01",
+    "cost": 0.75,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.75,
+    "pnl_c": 23.688
+   },
+   {
+    "match": "Austin FC @ Colorado Rapids",
+    "date": "2026-08-01",
+    "cost": 0.78,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.78,
+    "pnl_c": 20.799
+   },
+   {
+    "match": "San Jose Earthquakes @ FC Cincinnati",
+    "date": "2026-08-01",
+    "cost": 0.1,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.1,
+    "pnl_c": -10.63
+   },
+   {
+    "match": "FC Dallas @ LA Galaxy",
+    "date": "2026-08-01",
+    "cost": 0.7,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.7,
+    "pnl_c": 28.53
+   },
+   {
+    "match": "Seattle Sounders FC @ Portland Timbers",
+    "date": "2026-08-01",
+    "cost": 0.14,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.14,
+    "pnl_c": -14.843
+   },
+   {
+    "match": "Houston Dynamo FC @ New England Revolution",
+    "date": "2026-08-08",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "Santos @ Botafogo",
+    "date": "2026-07-16",
+    "cost": 0.54,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.54,
+    "pnl_c": -55.739
+   },
+   {
+    "match": "Chapecoense @ Bahia",
+    "date": "2026-07-17",
+    "cost": 0.19,
+    "won": true,
+    "fair": 0.281,
+    "mkt": 0.19,
+    "pnl_c": 79.923
+   },
+   {
+    "match": "Red Bull Bragantino @ Fluminense",
+    "date": "2026-07-17",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "Gr\u00eamio @ Mirassol",
+    "date": "2026-07-17",
+    "cost": 0.21,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.21,
+    "pnl_c": -22.161
+   },
+   {
+    "match": "Bahia @ Atl\u00e9tico-MG",
+    "date": "2026-07-21",
+    "cost": 0.57,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.57,
+    "pnl_c": 41.284
+   },
+   {
+    "match": "Flamengo @ Chapecoense",
+    "date": "2026-07-22",
+    "cost": 0.19,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.19,
+    "pnl_c": -20.077
+   },
+   {
+    "match": "Cruzeiro @ Internacional",
+    "date": "2026-07-22",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Vit\u00f3ria @ Botafogo",
+    "date": "2026-07-23",
+    "cost": 0.8,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.8,
+    "pnl_c": 18.88
+   },
+   {
+    "match": "Remo @ Corinthians",
+    "date": "2026-07-23",
+    "cost": 0.2,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.2,
+    "pnl_c": -21.12
+   },
+   {
+    "match": "Chapecoense @ Santos",
+    "date": "2026-07-25",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Mirassol @ Vasco da Gama",
+    "date": "2026-07-25",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Corinthians @ Bahia",
+    "date": "2026-07-26",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   },
+   {
+    "match": "Botafogo @ Cruzeiro",
+    "date": "2026-07-26",
+    "cost": 0.45,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.45,
+    "pnl_c": 53.268
+   },
+   {
+    "match": "Vit\u00f3ria @ Remo",
+    "date": "2026-07-26",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Flamengo @ Internacional",
+    "date": "2026-07-29",
+    "cost": 0.48,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.48,
+    "pnl_c": 50.253
+   },
+   {
+    "match": "Remo @ Mirassol",
+    "date": "2026-07-29",
+    "cost": 0.27,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.27,
+    "pnl_c": -28.38
+   },
+   {
+    "match": "Bahia @ Fluminense",
+    "date": "2026-07-29",
+    "cost": 0.8,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.8,
+    "pnl_c": 18.88
+   },
+   {
+    "match": "Palmeiras @ Vit\u00f3ria",
+    "date": "2026-07-29",
+    "cost": 0.45,
+    "won": false,
+    "fair": 0.8641,
+    "mkt": 0.45,
+    "pnl_c": -46.732
+   },
+   {
+    "match": "Chapecoense @ Coritiba",
+    "date": "2026-08-08",
+    "cost": 0.55,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.55,
+    "pnl_c": -56.733
+   },
+   {
+    "match": "Fluminense @ Botafogo",
+    "date": "2026-08-08",
+    "cost": 0.53,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.53,
+    "pnl_c": 45.256
+   },
+   {
+    "match": "Mirassol @ Cruzeiro",
+    "date": "2026-08-09",
+    "cost": 0.2,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.2,
+    "pnl_c": -21.12
+   },
+   {
+    "match": "Internacional @ Palmeiras",
+    "date": "2026-08-09",
+    "cost": 0.8,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.8,
+    "pnl_c": 18.88
+   },
+   {
+    "match": "Athletico-PR @ Santos",
+    "date": "2026-08-09",
+    "cost": 0.2,
+    "won": true,
+    "fair": 0.281,
+    "mkt": 0.2,
+    "pnl_c": 78.88
+   },
+   {
+    "match": "Vit\u00f3ria @ Flamengo",
+    "date": "2026-08-09",
+    "cost": 0.46,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.46,
+    "pnl_c": 52.261
+   },
+   {
+    "match": "Barracas Central @ River Plate",
+    "date": "2026-07-25",
+    "cost": 0.57,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.57,
+    "pnl_c": 41.284
+   },
+   {
+    "match": "Estudiantes de R\u00edo Cuarto @ Argentinos Juniors",
+    "date": "2026-07-28",
+    "cost": 0.57,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.57,
+    "pnl_c": -58.716
+   },
+   {
+    "match": "Newell's Old Boys @ Independiente",
+    "date": "2026-07-30",
+    "cost": 0.58,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.58,
+    "pnl_c": 40.295
+   },
+   {
+    "match": "Uni\u00f3n (Santa Fe) @ Gimnasia (Mendoza)",
+    "date": "2026-08-01",
+    "cost": 0.73,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.73,
+    "pnl_c": 25.62
+   },
+   {
+    "match": "Rosario Central @ River Plate",
+    "date": "2026-08-02",
+    "cost": 0.58,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.58,
+    "pnl_c": 40.295
+   },
+   {
+    "match": "Newell's Old Boys @ Defensa y Justicia",
+    "date": "2026-08-09",
+    "cost": 0.57,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.57,
+    "pnl_c": -58.716
+   },
+   {
+    "match": "Racing Club @ Argentinos Juniors",
+    "date": "2026-08-09",
+    "cost": 0.23,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.23,
+    "pnl_c": -24.24
+   },
+   {
+    "match": "Chengdu Rongcheng @ Qingdao West Coast",
+    "date": "2026-07-17",
+    "cost": 0.41,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.41,
+    "pnl_c": 57.307
+   },
+   {
+    "match": "Liaoning Tieren @ Beijing Guoan",
+    "date": "2026-07-17",
+    "cost": 0.4,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.4,
+    "pnl_c": -41.68
+   },
+   {
+    "match": "Qingdao Hainiu @ Henan",
+    "date": "2026-07-17",
+    "cost": 0.11,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.11,
+    "pnl_c": -11.685
+   },
+   {
+    "match": "Shanghai Port @ Yunnan Yukun",
+    "date": "2026-07-17",
+    "cost": 0.1,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.1,
+    "pnl_c": -10.63
+   },
+   {
+    "match": "Zhejiang Professional FC @ Chongqing Tonglianglong",
+    "date": "2026-07-18",
+    "cost": 0.51,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.51,
+    "pnl_c": 47.251
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shanghai Shenhua",
+    "date": "2026-07-18",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "Shenzhen Xinpengcheng @ Wuhan Three Towns",
+    "date": "2026-07-18",
+    "cost": 0.41,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.41,
+    "pnl_c": 57.307
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Qingdao Hainiu",
+    "date": "2026-07-25",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Qingdao West Coast @ Liaoning Tieren",
+    "date": "2026-07-25",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Shanghai Shenhua @ Shanghai Port",
+    "date": "2026-07-25",
+    "cost": 0.1,
+    "won": true,
+    "fair": 0.281,
+    "mkt": 0.1,
+    "pnl_c": 89.37
+   },
+   {
+    "match": "Chongqing Tonglianglong @ Wuhan Three Towns",
+    "date": "2026-07-25",
+    "cost": 0.51,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.51,
+    "pnl_c": 47.251
+   },
+   {
+    "match": "Beijing Guoan @ Chengdu Rongcheng",
+    "date": "2026-07-26",
+    "cost": 0.74,
+    "won": false,
+    "fair": 0.8641,
+    "mkt": 0.74,
+    "pnl_c": -75.347
+   },
+   {
+    "match": "Henan @ Shandong Taishan",
+    "date": "2026-07-26",
+    "cost": 0.12,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.12,
+    "pnl_c": -12.739
+   },
+   {
+    "match": "Dalian Yingbo @ Zhejiang Professional FC",
+    "date": "2026-07-26",
+    "cost": 0.41,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.41,
+    "pnl_c": -42.693
+   },
+   {
+    "match": "Dalian Yingbo @ Henan",
+    "date": "2026-07-31",
+    "cost": 0.4,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.4,
+    "pnl_c": 58.32
+   },
+   {
+    "match": "Yunnan Yukun @ Tianjin Jinmen Tiger",
+    "date": "2026-08-01",
+    "cost": 0.46,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.46,
+    "pnl_c": -47.739
+   },
+   {
+    "match": "Zhejiang Professional FC @ Beijing Guoan",
+    "date": "2026-08-01",
+    "cost": 0.11,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.11,
+    "pnl_c": -11.685
+   },
+   {
+    "match": "Shandong Taishan @ Shanghai Port",
+    "date": "2026-08-01",
+    "cost": 0.15,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.15,
+    "pnl_c": 84.108
+   },
+   {
+    "match": "Wuhan Three Towns @ Chengdu Rongcheng",
+    "date": "2026-08-01",
+    "cost": 0.66,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.66,
+    "pnl_c": 32.429
+   },
+   {
+    "match": "Qingdao Hainiu @ Qingdao West Coast",
+    "date": "2026-08-02",
+    "cost": 0.51,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.51,
+    "pnl_c": 47.251
+   },
+   {
+    "match": "Shenzhen Xinpengcheng @ Beijing Guoan",
+    "date": "2026-08-07",
+    "cost": 0.14,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.14,
+    "pnl_c": -14.843
+   },
+   {
+    "match": "Shanghai Shenhua @ Qingdao Hainiu",
+    "date": "2026-08-08",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "Liaoning Tieren @ Dalian Yingbo",
+    "date": "2026-08-08",
+    "cost": 0.43,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.43,
+    "pnl_c": 55.284
+   },
+   {
+    "match": "Chengdu Rongcheng @ Yunnan Yukun",
+    "date": "2026-08-08",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "Qingdao West Coast @ Henan",
+    "date": "2026-08-09",
+    "cost": 0.78,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.78,
+    "pnl_c": 20.799
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shandong Taishan",
+    "date": "2026-08-09",
+    "cost": 0.8,
+    "won": false,
+    "fair": 0.8641,
+    "mkt": 0.8,
+    "pnl_c": -81.12
+   },
+   {
+    "match": "Atlas @ Columbus Crew",
+    "date": "2026-08-04",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Pumas UNAM @ Charlotte FC",
+    "date": "2026-08-04",
+    "cost": 0.49,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.49,
+    "pnl_c": -50.749
+   },
+   {
+    "match": "Real Salt Lake @ Tigres UANL",
+    "date": "2026-08-04",
+    "cost": 0.13,
+    "won": true,
+    "fair": 0.281,
+    "mkt": 0.13,
+    "pnl_c": 86.208
+   },
+   {
+    "match": "Atlante @ Vancouver Whitecaps",
+    "date": "2026-08-04",
+    "cost": 0.46,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.46,
+    "pnl_c": 52.261
+   },
+   {
+    "match": "Quer\u00e9taro @ FC Dallas",
+    "date": "2026-08-05",
+    "cost": 0.8,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.8,
+    "pnl_c": 18.88
+   },
+   {
+    "match": "Le\u00f3n @ Nashville SC",
+    "date": "2026-08-05",
+    "cost": 0.81,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.81,
+    "pnl_c": 17.923
+   },
+   {
+    "match": "Orlando City SC @ Monterrey",
+    "date": "2026-08-05",
+    "cost": 0.44,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.44,
+    "pnl_c": -45.725
+   },
+   {
+    "match": "Seattle Sounders FC @ Toluca",
+    "date": "2026-08-05",
+    "cost": 0.32,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.32,
+    "pnl_c": -33.523
+   },
+   {
+    "match": "Guadalajara @ LAFC",
+    "date": "2026-08-05",
+    "cost": 0.18,
+    "won": true,
+    "fair": 0.281,
+    "mkt": 0.18,
+    "pnl_c": 80.967
+   },
+   {
+    "match": "Pachuca @ Columbus Crew",
+    "date": "2026-08-07",
+    "cost": 0.42,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.42,
+    "pnl_c": -43.705
+   },
+   {
+    "match": "Pumas UNAM @ FC Cincinnati",
+    "date": "2026-08-07",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   },
+   {
+    "match": "Minnesota United FC @ Tigres UANL",
+    "date": "2026-08-07",
+    "cost": 0.74,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.74,
+    "pnl_c": 24.653
+   },
+   {
+    "match": "FC Juarez @ Vancouver Whitecaps",
+    "date": "2026-08-07",
+    "cost": 0.12,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.12,
+    "pnl_c": -12.739
+   },
+   {
+    "match": "Le\u00f3n @ Orlando City SC",
+    "date": "2026-08-08",
+    "cost": 0.44,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.44,
+    "pnl_c": -45.725
+   },
+   {
+    "match": "Monterrey @ Inter Miami CF",
+    "date": "2026-08-08",
+    "cost": 0.41,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.41,
+    "pnl_c": -42.693
+   },
+   {
+    "match": "FC Dallas @ Guadalajara",
+    "date": "2026-08-08",
+    "cost": 0.76,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.76,
+    "pnl_c": 22.723
+   },
+   {
+    "match": "Atlante @ Real Salt Lake",
+    "date": "2026-08-08",
+    "cost": 0.46,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.46,
+    "pnl_c": -47.739
+   },
+   {
+    "match": "LAFC @ Toluca",
+    "date": "2026-08-08",
+    "cost": 0.78,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.78,
+    "pnl_c": 20.799
+   },
+   {
+    "match": "Quer\u00e9taro @ Seattle Sounders FC",
+    "date": "2026-08-09",
+    "cost": 0.16,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.16,
+    "pnl_c": -16.941
+   },
+   {
+    "match": "New York City FC @ Cruz Azul",
+    "date": "2026-08-09",
+    "cost": 0.27,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.27,
+    "pnl_c": -28.38
+   },
+   {
+    "match": "Necaxa @ Philadelphia Union",
+    "date": "2026-08-09",
+    "cost": 0.12,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.12,
+    "pnl_c": -12.739
+   },
+   {
+    "match": "Santos @ Chicago Fire FC",
+    "date": "2026-08-09",
+    "cost": 0.42,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.42,
+    "pnl_c": -43.705
+   },
+   {
+    "match": "Tijuana @ San Diego FC",
+    "date": "2026-08-09",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Portland Timbers @ Am\u00e9rica",
+    "date": "2026-08-09",
+    "cost": 0.13,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.13,
+    "pnl_c": -13.792
+   },
+   {
+    "match": "Atlas @ FC Cincinnati",
+    "date": "2026-08-11",
+    "cost": 0.48,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.48,
+    "pnl_c": -49.747
+   },
+   {
+    "match": "Atlante @ Minnesota United FC",
+    "date": "2026-08-11",
+    "cost": 0.47,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.47,
+    "pnl_c": -48.744
+   },
+   {
+    "match": "Pachuca @ Charlotte FC",
+    "date": "2026-08-11",
+    "cost": 0.72,
+    "won": true,
+    "fair": 0.8641,
+    "mkt": 0.72,
+    "pnl_c": 26.589
+   },
+   {
+    "match": "FC Juarez @ Real Salt Lake",
+    "date": "2026-08-11",
+    "cost": 0.46,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.46,
+    "pnl_c": -47.739
+   },
+   {
+    "match": "Vancouver Whitecaps @ Tigres UANL",
+    "date": "2026-08-11",
+    "cost": 0.48,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.48,
+    "pnl_c": 50.253
+   },
+   {
+    "match": "Le\u00f3n @ Inter Miami CF",
+    "date": "2026-08-12",
+    "cost": 0.52,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.52,
+    "pnl_c": -53.747
+   },
+   {
+    "match": "Atl\u00e9tico de San Luis @ Orlando City SC",
+    "date": "2026-08-12",
+    "cost": 0.38,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.38,
+    "pnl_c": -39.649
+   },
+   {
+    "match": "Nashville SC @ Monterrey",
+    "date": "2026-08-12",
+    "cost": 0.48,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.48,
+    "pnl_c": -49.747
+   },
+   {
+    "match": "FC Dallas @ Toluca",
+    "date": "2026-08-12",
+    "cost": 0.13,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.13,
+    "pnl_c": -13.792
+   },
+   {
+    "match": "Puebla @ San Diego FC",
+    "date": "2026-08-12",
+    "cost": 0.2,
+    "won": false,
+    "fair": 0.281,
+    "mkt": 0.2,
+    "pnl_c": -21.12
+   },
+   {
+    "match": "Quer\u00e9taro @ LAFC",
+    "date": "2026-08-12",
+    "cost": 0.39,
+    "won": true,
+    "fair": 0.6376,
+    "mkt": 0.39,
+    "pnl_c": 59.335
+   },
+   {
+    "match": "Guadalajara @ Seattle Sounders FC",
+    "date": "2026-08-12",
+    "cost": 0.44,
+    "won": false,
+    "fair": 0.6376,
+    "mkt": 0.44,
+    "pnl_c": -45.725
+   }
+  ],
+  "CD-UNDER@55'": [
+   {
+    "match": "Toronto FC @ CF Montr\u00e9al",
+    "date": "2026-07-16",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "Atlanta United FC @ Nashville SC",
+    "date": "2026-07-17",
+    "cost": 0.87,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.87,
+    "pnl_c": 12.208
+   },
+   {
+    "match": "Toronto FC @ New England Revolution",
+    "date": "2026-07-22",
+    "cost": 0.85,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.85,
+    "pnl_c": 14.107
+   },
+   {
+    "match": "CF Montr\u00e9al @ Nashville SC",
+    "date": "2026-07-22",
+    "cost": 0.91,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.91,
+    "pnl_c": 8.427
+   },
+   {
+    "match": "San Diego FC @ Colorado Rapids",
+    "date": "2026-07-22",
+    "cost": 0.86,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.86,
+    "pnl_c": 13.157
+   },
+   {
+    "match": "Inter Miami CF @ CF Montr\u00e9al",
+    "date": "2026-07-25",
+    "cost": 0.8,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.8,
+    "pnl_c": 18.88
+   },
+   {
+    "match": "Vancouver Whitecaps @ Minnesota United FC",
+    "date": "2026-07-25",
+    "cost": 0.85,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.85,
+    "pnl_c": 14.107
+   },
+   {
+    "match": "Colorado Rapids @ St. Louis CITY SC",
+    "date": "2026-07-25",
+    "cost": 0.84,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.84,
+    "pnl_c": 15.059
+   },
+   {
+    "match": "Nashville SC @ Orlando City SC",
+    "date": "2026-07-25",
+    "cost": 0.89,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.89,
+    "pnl_c": 10.315
+   },
+   {
+    "match": "Real Salt Lake @ St. Louis CITY SC",
+    "date": "2026-08-01",
+    "cost": 0.87,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.87,
+    "pnl_c": 12.208
+   },
+   {
+    "match": "Austin FC @ Colorado Rapids",
+    "date": "2026-08-01",
+    "cost": 0.85,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.85,
+    "pnl_c": 14.107
+   },
+   {
+    "match": "FC Dallas @ LA Galaxy",
+    "date": "2026-08-01",
+    "cost": 0.83,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.83,
+    "pnl_c": 16.012
+   },
+   {
+    "match": "Vasco da Gama @ Vit\u00f3ria",
+    "date": "2026-07-16",
+    "cost": 0.91,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.91,
+    "pnl_c": 8.427
+   },
+   {
+    "match": "Vit\u00f3ria @ Botafogo",
+    "date": "2026-07-23",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "S\u00e3o Paulo @ Flamengo",
+    "date": "2026-07-26",
+    "cost": 0.9,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.9,
+    "pnl_c": 9.37
+   },
+   {
+    "match": "Fluminense @ Gr\u00eamio",
+    "date": "2026-07-26",
+    "cost": 0.89,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.89,
+    "pnl_c": 10.315
+   },
+   {
+    "match": "Coritiba @ Red Bull Bragantino",
+    "date": "2026-07-26",
+    "cost": 0.89,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.89,
+    "pnl_c": 10.315
+   },
+   {
+    "match": "Bahia @ Fluminense",
+    "date": "2026-07-29",
+    "cost": 0.9,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.9,
+    "pnl_c": 9.37
+   },
+   {
+    "match": "Athletico-PR @ Corinthians",
+    "date": "2026-07-30",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   },
+   {
+    "match": "Cruzeiro @ Coritiba",
+    "date": "2026-07-30",
+    "cost": 0.91,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.91,
+    "pnl_c": 8.427
+   },
+   {
+    "match": "Vasco da Gama @ Bahia",
+    "date": "2026-08-09",
+    "cost": 0.9,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.9,
+    "pnl_c": 9.37
+   },
+   {
+    "match": "Internacional @ Palmeiras",
+    "date": "2026-08-09",
+    "cost": 0.89,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.89,
+    "pnl_c": 10.315
+   },
+   {
+    "match": "Corinthians @ Red Bull Bragantino",
+    "date": "2026-08-09",
+    "cost": 0.93,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.93,
+    "pnl_c": 6.544
+   },
+   {
+    "match": "Central C\u00f3rdoba (Santiago del Estero) @ Gimnasia (Mendoza)",
+    "date": "2026-07-24",
+    "cost": 0.92,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.92,
+    "pnl_c": 7.485
+   },
+   {
+    "match": "Banfield @ Hurac\u00e1n",
+    "date": "2026-07-24",
+    "cost": 0.94,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.94,
+    "pnl_c": 5.605
+   },
+   {
+    "match": "Tigre @ Estudiantes de R\u00edo Cuarto",
+    "date": "2026-07-25",
+    "cost": 0.97,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.97,
+    "pnl_c": 2.796
+   },
+   {
+    "match": "San Lorenzo @ Lan\u00fas",
+    "date": "2026-07-25",
+    "cost": 0.94,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.94,
+    "pnl_c": 5.605
+   },
+   {
+    "match": "Independiente Rivadavia @ Atl\u00e9tico Tucum\u00e1n",
+    "date": "2026-07-26",
+    "cost": 0.94,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.94,
+    "pnl_c": 5.605
+   },
+   {
+    "match": "Independiente @ Estudiantes de La Plata",
+    "date": "2026-07-26",
+    "cost": 0.93,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.93,
+    "pnl_c": 6.544
+   },
+   {
+    "match": "Gimnasia (Mendoza) @ San Lorenzo",
+    "date": "2026-07-28",
+    "cost": 0.93,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.93,
+    "pnl_c": 6.544
+   },
+   {
+    "match": "Racing Club @ Rosario Central",
+    "date": "2026-07-28",
+    "cost": 0.89,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.89,
+    "pnl_c": 10.315
+   },
+   {
+    "match": "River Plate @ Gimnasia La Plata",
+    "date": "2026-07-29",
+    "cost": 0.93,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.93,
+    "pnl_c": 6.544
+   },
+   {
+    "match": "Atl\u00e9tico Tucum\u00e1n @ Central C\u00f3rdoba (Santiago del Estero)",
+    "date": "2026-07-30",
+    "cost": 0.94,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.94,
+    "pnl_c": 5.605
+   },
+   {
+    "match": "Banfield @ Estudiantes de R\u00edo Cuarto",
+    "date": "2026-08-01",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   },
+   {
+    "match": "Barracas Central @ Deportivo Riestra",
+    "date": "2026-08-02",
+    "cost": 0.97,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.97,
+    "pnl_c": 2.796
+   },
+   {
+    "match": "Instituto (C\u00f3rdoba) @ Lan\u00fas",
+    "date": "2026-08-02",
+    "cost": 0.93,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.93,
+    "pnl_c": 6.544
+   },
+   {
+    "match": "Independiente @ V\u00e9lez Sarsfield",
+    "date": "2026-08-03",
+    "cost": 0.92,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.92,
+    "pnl_c": 7.485
+   },
+   {
+    "match": "Atl\u00e9tico Tucum\u00e1n @ Hurac\u00e1n",
+    "date": "2026-08-03",
+    "cost": 0.94,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.94,
+    "pnl_c": 5.605
+   },
+   {
+    "match": "Belgrano (C\u00f3rdoba) @ Tigre",
+    "date": "2026-08-05",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   },
+   {
+    "match": "Sarmiento (Jun\u00edn) @ Atl\u00e9tico Tucum\u00e1n",
+    "date": "2026-08-08",
+    "cost": 0.94,
+    "won": false,
+    "fair": 0.922,
+    "mkt": 0.94,
+    "pnl_c": -94.395
+   },
+   {
+    "match": "Lan\u00fas @ Talleres (C\u00f3rdoba)",
+    "date": "2026-08-11",
+    "cost": 0.94,
+    "won": false,
+    "fair": 0.922,
+    "mkt": 0.94,
+    "pnl_c": -94.395
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shanghai Shenhua",
+    "date": "2026-07-18",
+    "cost": 0.77,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.77,
+    "pnl_c": 21.76
+   },
+   {
+    "match": "Qingdao West Coast @ Liaoning Tieren",
+    "date": "2026-07-25",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   },
+   {
+    "match": "Chongqing Tonglianglong @ Shenzhen Xinpengcheng",
+    "date": "2026-08-02",
+    "cost": 0.93,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.93,
+    "pnl_c": 6.544
+   },
+   {
+    "match": "Qingdao West Coast @ Henan",
+    "date": "2026-08-09",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shandong Taishan",
+    "date": "2026-08-09",
+    "cost": 0.88,
+    "won": false,
+    "fair": 0.922,
+    "mkt": 0.88,
+    "pnl_c": -88.739
+   },
+   {
+    "match": "Le\u00f3n @ Nashville SC",
+    "date": "2026-08-05",
+    "cost": 0.94,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.94,
+    "pnl_c": 5.605
+   },
+   {
+    "match": "Atlas @ Charlotte FC",
+    "date": "2026-08-07",
+    "cost": 0.92,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.92,
+    "pnl_c": 7.485
+   },
+   {
+    "match": "Minnesota United FC @ Tigres UANL",
+    "date": "2026-08-07",
+    "cost": 0.89,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.89,
+    "pnl_c": 10.315
+   },
+   {
+    "match": "FC Dallas @ Guadalajara",
+    "date": "2026-08-08",
+    "cost": 0.85,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.85,
+    "pnl_c": 14.107
+   },
+   {
+    "match": "LAFC @ Toluca",
+    "date": "2026-08-08",
+    "cost": 0.9,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.9,
+    "pnl_c": 9.37
+   },
+   {
+    "match": "Pachuca @ Charlotte FC",
+    "date": "2026-08-11",
+    "cost": 0.89,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.89,
+    "pnl_c": 10.315
+   }
+  ],
+  "CD-UNDER@65'": [
+   {
+    "match": "Toronto FC @ CF Montr\u00e9al",
+    "date": "2026-07-16",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   },
+   {
+    "match": "Atlanta United FC @ Nashville SC",
+    "date": "2026-07-17",
+    "cost": 0.94,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.94,
+    "pnl_c": 5.605
+   },
+   {
+    "match": "Toronto FC @ New England Revolution",
+    "date": "2026-07-22",
+    "cost": 0.93,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.93,
+    "pnl_c": 6.544
+   },
+   {
+    "match": "CF Montr\u00e9al @ Nashville SC",
+    "date": "2026-07-22",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   },
+   {
+    "match": "San Diego FC @ Colorado Rapids",
+    "date": "2026-07-22",
+    "cost": 0.94,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.94,
+    "pnl_c": 5.605
+   },
+   {
+    "match": "Inter Miami CF @ CF Montr\u00e9al",
+    "date": "2026-07-25",
+    "cost": 0.91,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.91,
+    "pnl_c": 8.427
+   },
+   {
+    "match": "Vancouver Whitecaps @ Minnesota United FC",
+    "date": "2026-07-25",
+    "cost": 0.94,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.94,
+    "pnl_c": 5.605
+   },
+   {
+    "match": "Colorado Rapids @ St. Louis CITY SC",
+    "date": "2026-07-25",
+    "cost": 0.93,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.93,
+    "pnl_c": 6.544
+   },
+   {
+    "match": "Nashville SC @ Orlando City SC",
+    "date": "2026-07-25",
+    "cost": 0.97,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.97,
+    "pnl_c": 2.796
+   },
+   {
+    "match": "Austin FC @ Colorado Rapids",
+    "date": "2026-08-01",
+    "cost": 0.92,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.92,
+    "pnl_c": 7.485
+   },
+   {
+    "match": "FC Dallas @ LA Galaxy",
+    "date": "2026-08-01",
+    "cost": 0.92,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.92,
+    "pnl_c": 7.485
+   },
+   {
+    "match": "Vasco da Gama @ Vit\u00f3ria",
+    "date": "2026-07-16",
+    "cost": 0.96,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.96,
+    "pnl_c": 3.731
+   },
+   {
+    "match": "Vit\u00f3ria @ Botafogo",
+    "date": "2026-07-23",
+    "cost": 0.94,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.94,
+    "pnl_c": 5.605
+   },
+   {
+    "match": "Coritiba @ Red Bull Bragantino",
+    "date": "2026-07-26",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   },
+   {
+    "match": "Bahia @ Fluminense",
+    "date": "2026-07-29",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   },
+   {
+    "match": "Cruzeiro @ Coritiba",
+    "date": "2026-07-30",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   },
+   {
+    "match": "Vasco da Gama @ Bahia",
+    "date": "2026-08-09",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   },
+   {
+    "match": "Internacional @ Palmeiras",
+    "date": "2026-08-09",
+    "cost": 0.94,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.94,
+    "pnl_c": 5.605
+   },
+   {
+    "match": "Central C\u00f3rdoba (Santiago del Estero) @ Gimnasia (Mendoza)",
+    "date": "2026-07-24",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   },
+   {
+    "match": "Independiente @ Estudiantes de La Plata",
+    "date": "2026-07-26",
+    "cost": 0.97,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.97,
+    "pnl_c": 2.796
+   },
+   {
+    "match": "Gimnasia (Mendoza) @ San Lorenzo",
+    "date": "2026-07-28",
+    "cost": 0.97,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.97,
+    "pnl_c": 2.796
+   },
+   {
+    "match": "Racing Club @ Rosario Central",
+    "date": "2026-07-28",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   },
+   {
+    "match": "River Plate @ Gimnasia La Plata",
+    "date": "2026-07-29",
+    "cost": 0.97,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.97,
+    "pnl_c": 2.796
+   },
+   {
+    "match": "Instituto (C\u00f3rdoba) @ Lan\u00fas",
+    "date": "2026-08-02",
+    "cost": 0.97,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.97,
+    "pnl_c": 2.796
+   },
+   {
+    "match": "Independiente @ V\u00e9lez Sarsfield",
+    "date": "2026-08-03",
+    "cost": 0.97,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.97,
+    "pnl_c": 2.796
+   },
+   {
+    "match": "Atl\u00e9tico Tucum\u00e1n @ Hurac\u00e1n",
+    "date": "2026-08-03",
+    "cost": 0.94,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.94,
+    "pnl_c": 5.605
+   },
+   {
+    "match": "Sarmiento (Jun\u00edn) @ Atl\u00e9tico Tucum\u00e1n",
+    "date": "2026-08-08",
+    "cost": 0.97,
+    "won": false,
+    "fair": 0.9652,
+    "mkt": 0.97,
+    "pnl_c": -97.204
+   },
+   {
+    "match": "Lan\u00fas @ Talleres (C\u00f3rdoba)",
+    "date": "2026-08-11",
+    "cost": 0.97,
+    "won": false,
+    "fair": 0.9652,
+    "mkt": 0.97,
+    "pnl_c": -97.204
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shanghai Shenhua",
+    "date": "2026-07-18",
+    "cost": 0.9,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.9,
+    "pnl_c": 9.37
+   },
+   {
+    "match": "Qingdao West Coast @ Liaoning Tieren",
+    "date": "2026-07-25",
+    "cost": 0.53,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.53,
+    "pnl_c": 45.256
+   },
+   {
+    "match": "Qingdao West Coast @ Henan",
+    "date": "2026-08-09",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shandong Taishan",
+    "date": "2026-08-09",
+    "cost": 0.94,
+    "won": false,
+    "fair": 0.9652,
+    "mkt": 0.94,
+    "pnl_c": -94.395
+   },
+   {
+    "match": "Atlas @ Charlotte FC",
+    "date": "2026-08-07",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   },
+   {
+    "match": "Minnesota United FC @ Tigres UANL",
+    "date": "2026-08-07",
+    "cost": 0.97,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.97,
+    "pnl_c": 2.796
+   },
+   {
+    "match": "FC Dallas @ Guadalajara",
+    "date": "2026-08-08",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "LAFC @ Toluca",
+    "date": "2026-08-08",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   },
+   {
+    "match": "Pachuca @ Charlotte FC",
+    "date": "2026-08-11",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   }
+  ],
+  "CD-TIE@65'": [
+   {
+    "match": "Toronto FC @ CF Montr\u00e9al",
+    "date": "2026-07-16",
+    "cost": 0.49,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.49,
+    "pnl_c": 49.251
+   },
+   {
+    "match": "Atlanta United FC @ Nashville SC",
+    "date": "2026-07-17",
+    "cost": 0.46,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.46,
+    "pnl_c": -47.739
+   },
+   {
+    "match": "Toronto FC @ New England Revolution",
+    "date": "2026-07-22",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "CF Montr\u00e9al @ Nashville SC",
+    "date": "2026-07-22",
+    "cost": 0.49,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.49,
+    "pnl_c": -50.749
+   },
+   {
+    "match": "Seattle Sounders FC @ Austin FC",
+    "date": "2026-07-22",
+    "cost": 0.51,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.51,
+    "pnl_c": -52.749
+   },
+   {
+    "match": "San Diego FC @ Colorado Rapids",
+    "date": "2026-07-22",
+    "cost": 0.48,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": -49.747
+   },
+   {
+    "match": "Inter Miami CF @ CF Montr\u00e9al",
+    "date": "2026-07-25",
+    "cost": 0.43,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.43,
+    "pnl_c": -44.716
+   },
+   {
+    "match": "Vancouver Whitecaps @ Minnesota United FC",
+    "date": "2026-07-25",
+    "cost": 0.48,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": 50.253
+   },
+   {
+    "match": "Colorado Rapids @ St. Louis CITY SC",
+    "date": "2026-07-25",
+    "cost": 0.39,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.39,
+    "pnl_c": -40.665
+   },
+   {
+    "match": "Nashville SC @ Orlando City SC",
+    "date": "2026-07-25",
+    "cost": 0.49,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.49,
+    "pnl_c": -50.749
+   },
+   {
+    "match": "Real Salt Lake @ Portland Timbers",
+    "date": "2026-07-25",
+    "cost": 0.12,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.12,
+    "pnl_c": -12.739
+   },
+   {
+    "match": "LA Galaxy @ San Jose Earthquakes",
+    "date": "2026-07-25",
+    "cost": 0.42,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.42,
+    "pnl_c": 56.295
+   },
+   {
+    "match": "Toronto FC @ New York City FC",
+    "date": "2026-07-31",
+    "cost": 0.46,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.46,
+    "pnl_c": 52.261
+   },
+   {
+    "match": "New England Revolution @ CF Montr\u00e9al",
+    "date": "2026-08-01",
+    "cost": 0.48,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": 50.253
+   },
+   {
+    "match": "Charlotte FC @ Chicago Fire FC",
+    "date": "2026-08-01",
+    "cost": 0.44,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.44,
+    "pnl_c": -45.725
+   },
+   {
+    "match": "San Diego FC @ Minnesota United FC",
+    "date": "2026-08-01",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Austin FC @ Colorado Rapids",
+    "date": "2026-08-01",
+    "cost": 0.46,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.46,
+    "pnl_c": -47.739
+   },
+   {
+    "match": "FC Dallas @ LA Galaxy",
+    "date": "2026-08-01",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Seattle Sounders FC @ Portland Timbers",
+    "date": "2026-08-01",
+    "cost": 0.44,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.44,
+    "pnl_c": -45.725
+   },
+   {
+    "match": "Santos @ Botafogo",
+    "date": "2026-07-16",
+    "cost": 0.47,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.47,
+    "pnl_c": -48.744
+   },
+   {
+    "match": "Vasco da Gama @ Vit\u00f3ria",
+    "date": "2026-07-16",
+    "cost": 0.53,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.53,
+    "pnl_c": -54.744
+   },
+   {
+    "match": "Bahia @ Atl\u00e9tico-MG",
+    "date": "2026-07-21",
+    "cost": 0.48,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": 50.253
+   },
+   {
+    "match": "Vit\u00f3ria @ Botafogo",
+    "date": "2026-07-23",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Corinthians @ Bahia",
+    "date": "2026-07-26",
+    "cost": 0.51,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.51,
+    "pnl_c": 47.251
+   },
+   {
+    "match": "Coritiba @ Red Bull Bragantino",
+    "date": "2026-07-26",
+    "cost": 0.48,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": 50.253
+   },
+   {
+    "match": "Bahia @ Fluminense",
+    "date": "2026-07-29",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Athletico-PR @ Corinthians",
+    "date": "2026-07-30",
+    "cost": 0.57,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.57,
+    "pnl_c": 41.284
+   },
+   {
+    "match": "Cruzeiro @ Coritiba",
+    "date": "2026-07-30",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "S\u00e3o Paulo @ Gr\u00eamio",
+    "date": "2026-08-08",
+    "cost": 0.555,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.555,
+    "pnl_c": -57.229
+   },
+   {
+    "match": "Fluminense @ Botafogo",
+    "date": "2026-08-08",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "Mirassol @ Cruzeiro",
+    "date": "2026-08-09",
+    "cost": 0.47,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.47,
+    "pnl_c": -48.744
+   },
+   {
+    "match": "Vasco da Gama @ Bahia",
+    "date": "2026-08-09",
+    "cost": 0.51,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.51,
+    "pnl_c": 47.251
+   },
+   {
+    "match": "Internacional @ Palmeiras",
+    "date": "2026-08-09",
+    "cost": 0.46,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.46,
+    "pnl_c": 52.261
+   },
+   {
+    "match": "Aldosivi @ Defensa y Justicia",
+    "date": "2026-07-23",
+    "cost": 0.52,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.52,
+    "pnl_c": 46.253
+   },
+   {
+    "match": "Central C\u00f3rdoba (Santiago del Estero) @ Gimnasia (Mendoza)",
+    "date": "2026-07-24",
+    "cost": 0.16,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.16,
+    "pnl_c": -16.941
+   },
+   {
+    "match": "Gimnasia La Plata @ Racing Club",
+    "date": "2026-07-24",
+    "cost": 0.49,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.49,
+    "pnl_c": -50.749
+   },
+   {
+    "match": "Tigre @ Estudiantes de R\u00edo Cuarto",
+    "date": "2026-07-25",
+    "cost": 0.62,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.62,
+    "pnl_c": -63.649
+   },
+   {
+    "match": "Independiente Rivadavia @ Atl\u00e9tico Tucum\u00e1n",
+    "date": "2026-07-26",
+    "cost": 0.6,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.6,
+    "pnl_c": 38.32
+   },
+   {
+    "match": "Independiente @ Estudiantes de La Plata",
+    "date": "2026-07-26",
+    "cost": 0.52,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.52,
+    "pnl_c": -53.747
+   },
+   {
+    "match": "Gimnasia (Mendoza) @ San Lorenzo",
+    "date": "2026-07-28",
+    "cost": 0.53,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.53,
+    "pnl_c": -54.744
+   },
+   {
+    "match": "Racing Club @ Rosario Central",
+    "date": "2026-07-28",
+    "cost": 0.51,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.51,
+    "pnl_c": 47.251
+   },
+   {
+    "match": "River Plate @ Gimnasia La Plata",
+    "date": "2026-07-29",
+    "cost": 0.52,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.52,
+    "pnl_c": -53.747
+   },
+   {
+    "match": "V\u00e9lez Sarsfield @ Talleres (C\u00f3rdoba)",
+    "date": "2026-07-30",
+    "cost": 0.53,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.53,
+    "pnl_c": -54.744
+   },
+   {
+    "match": "Banfield @ Estudiantes de R\u00edo Cuarto",
+    "date": "2026-08-01",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "Barracas Central @ Deportivo Riestra",
+    "date": "2026-08-02",
+    "cost": 0.62,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.62,
+    "pnl_c": -63.649
+   },
+   {
+    "match": "Instituto (C\u00f3rdoba) @ Lan\u00fas",
+    "date": "2026-08-02",
+    "cost": 0.54,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.54,
+    "pnl_c": -55.739
+   },
+   {
+    "match": "Independiente @ V\u00e9lez Sarsfield",
+    "date": "2026-08-03",
+    "cost": 0.57,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.57,
+    "pnl_c": -58.716
+   },
+   {
+    "match": "Atl\u00e9tico Tucum\u00e1n @ Hurac\u00e1n",
+    "date": "2026-08-03",
+    "cost": 0.54,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.54,
+    "pnl_c": 44.261
+   },
+   {
+    "match": "Belgrano (C\u00f3rdoba) @ Tigre",
+    "date": "2026-08-05",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   },
+   {
+    "match": "Aldosivi @ Rosario Central",
+    "date": "2026-08-07",
+    "cost": 0.46,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.46,
+    "pnl_c": -47.739
+   },
+   {
+    "match": "Estudiantes de R\u00edo Cuarto @ Independiente Rivadavia",
+    "date": "2026-08-07",
+    "cost": 0.54,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.54,
+    "pnl_c": -55.739
+   },
+   {
+    "match": "Sarmiento (Jun\u00edn) @ Atl\u00e9tico Tucum\u00e1n",
+    "date": "2026-08-08",
+    "cost": 0.35,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.35,
+    "pnl_c": -36.593
+   },
+   {
+    "match": "River Plate @ Tigre",
+    "date": "2026-08-08",
+    "cost": 0.58,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.58,
+    "pnl_c": -59.705
+   },
+   {
+    "match": "V\u00e9lez Sarsfield @ Boca Juniors",
+    "date": "2026-08-08",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "Gimnasia (Mendoza) @ Instituto (C\u00f3rdoba)",
+    "date": "2026-08-08",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Racing Club @ Argentinos Juniors",
+    "date": "2026-08-09",
+    "cost": 0.41,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.41,
+    "pnl_c": -42.693
+   },
+   {
+    "match": "Lan\u00fas @ Talleres (C\u00f3rdoba)",
+    "date": "2026-08-11",
+    "cost": 0.57,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.57,
+    "pnl_c": -58.716
+   },
+   {
+    "match": "Liaoning Tieren @ Beijing Guoan",
+    "date": "2026-07-17",
+    "cost": 0.14,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.14,
+    "pnl_c": 85.157
+   },
+   {
+    "match": "Shanghai Port @ Yunnan Yukun",
+    "date": "2026-07-17",
+    "cost": 0.38,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.38,
+    "pnl_c": 60.351
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shanghai Shenhua",
+    "date": "2026-07-18",
+    "cost": 0.4,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.4,
+    "pnl_c": -41.68
+   },
+   {
+    "match": "Qingdao West Coast @ Liaoning Tieren",
+    "date": "2026-07-25",
+    "cost": 0.22,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.22,
+    "pnl_c": -23.201
+   },
+   {
+    "match": "Dalian Yingbo @ Henan",
+    "date": "2026-07-31",
+    "cost": 0.44,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.44,
+    "pnl_c": 54.275
+   },
+   {
+    "match": "Zhejiang Professional FC @ Beijing Guoan",
+    "date": "2026-08-01",
+    "cost": 0.41,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.41,
+    "pnl_c": -42.693
+   },
+   {
+    "match": "Qingdao West Coast @ Henan",
+    "date": "2026-08-09",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shandong Taishan",
+    "date": "2026-08-09",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Real Salt Lake @ Tigres UANL",
+    "date": "2026-08-04",
+    "cost": 0.48,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": 50.253
+   },
+   {
+    "match": "Le\u00f3n @ Nashville SC",
+    "date": "2026-08-05",
+    "cost": 0.57,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.57,
+    "pnl_c": -58.716
+   },
+   {
+    "match": "Guadalajara @ LAFC",
+    "date": "2026-08-05",
+    "cost": 0.49,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.49,
+    "pnl_c": 49.251
+   },
+   {
+    "match": "Atlas @ Charlotte FC",
+    "date": "2026-08-07",
+    "cost": 0.51,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.51,
+    "pnl_c": -52.749
+   },
+   {
+    "match": "Minnesota United FC @ Tigres UANL",
+    "date": "2026-08-07",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "FC Juarez @ Vancouver Whitecaps",
+    "date": "2026-08-07",
+    "cost": 0.36,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.36,
+    "pnl_c": -37.613
+   },
+   {
+    "match": "Le\u00f3n @ Orlando City SC",
+    "date": "2026-08-08",
+    "cost": 0.45,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.45,
+    "pnl_c": -46.733
+   },
+   {
+    "match": "Monterrey @ Inter Miami CF",
+    "date": "2026-08-08",
+    "cost": 0.43,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.43,
+    "pnl_c": -44.716
+   },
+   {
+    "match": "FC Dallas @ Guadalajara",
+    "date": "2026-08-08",
+    "cost": 0.4,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.4,
+    "pnl_c": -41.68
+   },
+   {
+    "match": "LAFC @ Toluca",
+    "date": "2026-08-08",
+    "cost": 0.49,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.49,
+    "pnl_c": -50.749
+   },
+   {
+    "match": "New York City FC @ Cruz Azul",
+    "date": "2026-08-09",
+    "cost": 0.48,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": -49.747
+   },
+   {
+    "match": "Pumas UNAM @ Columbus Crew",
+    "date": "2026-08-11",
+    "cost": 0.4,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.4,
+    "pnl_c": 58.32
+   },
+   {
+    "match": "Atlante @ Minnesota United FC",
+    "date": "2026-08-11",
+    "cost": 0.45,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.45,
+    "pnl_c": -46.733
+   },
+   {
+    "match": "Pachuca @ Charlotte FC",
+    "date": "2026-08-11",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Le\u00f3n @ Inter Miami CF",
+    "date": "2026-08-12",
+    "cost": 0.4,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.4,
+    "pnl_c": -41.68
+   },
+   {
+    "match": "Nashville SC @ Monterrey",
+    "date": "2026-08-12",
+    "cost": 0.48,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": -49.747
+   },
+   {
+    "match": "Puebla @ San Diego FC",
+    "date": "2026-08-12",
+    "cost": 0.46,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.46,
+    "pnl_c": -47.739
+   },
+   {
+    "match": "Quer\u00e9taro @ LAFC",
+    "date": "2026-08-12",
+    "cost": 0.37,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.37,
+    "pnl_c": 61.368
+   },
+   {
+    "match": "Guadalajara @ Seattle Sounders FC",
+    "date": "2026-08-12",
+    "cost": 0.41,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.41,
+    "pnl_c": -42.693
+   }
+  ],
+  "POIS-TIE@65'": [
+   {
+    "match": "Toronto FC @ CF Montr\u00e9al",
+    "date": "2026-07-16",
+    "cost": 0.49,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.49,
+    "pnl_c": 49.251
+   },
+   {
+    "match": "Atlanta United FC @ Nashville SC",
+    "date": "2026-07-17",
+    "cost": 0.46,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.46,
+    "pnl_c": -47.739
+   },
+   {
+    "match": "Toronto FC @ New England Revolution",
+    "date": "2026-07-22",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Red Bull New York @ Philadelphia Union",
+    "date": "2026-07-22",
+    "cost": 0.07,
+    "won": false,
+    "fair": 0.1539,
+    "mkt": 0.07,
+    "pnl_c": -7.456
+   },
+   {
+    "match": "CF Montr\u00e9al @ Nashville SC",
+    "date": "2026-07-22",
+    "cost": 0.49,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.49,
+    "pnl_c": -50.749
+   },
+   {
+    "match": "San Diego FC @ Colorado Rapids",
+    "date": "2026-07-22",
+    "cost": 0.48,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": -49.747
+   },
+   {
+    "match": "Inter Miami CF @ CF Montr\u00e9al",
+    "date": "2026-07-25",
+    "cost": 0.43,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.43,
+    "pnl_c": -44.716
+   },
+   {
+    "match": "Vancouver Whitecaps @ Minnesota United FC",
+    "date": "2026-07-25",
+    "cost": 0.48,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": 50.253
+   },
+   {
+    "match": "Colorado Rapids @ St. Louis CITY SC",
+    "date": "2026-07-25",
+    "cost": 0.39,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.39,
+    "pnl_c": -40.665
+   },
+   {
+    "match": "Nashville SC @ Orlando City SC",
+    "date": "2026-07-25",
+    "cost": 0.49,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.49,
+    "pnl_c": -50.749
+   },
+   {
+    "match": "Real Salt Lake @ Portland Timbers",
+    "date": "2026-07-25",
+    "cost": 0.12,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.12,
+    "pnl_c": -12.739
+   },
+   {
+    "match": "LA Galaxy @ San Jose Earthquakes",
+    "date": "2026-07-25",
+    "cost": 0.42,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.42,
+    "pnl_c": 56.295
+   },
+   {
+    "match": "Toronto FC @ New York City FC",
+    "date": "2026-07-31",
+    "cost": 0.46,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.46,
+    "pnl_c": 52.261
+   },
+   {
+    "match": "New England Revolution @ CF Montr\u00e9al",
+    "date": "2026-08-01",
+    "cost": 0.48,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": 50.253
+   },
+   {
+    "match": "Charlotte FC @ Chicago Fire FC",
+    "date": "2026-08-01",
+    "cost": 0.44,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.44,
+    "pnl_c": -45.725
+   },
+   {
+    "match": "San Diego FC @ Minnesota United FC",
+    "date": "2026-08-01",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Houston Dynamo FC @ Sporting Kansas City",
+    "date": "2026-08-01",
+    "cost": 0.11,
+    "won": false,
+    "fair": 0.216,
+    "mkt": 0.11,
+    "pnl_c": -11.685
+   },
+   {
+    "match": "Austin FC @ Colorado Rapids",
+    "date": "2026-08-01",
+    "cost": 0.46,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.46,
+    "pnl_c": -47.739
+   },
+   {
+    "match": "FC Dallas @ LA Galaxy",
+    "date": "2026-08-01",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Seattle Sounders FC @ Portland Timbers",
+    "date": "2026-08-01",
+    "cost": 0.44,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.44,
+    "pnl_c": -45.725
+   },
+   {
+    "match": "Santos @ Botafogo",
+    "date": "2026-07-16",
+    "cost": 0.47,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.47,
+    "pnl_c": -48.744
+   },
+   {
+    "match": "Bahia @ Atl\u00e9tico-MG",
+    "date": "2026-07-21",
+    "cost": 0.48,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": 50.253
+   },
+   {
+    "match": "Vit\u00f3ria @ Botafogo",
+    "date": "2026-07-23",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Coritiba @ Red Bull Bragantino",
+    "date": "2026-07-26",
+    "cost": 0.48,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": 50.253
+   },
+   {
+    "match": "Bahia @ Fluminense",
+    "date": "2026-07-29",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Cruzeiro @ Coritiba",
+    "date": "2026-07-30",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Fluminense @ Botafogo",
+    "date": "2026-08-08",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "Mirassol @ Cruzeiro",
+    "date": "2026-08-09",
+    "cost": 0.47,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.47,
+    "pnl_c": -48.744
+   },
+   {
+    "match": "Internacional @ Palmeiras",
+    "date": "2026-08-09",
+    "cost": 0.46,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.46,
+    "pnl_c": 52.261
+   },
+   {
+    "match": "Vit\u00f3ria @ Flamengo",
+    "date": "2026-08-09",
+    "cost": 0.095,
+    "won": false,
+    "fair": 0.1539,
+    "mkt": 0.095,
+    "pnl_c": -10.102
+   },
+   {
+    "match": "Central C\u00f3rdoba (Santiago del Estero) @ Gimnasia (Mendoza)",
+    "date": "2026-07-24",
+    "cost": 0.16,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.16,
+    "pnl_c": -16.941
+   },
+   {
+    "match": "Gimnasia La Plata @ Racing Club",
+    "date": "2026-07-24",
+    "cost": 0.49,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.49,
+    "pnl_c": -50.749
+   },
+   {
+    "match": "Newell's Old Boys @ Independiente",
+    "date": "2026-07-30",
+    "cost": 0.1,
+    "won": false,
+    "fair": 0.1539,
+    "mkt": 0.1,
+    "pnl_c": -10.63
+   },
+   {
+    "match": "Gimnasia La Plata @ Aldosivi",
+    "date": "2026-08-02",
+    "cost": 0.09,
+    "won": false,
+    "fair": 0.216,
+    "mkt": 0.09,
+    "pnl_c": -9.573
+   },
+   {
+    "match": "Aldosivi @ Rosario Central",
+    "date": "2026-08-07",
+    "cost": 0.46,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.46,
+    "pnl_c": -47.739
+   },
+   {
+    "match": "Sarmiento (Jun\u00edn) @ Atl\u00e9tico Tucum\u00e1n",
+    "date": "2026-08-08",
+    "cost": 0.35,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.35,
+    "pnl_c": -36.593
+   },
+   {
+    "match": "V\u00e9lez Sarsfield @ Boca Juniors",
+    "date": "2026-08-08",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "Gimnasia (Mendoza) @ Instituto (C\u00f3rdoba)",
+    "date": "2026-08-08",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Racing Club @ Argentinos Juniors",
+    "date": "2026-08-09",
+    "cost": 0.41,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.41,
+    "pnl_c": -42.693
+   },
+   {
+    "match": "Liaoning Tieren @ Beijing Guoan",
+    "date": "2026-07-17",
+    "cost": 0.14,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.14,
+    "pnl_c": 85.157
+   },
+   {
+    "match": "Shanghai Port @ Yunnan Yukun",
+    "date": "2026-07-17",
+    "cost": 0.38,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.38,
+    "pnl_c": 60.351
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shanghai Shenhua",
+    "date": "2026-07-18",
+    "cost": 0.4,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.4,
+    "pnl_c": -41.68
+   },
+   {
+    "match": "Qingdao West Coast @ Liaoning Tieren",
+    "date": "2026-07-25",
+    "cost": 0.22,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.22,
+    "pnl_c": -23.201
+   },
+   {
+    "match": "Dalian Yingbo @ Henan",
+    "date": "2026-07-31",
+    "cost": 0.44,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.44,
+    "pnl_c": 54.275
+   },
+   {
+    "match": "Zhejiang Professional FC @ Beijing Guoan",
+    "date": "2026-08-01",
+    "cost": 0.41,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.41,
+    "pnl_c": -42.693
+   },
+   {
+    "match": "Qingdao West Coast @ Henan",
+    "date": "2026-08-09",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shandong Taishan",
+    "date": "2026-08-09",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Real Salt Lake @ Tigres UANL",
+    "date": "2026-08-04",
+    "cost": 0.48,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": 50.253
+   },
+   {
+    "match": "Guadalajara @ LAFC",
+    "date": "2026-08-05",
+    "cost": 0.49,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.49,
+    "pnl_c": 49.251
+   },
+   {
+    "match": "Santos @ New York City FC",
+    "date": "2026-08-06",
+    "cost": 0.05,
+    "won": false,
+    "fair": 0.1539,
+    "mkt": 0.05,
+    "pnl_c": -5.332
+   },
+   {
+    "match": "Minnesota United FC @ Tigres UANL",
+    "date": "2026-08-07",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "FC Juarez @ Vancouver Whitecaps",
+    "date": "2026-08-07",
+    "cost": 0.36,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.36,
+    "pnl_c": -37.613
+   },
+   {
+    "match": "Le\u00f3n @ Orlando City SC",
+    "date": "2026-08-08",
+    "cost": 0.45,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.45,
+    "pnl_c": -46.733
+   },
+   {
+    "match": "Monterrey @ Inter Miami CF",
+    "date": "2026-08-08",
+    "cost": 0.43,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.43,
+    "pnl_c": -44.716
+   },
+   {
+    "match": "FC Dallas @ Guadalajara",
+    "date": "2026-08-08",
+    "cost": 0.4,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.4,
+    "pnl_c": -41.68
+   },
+   {
+    "match": "LAFC @ Toluca",
+    "date": "2026-08-08",
+    "cost": 0.49,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.49,
+    "pnl_c": -50.749
+   },
+   {
+    "match": "New York City FC @ Cruz Azul",
+    "date": "2026-08-09",
+    "cost": 0.48,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": -49.747
+   },
+   {
+    "match": "Pumas UNAM @ Columbus Crew",
+    "date": "2026-08-11",
+    "cost": 0.4,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.4,
+    "pnl_c": 58.32
+   },
+   {
+    "match": "Atlante @ Minnesota United FC",
+    "date": "2026-08-11",
+    "cost": 0.45,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.45,
+    "pnl_c": -46.733
+   },
+   {
+    "match": "Pachuca @ Charlotte FC",
+    "date": "2026-08-11",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Le\u00f3n @ Inter Miami CF",
+    "date": "2026-08-12",
+    "cost": 0.4,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.4,
+    "pnl_c": -41.68
+   },
+   {
+    "match": "Nashville SC @ Monterrey",
+    "date": "2026-08-12",
+    "cost": 0.48,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.48,
+    "pnl_c": -49.747
+   },
+   {
+    "match": "Puebla @ San Diego FC",
+    "date": "2026-08-12",
+    "cost": 0.46,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.46,
+    "pnl_c": -47.739
+   },
+   {
+    "match": "Quer\u00e9taro @ LAFC",
+    "date": "2026-08-12",
+    "cost": 0.37,
+    "won": true,
+    "fair": 0.5555,
+    "mkt": 0.37,
+    "pnl_c": 61.368
+   },
+   {
+    "match": "Guadalajara @ Seattle Sounders FC",
+    "date": "2026-08-12",
+    "cost": 0.41,
+    "won": false,
+    "fair": 0.5555,
+    "mkt": 0.41,
+    "pnl_c": -42.693
+   }
+  ],
+  "CD-TIE@75'": [
+   {
+    "match": "Toronto FC @ CF Montr\u00e9al",
+    "date": "2026-07-16",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Atlanta United FC @ Nashville SC",
+    "date": "2026-07-17",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Chicago Fire FC @ Inter Miami CF",
+    "date": "2026-07-22",
+    "cost": 0.51,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.51,
+    "pnl_c": -52.749
+   },
+   {
+    "match": "Toronto FC @ New England Revolution",
+    "date": "2026-07-22",
+    "cost": 0.57,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.57,
+    "pnl_c": 41.284
+   },
+   {
+    "match": "Seattle Sounders FC @ Austin FC",
+    "date": "2026-07-22",
+    "cost": 0.59,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.59,
+    "pnl_c": -60.693
+   },
+   {
+    "match": "San Diego FC @ Colorado Rapids",
+    "date": "2026-07-22",
+    "cost": 0.59,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.59,
+    "pnl_c": -60.693
+   },
+   {
+    "match": "FC Dallas @ Portland Timbers",
+    "date": "2026-07-22",
+    "cost": 0.54,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.54,
+    "pnl_c": 44.261
+   },
+   {
+    "match": "Inter Miami CF @ CF Montr\u00e9al",
+    "date": "2026-07-25",
+    "cost": 0.39,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.39,
+    "pnl_c": -40.665
+   },
+   {
+    "match": "Vancouver Whitecaps @ Minnesota United FC",
+    "date": "2026-07-25",
+    "cost": 0.59,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.59,
+    "pnl_c": 39.307
+   },
+   {
+    "match": "Colorado Rapids @ St. Louis CITY SC",
+    "date": "2026-07-25",
+    "cost": 0.51,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.51,
+    "pnl_c": -52.749
+   },
+   {
+    "match": "LA Galaxy @ San Jose Earthquakes",
+    "date": "2026-07-25",
+    "cost": 0.57,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.57,
+    "pnl_c": 41.284
+   },
+   {
+    "match": "Toronto FC @ New York City FC",
+    "date": "2026-07-31",
+    "cost": 0.58,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.58,
+    "pnl_c": 40.295
+   },
+   {
+    "match": "New England Revolution @ CF Montr\u00e9al",
+    "date": "2026-08-01",
+    "cost": 0.57,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.57,
+    "pnl_c": 41.284
+   },
+   {
+    "match": "San Diego FC @ Minnesota United FC",
+    "date": "2026-08-01",
+    "cost": 0.52,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.52,
+    "pnl_c": 46.253
+   },
+   {
+    "match": "Real Salt Lake @ St. Louis CITY SC",
+    "date": "2026-08-01",
+    "cost": 0.54,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.54,
+    "pnl_c": 44.261
+   },
+   {
+    "match": "Austin FC @ Colorado Rapids",
+    "date": "2026-08-01",
+    "cost": 0.59,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.59,
+    "pnl_c": -60.693
+   },
+   {
+    "match": "FC Dallas @ LA Galaxy",
+    "date": "2026-08-01",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Seattle Sounders FC @ Portland Timbers",
+    "date": "2026-08-01",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Santos @ Botafogo",
+    "date": "2026-07-16",
+    "cost": 0.58,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.58,
+    "pnl_c": -59.705
+   },
+   {
+    "match": "Bahia @ Atl\u00e9tico-MG",
+    "date": "2026-07-21",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Vit\u00f3ria @ Botafogo",
+    "date": "2026-07-23",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Corinthians @ Bahia",
+    "date": "2026-07-26",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "S\u00e3o Paulo @ Flamengo",
+    "date": "2026-07-26",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Coritiba @ Red Bull Bragantino",
+    "date": "2026-07-26",
+    "cost": 0.59,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.59,
+    "pnl_c": 39.307
+   },
+   {
+    "match": "Atl\u00e9tico-MG @ Palmeiras",
+    "date": "2026-07-26",
+    "cost": 0.6,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.6,
+    "pnl_c": -61.68
+   },
+   {
+    "match": "Bahia @ Fluminense",
+    "date": "2026-07-29",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   },
+   {
+    "match": "Athletico-PR @ Corinthians",
+    "date": "2026-07-30",
+    "cost": 0.65,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.65,
+    "pnl_c": 33.407
+   },
+   {
+    "match": "S\u00e3o Paulo @ Gr\u00eamio",
+    "date": "2026-08-08",
+    "cost": 0.64,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.64,
+    "pnl_c": -65.613
+   },
+   {
+    "match": "Atl\u00e9tico-MG @ Remo",
+    "date": "2026-08-08",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "Fluminense @ Botafogo",
+    "date": "2026-08-08",
+    "cost": 0.59,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.59,
+    "pnl_c": 39.307
+   },
+   {
+    "match": "Mirassol @ Cruzeiro",
+    "date": "2026-08-09",
+    "cost": 0.19,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.19,
+    "pnl_c": -20.077
+   },
+   {
+    "match": "Vasco da Gama @ Bahia",
+    "date": "2026-08-09",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Internacional @ Palmeiras",
+    "date": "2026-08-09",
+    "cost": 0.555,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.555,
+    "pnl_c": 42.771
+   },
+   {
+    "match": "Argentinos Juniors @ Sarmiento (Jun\u00edn)",
+    "date": "2026-07-23",
+    "cost": 0.63,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.63,
+    "pnl_c": -64.632
+   },
+   {
+    "match": "Aldosivi @ Defensa y Justicia",
+    "date": "2026-07-23",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "Uni\u00f3n (Santa Fe) @ Platense",
+    "date": "2026-07-24",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Independiente Rivadavia @ Atl\u00e9tico Tucum\u00e1n",
+    "date": "2026-07-26",
+    "cost": 0.68,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.68,
+    "pnl_c": 30.477
+   },
+   {
+    "match": "Independiente @ Estudiantes de La Plata",
+    "date": "2026-07-26",
+    "cost": 0.37,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.37,
+    "pnl_c": -38.632
+   },
+   {
+    "match": "Gimnasia (Mendoza) @ San Lorenzo",
+    "date": "2026-07-28",
+    "cost": 0.65,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.65,
+    "pnl_c": -66.593
+   },
+   {
+    "match": "Racing Club @ Rosario Central",
+    "date": "2026-07-28",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "River Plate @ Gimnasia La Plata",
+    "date": "2026-07-29",
+    "cost": 0.62,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.62,
+    "pnl_c": -63.649
+   },
+   {
+    "match": "V\u00e9lez Sarsfield @ Talleres (C\u00f3rdoba)",
+    "date": "2026-07-30",
+    "cost": 0.63,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.63,
+    "pnl_c": -64.632
+   },
+   {
+    "match": "Banfield @ Estudiantes de R\u00edo Cuarto",
+    "date": "2026-08-01",
+    "cost": 0.71,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.71,
+    "pnl_c": 27.559
+   },
+   {
+    "match": "Instituto (C\u00f3rdoba) @ Lan\u00fas",
+    "date": "2026-08-02",
+    "cost": 0.63,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.63,
+    "pnl_c": -64.632
+   },
+   {
+    "match": "Atl\u00e9tico Tucum\u00e1n @ Hurac\u00e1n",
+    "date": "2026-08-03",
+    "cost": 0.63,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.63,
+    "pnl_c": 35.368
+   },
+   {
+    "match": "Belgrano (C\u00f3rdoba) @ Tigre",
+    "date": "2026-08-05",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Lan\u00fas @ Uni\u00f3n (Santa Fe)",
+    "date": "2026-08-06",
+    "cost": 0.66,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.66,
+    "pnl_c": -67.571
+   },
+   {
+    "match": "Aldosivi @ Rosario Central",
+    "date": "2026-08-07",
+    "cost": 0.54,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.54,
+    "pnl_c": -55.739
+   },
+   {
+    "match": "River Plate @ Tigre",
+    "date": "2026-08-08",
+    "cost": 0.69,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.69,
+    "pnl_c": -70.497
+   },
+   {
+    "match": "V\u00e9lez Sarsfield @ Boca Juniors",
+    "date": "2026-08-08",
+    "cost": 0.58,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.58,
+    "pnl_c": 40.295
+   },
+   {
+    "match": "Gimnasia (Mendoza) @ Instituto (C\u00f3rdoba)",
+    "date": "2026-08-08",
+    "cost": 0.34,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.34,
+    "pnl_c": -35.571
+   },
+   {
+    "match": "Racing Club @ Argentinos Juniors",
+    "date": "2026-08-09",
+    "cost": 0.12,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.12,
+    "pnl_c": -12.739
+   },
+   {
+    "match": "Qingdao Hainiu @ Zhejiang Professional FC",
+    "date": "2026-07-14",
+    "cost": 0.19,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.19,
+    "pnl_c": -20.077
+   },
+   {
+    "match": "Liaoning Tieren @ Beijing Guoan",
+    "date": "2026-07-17",
+    "cost": 0.25,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.25,
+    "pnl_c": 73.688
+   },
+   {
+    "match": "Shanghai Port @ Yunnan Yukun",
+    "date": "2026-07-17",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shanghai Shenhua",
+    "date": "2026-07-18",
+    "cost": 0.48,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.48,
+    "pnl_c": -49.747
+   },
+   {
+    "match": "Dalian Yingbo @ Zhejiang Professional FC",
+    "date": "2026-07-26",
+    "cost": 0.52,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.52,
+    "pnl_c": -53.747
+   },
+   {
+    "match": "Dalian Yingbo @ Henan",
+    "date": "2026-07-31",
+    "cost": 0.53,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.53,
+    "pnl_c": 45.256
+   },
+   {
+    "match": "Zhejiang Professional FC @ Beijing Guoan",
+    "date": "2026-08-01",
+    "cost": 0.52,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.52,
+    "pnl_c": -53.747
+   },
+   {
+    "match": "Qingdao West Coast @ Henan",
+    "date": "2026-08-09",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shandong Taishan",
+    "date": "2026-08-09",
+    "cost": 0.6,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.6,
+    "pnl_c": -61.68
+   },
+   {
+    "match": "Real Salt Lake @ Tigres UANL",
+    "date": "2026-08-04",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   },
+   {
+    "match": "Le\u00f3n @ Nashville SC",
+    "date": "2026-08-05",
+    "cost": 0.64,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.64,
+    "pnl_c": -65.613
+   },
+   {
+    "match": "Guadalajara @ LAFC",
+    "date": "2026-08-05",
+    "cost": 0.6,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.6,
+    "pnl_c": 38.32
+   },
+   {
+    "match": "Atlas @ Charlotte FC",
+    "date": "2026-08-07",
+    "cost": 0.58,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.58,
+    "pnl_c": -59.705
+   },
+   {
+    "match": "Minnesota United FC @ Tigres UANL",
+    "date": "2026-08-07",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Monterrey @ Inter Miami CF",
+    "date": "2026-08-08",
+    "cost": 0.51,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.51,
+    "pnl_c": -52.749
+   },
+   {
+    "match": "LAFC @ Toluca",
+    "date": "2026-08-08",
+    "cost": 0.58,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.58,
+    "pnl_c": -59.705
+   },
+   {
+    "match": "New York City FC @ Cruz Azul",
+    "date": "2026-08-09",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Santos @ Chicago Fire FC",
+    "date": "2026-08-09",
+    "cost": 0.53,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.53,
+    "pnl_c": -54.744
+   },
+   {
+    "match": "Pumas UNAM @ Columbus Crew",
+    "date": "2026-08-11",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Pachuca @ Charlotte FC",
+    "date": "2026-08-11",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Le\u00f3n @ Inter Miami CF",
+    "date": "2026-08-12",
+    "cost": 0.49,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.49,
+    "pnl_c": -50.749
+   },
+   {
+    "match": "Nashville SC @ Monterrey",
+    "date": "2026-08-12",
+    "cost": 0.54,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.54,
+    "pnl_c": -55.739
+   },
+   {
+    "match": "Puebla @ San Diego FC",
+    "date": "2026-08-12",
+    "cost": 0.16,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.16,
+    "pnl_c": -16.941
+   },
+   {
+    "match": "Quer\u00e9taro @ LAFC",
+    "date": "2026-08-12",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   }
+  ],
+  "POIS-TIE@75'": [
+   {
+    "match": "Toronto FC @ CF Montr\u00e9al",
+    "date": "2026-07-16",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Atlanta United FC @ Nashville SC",
+    "date": "2026-07-17",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Chicago Fire FC @ Inter Miami CF",
+    "date": "2026-07-22",
+    "cost": 0.51,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.51,
+    "pnl_c": -52.749
+   },
+   {
+    "match": "Toronto FC @ New England Revolution",
+    "date": "2026-07-22",
+    "cost": 0.57,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.57,
+    "pnl_c": 41.284
+   },
+   {
+    "match": "Seattle Sounders FC @ Austin FC",
+    "date": "2026-07-22",
+    "cost": 0.59,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.59,
+    "pnl_c": -60.693
+   },
+   {
+    "match": "San Diego FC @ Colorado Rapids",
+    "date": "2026-07-22",
+    "cost": 0.59,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.59,
+    "pnl_c": -60.693
+   },
+   {
+    "match": "FC Dallas @ Portland Timbers",
+    "date": "2026-07-22",
+    "cost": 0.54,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.54,
+    "pnl_c": 44.261
+   },
+   {
+    "match": "Inter Miami CF @ CF Montr\u00e9al",
+    "date": "2026-07-25",
+    "cost": 0.39,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.39,
+    "pnl_c": -40.665
+   },
+   {
+    "match": "Vancouver Whitecaps @ Minnesota United FC",
+    "date": "2026-07-25",
+    "cost": 0.59,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.59,
+    "pnl_c": 39.307
+   },
+   {
+    "match": "Colorado Rapids @ St. Louis CITY SC",
+    "date": "2026-07-25",
+    "cost": 0.51,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.51,
+    "pnl_c": -52.749
+   },
+   {
+    "match": "LA Galaxy @ San Jose Earthquakes",
+    "date": "2026-07-25",
+    "cost": 0.57,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.57,
+    "pnl_c": 41.284
+   },
+   {
+    "match": "Toronto FC @ New York City FC",
+    "date": "2026-07-31",
+    "cost": 0.58,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.58,
+    "pnl_c": 40.295
+   },
+   {
+    "match": "New England Revolution @ CF Montr\u00e9al",
+    "date": "2026-08-01",
+    "cost": 0.57,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.57,
+    "pnl_c": 41.284
+   },
+   {
+    "match": "San Diego FC @ Minnesota United FC",
+    "date": "2026-08-01",
+    "cost": 0.52,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.52,
+    "pnl_c": 46.253
+   },
+   {
+    "match": "Real Salt Lake @ St. Louis CITY SC",
+    "date": "2026-08-01",
+    "cost": 0.54,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.54,
+    "pnl_c": 44.261
+   },
+   {
+    "match": "Austin FC @ Colorado Rapids",
+    "date": "2026-08-01",
+    "cost": 0.59,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.59,
+    "pnl_c": -60.693
+   },
+   {
+    "match": "FC Dallas @ LA Galaxy",
+    "date": "2026-08-01",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Seattle Sounders FC @ Portland Timbers",
+    "date": "2026-08-01",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Santos @ Botafogo",
+    "date": "2026-07-16",
+    "cost": 0.58,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.58,
+    "pnl_c": -59.705
+   },
+   {
+    "match": "Bahia @ Atl\u00e9tico-MG",
+    "date": "2026-07-21",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Vit\u00f3ria @ Botafogo",
+    "date": "2026-07-23",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Corinthians @ Bahia",
+    "date": "2026-07-26",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "S\u00e3o Paulo @ Flamengo",
+    "date": "2026-07-26",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Coritiba @ Red Bull Bragantino",
+    "date": "2026-07-26",
+    "cost": 0.59,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.59,
+    "pnl_c": 39.307
+   },
+   {
+    "match": "Atl\u00e9tico-MG @ Palmeiras",
+    "date": "2026-07-26",
+    "cost": 0.6,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.6,
+    "pnl_c": -61.68
+   },
+   {
+    "match": "Bahia @ Fluminense",
+    "date": "2026-07-29",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   },
+   {
+    "match": "Atl\u00e9tico-MG @ Remo",
+    "date": "2026-08-08",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "Fluminense @ Botafogo",
+    "date": "2026-08-08",
+    "cost": 0.59,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.59,
+    "pnl_c": 39.307
+   },
+   {
+    "match": "Mirassol @ Cruzeiro",
+    "date": "2026-08-09",
+    "cost": 0.19,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.19,
+    "pnl_c": -20.077
+   },
+   {
+    "match": "Vasco da Gama @ Bahia",
+    "date": "2026-08-09",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Internacional @ Palmeiras",
+    "date": "2026-08-09",
+    "cost": 0.555,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.555,
+    "pnl_c": 42.771
+   },
+   {
+    "match": "Argentinos Juniors @ Sarmiento (Jun\u00edn)",
+    "date": "2026-07-23",
+    "cost": 0.63,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.63,
+    "pnl_c": -64.632
+   },
+   {
+    "match": "Uni\u00f3n (Santa Fe) @ Platense",
+    "date": "2026-07-24",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Independiente @ Estudiantes de La Plata",
+    "date": "2026-07-26",
+    "cost": 0.37,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.37,
+    "pnl_c": -38.632
+   },
+   {
+    "match": "Racing Club @ Rosario Central",
+    "date": "2026-07-28",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "River Plate @ Gimnasia La Plata",
+    "date": "2026-07-29",
+    "cost": 0.62,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.62,
+    "pnl_c": -63.649
+   },
+   {
+    "match": "V\u00e9lez Sarsfield @ Talleres (C\u00f3rdoba)",
+    "date": "2026-07-30",
+    "cost": 0.63,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.63,
+    "pnl_c": -64.632
+   },
+   {
+    "match": "Instituto (C\u00f3rdoba) @ Lan\u00fas",
+    "date": "2026-08-02",
+    "cost": 0.63,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.63,
+    "pnl_c": -64.632
+   },
+   {
+    "match": "Atl\u00e9tico Tucum\u00e1n @ Hurac\u00e1n",
+    "date": "2026-08-03",
+    "cost": 0.63,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.63,
+    "pnl_c": 35.368
+   },
+   {
+    "match": "Aldosivi @ Rosario Central",
+    "date": "2026-08-07",
+    "cost": 0.54,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.54,
+    "pnl_c": -55.739
+   },
+   {
+    "match": "V\u00e9lez Sarsfield @ Boca Juniors",
+    "date": "2026-08-08",
+    "cost": 0.58,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.58,
+    "pnl_c": 40.295
+   },
+   {
+    "match": "Gimnasia (Mendoza) @ Instituto (C\u00f3rdoba)",
+    "date": "2026-08-08",
+    "cost": 0.34,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.34,
+    "pnl_c": -35.571
+   },
+   {
+    "match": "Racing Club @ Argentinos Juniors",
+    "date": "2026-08-09",
+    "cost": 0.12,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.12,
+    "pnl_c": -12.739
+   },
+   {
+    "match": "Qingdao Hainiu @ Zhejiang Professional FC",
+    "date": "2026-07-14",
+    "cost": 0.19,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.19,
+    "pnl_c": -20.077
+   },
+   {
+    "match": "Liaoning Tieren @ Beijing Guoan",
+    "date": "2026-07-17",
+    "cost": 0.25,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.25,
+    "pnl_c": 73.688
+   },
+   {
+    "match": "Shanghai Port @ Yunnan Yukun",
+    "date": "2026-07-17",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shanghai Shenhua",
+    "date": "2026-07-18",
+    "cost": 0.48,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.48,
+    "pnl_c": -49.747
+   },
+   {
+    "match": "Dalian Yingbo @ Zhejiang Professional FC",
+    "date": "2026-07-26",
+    "cost": 0.52,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.52,
+    "pnl_c": -53.747
+   },
+   {
+    "match": "Dalian Yingbo @ Henan",
+    "date": "2026-07-31",
+    "cost": 0.53,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.53,
+    "pnl_c": 45.256
+   },
+   {
+    "match": "Zhejiang Professional FC @ Beijing Guoan",
+    "date": "2026-08-01",
+    "cost": 0.52,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.52,
+    "pnl_c": -53.747
+   },
+   {
+    "match": "Qingdao West Coast @ Henan",
+    "date": "2026-08-09",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shandong Taishan",
+    "date": "2026-08-09",
+    "cost": 0.6,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.6,
+    "pnl_c": -61.68
+   },
+   {
+    "match": "Real Salt Lake @ Tigres UANL",
+    "date": "2026-08-04",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   },
+   {
+    "match": "Guadalajara @ LAFC",
+    "date": "2026-08-05",
+    "cost": 0.6,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.6,
+    "pnl_c": 38.32
+   },
+   {
+    "match": "Atlas @ Charlotte FC",
+    "date": "2026-08-07",
+    "cost": 0.58,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.58,
+    "pnl_c": -59.705
+   },
+   {
+    "match": "Minnesota United FC @ Tigres UANL",
+    "date": "2026-08-07",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Monterrey @ Inter Miami CF",
+    "date": "2026-08-08",
+    "cost": 0.51,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.51,
+    "pnl_c": -52.749
+   },
+   {
+    "match": "LAFC @ Toluca",
+    "date": "2026-08-08",
+    "cost": 0.58,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.58,
+    "pnl_c": -59.705
+   },
+   {
+    "match": "New York City FC @ Cruz Azul",
+    "date": "2026-08-09",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Santos @ Chicago Fire FC",
+    "date": "2026-08-09",
+    "cost": 0.53,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.53,
+    "pnl_c": -54.744
+   },
+   {
+    "match": "Pumas UNAM @ Columbus Crew",
+    "date": "2026-08-11",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Pachuca @ Charlotte FC",
+    "date": "2026-08-11",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Le\u00f3n @ Inter Miami CF",
+    "date": "2026-08-12",
+    "cost": 0.49,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.49,
+    "pnl_c": -50.749
+   },
+   {
+    "match": "Nashville SC @ Monterrey",
+    "date": "2026-08-12",
+    "cost": 0.54,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.54,
+    "pnl_c": -55.739
+   },
+   {
+    "match": "Puebla @ San Diego FC",
+    "date": "2026-08-12",
+    "cost": 0.16,
+    "won": false,
+    "fair": 0.6838,
+    "mkt": 0.16,
+    "pnl_c": -16.941
+   },
+   {
+    "match": "Quer\u00e9taro @ LAFC",
+    "date": "2026-08-12",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.6838,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   }
+  ],
+  "CD-TIE@80'": [
+   {
+    "match": "Toronto FC @ CF Montr\u00e9al",
+    "date": "2026-07-16",
+    "cost": 0.69,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.69,
+    "pnl_c": 29.503
+   },
+   {
+    "match": "Sporting Kansas City @ St. Louis CITY SC",
+    "date": "2026-07-16",
+    "cost": 0.44,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.44,
+    "pnl_c": -45.725
+   },
+   {
+    "match": "Chicago Fire FC @ Inter Miami CF",
+    "date": "2026-07-22",
+    "cost": 0.59,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.59,
+    "pnl_c": -60.693
+   },
+   {
+    "match": "Toronto FC @ New England Revolution",
+    "date": "2026-07-22",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Atlanta United FC @ Charlotte FC",
+    "date": "2026-07-22",
+    "cost": 0.63,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.63,
+    "pnl_c": 35.368
+   },
+   {
+    "match": "D.C. United @ Houston Dynamo FC",
+    "date": "2026-07-22",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Seattle Sounders FC @ Austin FC",
+    "date": "2026-07-22",
+    "cost": 0.64,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.64,
+    "pnl_c": -65.613
+   },
+   {
+    "match": "San Diego FC @ Colorado Rapids",
+    "date": "2026-07-22",
+    "cost": 0.67,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.67,
+    "pnl_c": -68.548
+   },
+   {
+    "match": "FC Dallas @ Portland Timbers",
+    "date": "2026-07-22",
+    "cost": 0.6,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.6,
+    "pnl_c": 38.32
+   },
+   {
+    "match": "Inter Miami CF @ CF Montr\u00e9al",
+    "date": "2026-07-25",
+    "cost": 0.18,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.18,
+    "pnl_c": -19.033
+   },
+   {
+    "match": "Toronto FC @ D.C. United",
+    "date": "2026-07-25",
+    "cost": 0.64,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.64,
+    "pnl_c": -65.613
+   },
+   {
+    "match": "Vancouver Whitecaps @ Minnesota United FC",
+    "date": "2026-07-25",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Colorado Rapids @ St. Louis CITY SC",
+    "date": "2026-07-25",
+    "cost": 0.63,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.63,
+    "pnl_c": -64.632
+   },
+   {
+    "match": "LA Galaxy @ San Jose Earthquakes",
+    "date": "2026-07-25",
+    "cost": 0.68,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.68,
+    "pnl_c": 30.477
+   },
+   {
+    "match": "Toronto FC @ New York City FC",
+    "date": "2026-07-31",
+    "cost": 0.68,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.68,
+    "pnl_c": 30.477
+   },
+   {
+    "match": "New England Revolution @ CF Montr\u00e9al",
+    "date": "2026-08-01",
+    "cost": 0.65,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.65,
+    "pnl_c": 33.407
+   },
+   {
+    "match": "Nashville SC @ D.C. United",
+    "date": "2026-08-01",
+    "cost": 0.63,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.63,
+    "pnl_c": 35.368
+   },
+   {
+    "match": "LAFC @ Vancouver Whitecaps",
+    "date": "2026-08-01",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "San Diego FC @ Minnesota United FC",
+    "date": "2026-08-01",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Real Salt Lake @ St. Louis CITY SC",
+    "date": "2026-08-01",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "Austin FC @ Colorado Rapids",
+    "date": "2026-08-01",
+    "cost": 0.66,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.66,
+    "pnl_c": -67.571
+   },
+   {
+    "match": "San Jose Earthquakes @ FC Cincinnati",
+    "date": "2026-08-01",
+    "cost": 0.58,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.58,
+    "pnl_c": -59.705
+   },
+   {
+    "match": "FC Dallas @ LA Galaxy",
+    "date": "2026-08-01",
+    "cost": 0.65,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.65,
+    "pnl_c": 33.407
+   },
+   {
+    "match": "Seattle Sounders FC @ Portland Timbers",
+    "date": "2026-08-01",
+    "cost": 0.62,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.62,
+    "pnl_c": -63.649
+   },
+   {
+    "match": "Santos @ Botafogo",
+    "date": "2026-07-16",
+    "cost": 0.6,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.6,
+    "pnl_c": -61.68
+   },
+   {
+    "match": "Bahia @ Atl\u00e9tico-MG",
+    "date": "2026-07-21",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "Vit\u00f3ria @ Botafogo",
+    "date": "2026-07-23",
+    "cost": 0.63,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.63,
+    "pnl_c": 35.368
+   },
+   {
+    "match": "Mirassol @ Vasco da Gama",
+    "date": "2026-07-25",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Corinthians @ Bahia",
+    "date": "2026-07-26",
+    "cost": 0.66,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.66,
+    "pnl_c": 32.429
+   },
+   {
+    "match": "S\u00e3o Paulo @ Flamengo",
+    "date": "2026-07-26",
+    "cost": 0.63,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.63,
+    "pnl_c": 35.368
+   },
+   {
+    "match": "Coritiba @ Red Bull Bragantino",
+    "date": "2026-07-26",
+    "cost": 0.65,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.65,
+    "pnl_c": 33.407
+   },
+   {
+    "match": "Flamengo @ Internacional",
+    "date": "2026-07-29",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "Bahia @ Fluminense",
+    "date": "2026-07-29",
+    "cost": 0.59,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.59,
+    "pnl_c": 39.307
+   },
+   {
+    "match": "Athletico-PR @ Corinthians",
+    "date": "2026-07-30",
+    "cost": 0.7,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.7,
+    "pnl_c": 28.53
+   },
+   {
+    "match": "S\u00e3o Paulo @ Gr\u00eamio",
+    "date": "2026-08-08",
+    "cost": 0.7,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.7,
+    "pnl_c": -71.47
+   },
+   {
+    "match": "Atl\u00e9tico-MG @ Remo",
+    "date": "2026-08-08",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Fluminense @ Botafogo",
+    "date": "2026-08-08",
+    "cost": 0.655,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.655,
+    "pnl_c": 32.918
+   },
+   {
+    "match": "Vasco da Gama @ Bahia",
+    "date": "2026-08-09",
+    "cost": 0.695,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.695,
+    "pnl_c": 29.016
+   },
+   {
+    "match": "Internacional @ Palmeiras",
+    "date": "2026-08-09",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "Rosario Central @ Belgrano (C\u00f3rdoba)",
+    "date": "2026-07-23",
+    "cost": 0.69,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.69,
+    "pnl_c": -70.497
+   },
+   {
+    "match": "Argentinos Juniors @ Sarmiento (Jun\u00edn)",
+    "date": "2026-07-23",
+    "cost": 0.66,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.66,
+    "pnl_c": -67.571
+   },
+   {
+    "match": "Aldosivi @ Defensa y Justicia",
+    "date": "2026-07-23",
+    "cost": 0.71,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.71,
+    "pnl_c": 27.559
+   },
+   {
+    "match": "Independiente Rivadavia @ Atl\u00e9tico Tucum\u00e1n",
+    "date": "2026-07-26",
+    "cost": 0.74,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.74,
+    "pnl_c": 24.653
+   },
+   {
+    "match": "Gimnasia (Mendoza) @ San Lorenzo",
+    "date": "2026-07-28",
+    "cost": 0.71,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.71,
+    "pnl_c": -72.441
+   },
+   {
+    "match": "Racing Club @ Rosario Central",
+    "date": "2026-07-28",
+    "cost": 0.68,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.68,
+    "pnl_c": 30.477
+   },
+   {
+    "match": "Banfield @ Estudiantes de R\u00edo Cuarto",
+    "date": "2026-08-01",
+    "cost": 0.78,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.78,
+    "pnl_c": 20.799
+   },
+   {
+    "match": "Instituto (C\u00f3rdoba) @ Lan\u00fas",
+    "date": "2026-08-02",
+    "cost": 0.68,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.68,
+    "pnl_c": -69.523
+   },
+   {
+    "match": "Atl\u00e9tico Tucum\u00e1n @ Hurac\u00e1n",
+    "date": "2026-08-03",
+    "cost": 0.69,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.69,
+    "pnl_c": 29.503
+   },
+   {
+    "match": "Belgrano (C\u00f3rdoba) @ Tigre",
+    "date": "2026-08-05",
+    "cost": 0.73,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.73,
+    "pnl_c": 25.62
+   },
+   {
+    "match": "V\u00e9lez Sarsfield @ Boca Juniors",
+    "date": "2026-08-08",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "Qingdao Hainiu @ Zhejiang Professional FC",
+    "date": "2026-07-14",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Chengdu Rongcheng @ Qingdao West Coast",
+    "date": "2026-07-17",
+    "cost": 0.51,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.51,
+    "pnl_c": 47.251
+   },
+   {
+    "match": "Liaoning Tieren @ Beijing Guoan",
+    "date": "2026-07-17",
+    "cost": 0.32,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.32,
+    "pnl_c": 66.477
+   },
+   {
+    "match": "Shanghai Port @ Yunnan Yukun",
+    "date": "2026-07-17",
+    "cost": 0.54,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.54,
+    "pnl_c": 44.261
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shanghai Shenhua",
+    "date": "2026-07-18",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Dalian Yingbo @ Henan",
+    "date": "2026-07-31",
+    "cost": 0.59,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.59,
+    "pnl_c": 39.307
+   },
+   {
+    "match": "Zhejiang Professional FC @ Beijing Guoan",
+    "date": "2026-08-01",
+    "cost": 0.54,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.54,
+    "pnl_c": -55.739
+   },
+   {
+    "match": "Qingdao West Coast @ Henan",
+    "date": "2026-08-09",
+    "cost": 0.68,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.68,
+    "pnl_c": 30.477
+   },
+   {
+    "match": "Real Salt Lake @ Tigres UANL",
+    "date": "2026-08-04",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "Guadalajara @ LAFC",
+    "date": "2026-08-05",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Minnesota United FC @ Tigres UANL",
+    "date": "2026-08-07",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Monterrey @ Inter Miami CF",
+    "date": "2026-08-08",
+    "cost": 0.64,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.64,
+    "pnl_c": -65.613
+   },
+   {
+    "match": "LAFC @ Toluca",
+    "date": "2026-08-08",
+    "cost": 0.65,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.65,
+    "pnl_c": -66.593
+   },
+   {
+    "match": "Santos @ Chicago Fire FC",
+    "date": "2026-08-09",
+    "cost": 0.59,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.59,
+    "pnl_c": -60.693
+   },
+   {
+    "match": "Pumas UNAM @ Columbus Crew",
+    "date": "2026-08-11",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   },
+   {
+    "match": "Atlas @ FC Cincinnati",
+    "date": "2026-08-11",
+    "cost": 0.65,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.65,
+    "pnl_c": -66.593
+   },
+   {
+    "match": "Pachuca @ Charlotte FC",
+    "date": "2026-08-11",
+    "cost": 0.28,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.28,
+    "pnl_c": -29.411
+   },
+   {
+    "match": "Vancouver Whitecaps @ Tigres UANL",
+    "date": "2026-08-11",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Le\u00f3n @ Inter Miami CF",
+    "date": "2026-08-12",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Nashville SC @ Monterrey",
+    "date": "2026-08-12",
+    "cost": 0.6,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.6,
+    "pnl_c": -61.68
+   },
+   {
+    "match": "Quer\u00e9taro @ LAFC",
+    "date": "2026-08-12",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   }
+  ],
+  "POIS-TIE@80'": [
+   {
+    "match": "Toronto FC @ CF Montr\u00e9al",
+    "date": "2026-07-16",
+    "cost": 0.69,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.69,
+    "pnl_c": 29.503
+   },
+   {
+    "match": "Sporting Kansas City @ St. Louis CITY SC",
+    "date": "2026-07-16",
+    "cost": 0.44,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.44,
+    "pnl_c": -45.725
+   },
+   {
+    "match": "Chicago Fire FC @ Inter Miami CF",
+    "date": "2026-07-22",
+    "cost": 0.59,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.59,
+    "pnl_c": -60.693
+   },
+   {
+    "match": "Toronto FC @ New England Revolution",
+    "date": "2026-07-22",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Atlanta United FC @ Charlotte FC",
+    "date": "2026-07-22",
+    "cost": 0.63,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.63,
+    "pnl_c": 35.368
+   },
+   {
+    "match": "D.C. United @ Houston Dynamo FC",
+    "date": "2026-07-22",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Seattle Sounders FC @ Austin FC",
+    "date": "2026-07-22",
+    "cost": 0.64,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.64,
+    "pnl_c": -65.613
+   },
+   {
+    "match": "San Diego FC @ Colorado Rapids",
+    "date": "2026-07-22",
+    "cost": 0.67,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.67,
+    "pnl_c": -68.548
+   },
+   {
+    "match": "FC Dallas @ Portland Timbers",
+    "date": "2026-07-22",
+    "cost": 0.6,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.6,
+    "pnl_c": 38.32
+   },
+   {
+    "match": "Inter Miami CF @ CF Montr\u00e9al",
+    "date": "2026-07-25",
+    "cost": 0.18,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.18,
+    "pnl_c": -19.033
+   },
+   {
+    "match": "Toronto FC @ D.C. United",
+    "date": "2026-07-25",
+    "cost": 0.64,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.64,
+    "pnl_c": -65.613
+   },
+   {
+    "match": "Vancouver Whitecaps @ Minnesota United FC",
+    "date": "2026-07-25",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Colorado Rapids @ St. Louis CITY SC",
+    "date": "2026-07-25",
+    "cost": 0.63,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.63,
+    "pnl_c": -64.632
+   },
+   {
+    "match": "LA Galaxy @ San Jose Earthquakes",
+    "date": "2026-07-25",
+    "cost": 0.68,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.68,
+    "pnl_c": 30.477
+   },
+   {
+    "match": "Toronto FC @ New York City FC",
+    "date": "2026-07-31",
+    "cost": 0.68,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.68,
+    "pnl_c": 30.477
+   },
+   {
+    "match": "New England Revolution @ CF Montr\u00e9al",
+    "date": "2026-08-01",
+    "cost": 0.65,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.65,
+    "pnl_c": 33.407
+   },
+   {
+    "match": "Nashville SC @ D.C. United",
+    "date": "2026-08-01",
+    "cost": 0.63,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.63,
+    "pnl_c": 35.368
+   },
+   {
+    "match": "LAFC @ Vancouver Whitecaps",
+    "date": "2026-08-01",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "San Diego FC @ Minnesota United FC",
+    "date": "2026-08-01",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Real Salt Lake @ St. Louis CITY SC",
+    "date": "2026-08-01",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "Austin FC @ Colorado Rapids",
+    "date": "2026-08-01",
+    "cost": 0.66,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.66,
+    "pnl_c": -67.571
+   },
+   {
+    "match": "San Jose Earthquakes @ FC Cincinnati",
+    "date": "2026-08-01",
+    "cost": 0.58,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.58,
+    "pnl_c": -59.705
+   },
+   {
+    "match": "FC Dallas @ LA Galaxy",
+    "date": "2026-08-01",
+    "cost": 0.65,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.65,
+    "pnl_c": 33.407
+   },
+   {
+    "match": "Seattle Sounders FC @ Portland Timbers",
+    "date": "2026-08-01",
+    "cost": 0.62,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.62,
+    "pnl_c": -63.649
+   },
+   {
+    "match": "Santos @ Botafogo",
+    "date": "2026-07-16",
+    "cost": 0.6,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.6,
+    "pnl_c": -61.68
+   },
+   {
+    "match": "Bahia @ Atl\u00e9tico-MG",
+    "date": "2026-07-21",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "Vit\u00f3ria @ Botafogo",
+    "date": "2026-07-23",
+    "cost": 0.63,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.63,
+    "pnl_c": 35.368
+   },
+   {
+    "match": "Mirassol @ Vasco da Gama",
+    "date": "2026-07-25",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Corinthians @ Bahia",
+    "date": "2026-07-26",
+    "cost": 0.66,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.66,
+    "pnl_c": 32.429
+   },
+   {
+    "match": "S\u00e3o Paulo @ Flamengo",
+    "date": "2026-07-26",
+    "cost": 0.63,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.63,
+    "pnl_c": 35.368
+   },
+   {
+    "match": "Coritiba @ Red Bull Bragantino",
+    "date": "2026-07-26",
+    "cost": 0.65,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.65,
+    "pnl_c": 33.407
+   },
+   {
+    "match": "Flamengo @ Internacional",
+    "date": "2026-07-29",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "Bahia @ Fluminense",
+    "date": "2026-07-29",
+    "cost": 0.59,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.59,
+    "pnl_c": 39.307
+   },
+   {
+    "match": "Athletico-PR @ Corinthians",
+    "date": "2026-07-30",
+    "cost": 0.7,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.7,
+    "pnl_c": 28.53
+   },
+   {
+    "match": "S\u00e3o Paulo @ Gr\u00eamio",
+    "date": "2026-08-08",
+    "cost": 0.7,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.7,
+    "pnl_c": -71.47
+   },
+   {
+    "match": "Atl\u00e9tico-MG @ Remo",
+    "date": "2026-08-08",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Fluminense @ Botafogo",
+    "date": "2026-08-08",
+    "cost": 0.655,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.655,
+    "pnl_c": 32.918
+   },
+   {
+    "match": "Vasco da Gama @ Bahia",
+    "date": "2026-08-09",
+    "cost": 0.695,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.695,
+    "pnl_c": 29.016
+   },
+   {
+    "match": "Internacional @ Palmeiras",
+    "date": "2026-08-09",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "Rosario Central @ Belgrano (C\u00f3rdoba)",
+    "date": "2026-07-23",
+    "cost": 0.69,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.69,
+    "pnl_c": -70.497
+   },
+   {
+    "match": "Argentinos Juniors @ Sarmiento (Jun\u00edn)",
+    "date": "2026-07-23",
+    "cost": 0.66,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.66,
+    "pnl_c": -67.571
+   },
+   {
+    "match": "Aldosivi @ Defensa y Justicia",
+    "date": "2026-07-23",
+    "cost": 0.71,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.71,
+    "pnl_c": 27.559
+   },
+   {
+    "match": "Gimnasia (Mendoza) @ San Lorenzo",
+    "date": "2026-07-28",
+    "cost": 0.71,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.71,
+    "pnl_c": -72.441
+   },
+   {
+    "match": "Racing Club @ Rosario Central",
+    "date": "2026-07-28",
+    "cost": 0.68,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.68,
+    "pnl_c": 30.477
+   },
+   {
+    "match": "Instituto (C\u00f3rdoba) @ Lan\u00fas",
+    "date": "2026-08-02",
+    "cost": 0.68,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.68,
+    "pnl_c": -69.523
+   },
+   {
+    "match": "Atl\u00e9tico Tucum\u00e1n @ Hurac\u00e1n",
+    "date": "2026-08-03",
+    "cost": 0.69,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.69,
+    "pnl_c": 29.503
+   },
+   {
+    "match": "V\u00e9lez Sarsfield @ Boca Juniors",
+    "date": "2026-08-08",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "Qingdao Hainiu @ Zhejiang Professional FC",
+    "date": "2026-07-14",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Chengdu Rongcheng @ Qingdao West Coast",
+    "date": "2026-07-17",
+    "cost": 0.51,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.51,
+    "pnl_c": 47.251
+   },
+   {
+    "match": "Liaoning Tieren @ Beijing Guoan",
+    "date": "2026-07-17",
+    "cost": 0.32,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.32,
+    "pnl_c": 66.477
+   },
+   {
+    "match": "Shanghai Port @ Yunnan Yukun",
+    "date": "2026-07-17",
+    "cost": 0.54,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.54,
+    "pnl_c": 44.261
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shanghai Shenhua",
+    "date": "2026-07-18",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Dalian Yingbo @ Henan",
+    "date": "2026-07-31",
+    "cost": 0.59,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.59,
+    "pnl_c": 39.307
+   },
+   {
+    "match": "Zhejiang Professional FC @ Beijing Guoan",
+    "date": "2026-08-01",
+    "cost": 0.54,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.54,
+    "pnl_c": -55.739
+   },
+   {
+    "match": "Qingdao West Coast @ Henan",
+    "date": "2026-08-09",
+    "cost": 0.68,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.68,
+    "pnl_c": 30.477
+   },
+   {
+    "match": "Real Salt Lake @ Tigres UANL",
+    "date": "2026-08-04",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "Guadalajara @ LAFC",
+    "date": "2026-08-05",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Minnesota United FC @ Tigres UANL",
+    "date": "2026-08-07",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Monterrey @ Inter Miami CF",
+    "date": "2026-08-08",
+    "cost": 0.64,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.64,
+    "pnl_c": -65.613
+   },
+   {
+    "match": "LAFC @ Toluca",
+    "date": "2026-08-08",
+    "cost": 0.65,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.65,
+    "pnl_c": -66.593
+   },
+   {
+    "match": "Santos @ Chicago Fire FC",
+    "date": "2026-08-09",
+    "cost": 0.59,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.59,
+    "pnl_c": -60.693
+   },
+   {
+    "match": "Pumas UNAM @ Columbus Crew",
+    "date": "2026-08-11",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   },
+   {
+    "match": "Atlas @ FC Cincinnati",
+    "date": "2026-08-11",
+    "cost": 0.65,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.65,
+    "pnl_c": -66.593
+   },
+   {
+    "match": "Pachuca @ Charlotte FC",
+    "date": "2026-08-11",
+    "cost": 0.28,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.28,
+    "pnl_c": -29.411
+   },
+   {
+    "match": "Vancouver Whitecaps @ Tigres UANL",
+    "date": "2026-08-11",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Le\u00f3n @ Inter Miami CF",
+    "date": "2026-08-12",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Nashville SC @ Monterrey",
+    "date": "2026-08-12",
+    "cost": 0.6,
+    "won": false,
+    "fair": 0.7688,
+    "mkt": 0.6,
+    "pnl_c": -61.68
+   },
+   {
+    "match": "Quer\u00e9taro @ LAFC",
+    "date": "2026-08-12",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.7688,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   }
+  ],
+  "POIS-UNDER@55'": [
+   {
+    "match": "Portland Timbers @ Seattle Sounders FC",
+    "date": "2026-07-16",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Atlanta United FC @ Nashville SC",
+    "date": "2026-07-17",
+    "cost": 0.87,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.87,
+    "pnl_c": 12.208
+   },
+   {
+    "match": "LAFC @ LA Galaxy",
+    "date": "2026-07-17",
+    "cost": 0.05,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.05,
+    "pnl_c": -5.333
+   },
+   {
+    "match": "Toronto FC @ New England Revolution",
+    "date": "2026-07-22",
+    "cost": 0.85,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.85,
+    "pnl_c": 14.107
+   },
+   {
+    "match": "Red Bull New York @ Philadelphia Union",
+    "date": "2026-07-22",
+    "cost": 0.22,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.22,
+    "pnl_c": -23.201
+   },
+   {
+    "match": "Atlanta United FC @ Charlotte FC",
+    "date": "2026-07-22",
+    "cost": 0.23,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.23,
+    "pnl_c": -24.24
+   },
+   {
+    "match": "D.C. United @ Houston Dynamo FC",
+    "date": "2026-07-22",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Minnesota United FC @ Sporting Kansas City",
+    "date": "2026-07-22",
+    "cost": 0.23,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.23,
+    "pnl_c": -24.24
+   },
+   {
+    "match": "Seattle Sounders FC @ Austin FC",
+    "date": "2026-07-22",
+    "cost": 0.3,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.3,
+    "pnl_c": -31.47
+   },
+   {
+    "match": "San Diego FC @ Colorado Rapids",
+    "date": "2026-07-22",
+    "cost": 0.86,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.86,
+    "pnl_c": 13.157
+   },
+   {
+    "match": "St. Louis CITY SC @ LA Galaxy",
+    "date": "2026-07-22",
+    "cost": 0.23,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.23,
+    "pnl_c": -24.24
+   },
+   {
+    "match": "Real Salt Lake @ LAFC",
+    "date": "2026-07-22",
+    "cost": 0.23,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.23,
+    "pnl_c": -24.24
+   },
+   {
+    "match": "FC Dallas @ Portland Timbers",
+    "date": "2026-07-22",
+    "cost": 0.55,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.55,
+    "pnl_c": -56.733
+   },
+   {
+    "match": "Charlotte FC @ Red Bull New York",
+    "date": "2026-07-25",
+    "cost": 0.21,
+    "won": true,
+    "fair": 0.3725,
+    "mkt": 0.21,
+    "pnl_c": 77.839
+   },
+   {
+    "match": "Inter Miami CF @ CF Montr\u00e9al",
+    "date": "2026-07-25",
+    "cost": 0.8,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.8,
+    "pnl_c": 18.88
+   },
+   {
+    "match": "Toronto FC @ D.C. United",
+    "date": "2026-07-25",
+    "cost": 0.63,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.63,
+    "pnl_c": -64.632
+   },
+   {
+    "match": "Atlanta United FC @ New England Revolution",
+    "date": "2026-07-25",
+    "cost": 0.15,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.15,
+    "pnl_c": -15.893
+   },
+   {
+    "match": "Seattle Sounders FC @ Philadelphia Union",
+    "date": "2026-07-25",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Vancouver Whitecaps @ Minnesota United FC",
+    "date": "2026-07-25",
+    "cost": 0.85,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.85,
+    "pnl_c": 14.107
+   },
+   {
+    "match": "Colorado Rapids @ St. Louis CITY SC",
+    "date": "2026-07-25",
+    "cost": 0.84,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.84,
+    "pnl_c": 15.059
+   },
+   {
+    "match": "FC Dallas @ San Diego FC",
+    "date": "2026-07-25",
+    "cost": 0.57,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.57,
+    "pnl_c": 41.284
+   },
+   {
+    "match": "Real Salt Lake @ Portland Timbers",
+    "date": "2026-07-25",
+    "cost": 0.28,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.28,
+    "pnl_c": -29.411
+   },
+   {
+    "match": "LA Galaxy @ San Jose Earthquakes",
+    "date": "2026-07-25",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   },
+   {
+    "match": "Toronto FC @ New York City FC",
+    "date": "2026-07-31",
+    "cost": 0.25,
+    "won": true,
+    "fair": 0.3725,
+    "mkt": 0.25,
+    "pnl_c": 73.688
+   },
+   {
+    "match": "Nashville SC @ D.C. United",
+    "date": "2026-08-01",
+    "cost": 0.23,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.23,
+    "pnl_c": -24.24
+   },
+   {
+    "match": "Atlanta United FC @ Philadelphia Union",
+    "date": "2026-08-01",
+    "cost": 0.44,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.44,
+    "pnl_c": -45.725
+   },
+   {
+    "match": "LAFC @ Vancouver Whitecaps",
+    "date": "2026-08-01",
+    "cost": 0.59,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.59,
+    "pnl_c": 39.307
+   },
+   {
+    "match": "Charlotte FC @ Chicago Fire FC",
+    "date": "2026-08-01",
+    "cost": 0.21,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.21,
+    "pnl_c": -22.161
+   },
+   {
+    "match": "San Diego FC @ Minnesota United FC",
+    "date": "2026-08-01",
+    "cost": 0.6,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.6,
+    "pnl_c": 38.32
+   },
+   {
+    "match": "Houston Dynamo FC @ Sporting Kansas City",
+    "date": "2026-08-01",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "Real Salt Lake @ St. Louis CITY SC",
+    "date": "2026-08-01",
+    "cost": 0.87,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.87,
+    "pnl_c": 12.208
+   },
+   {
+    "match": "Austin FC @ Colorado Rapids",
+    "date": "2026-08-01",
+    "cost": 0.85,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.85,
+    "pnl_c": 14.107
+   },
+   {
+    "match": "San Jose Earthquakes @ FC Cincinnati",
+    "date": "2026-08-01",
+    "cost": 0.02,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.02,
+    "pnl_c": -2.137
+   },
+   {
+    "match": "FC Dallas @ LA Galaxy",
+    "date": "2026-08-01",
+    "cost": 0.83,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.83,
+    "pnl_c": 16.012
+   },
+   {
+    "match": "Seattle Sounders FC @ Portland Timbers",
+    "date": "2026-08-01",
+    "cost": 0.21,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.21,
+    "pnl_c": -22.161
+   },
+   {
+    "match": "Houston Dynamo FC @ New England Revolution",
+    "date": "2026-08-08",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Santos @ Botafogo",
+    "date": "2026-07-16",
+    "cost": 0.69,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.69,
+    "pnl_c": -70.497
+   },
+   {
+    "match": "Chapecoense @ Bahia",
+    "date": "2026-07-17",
+    "cost": 0.26,
+    "won": true,
+    "fair": 0.3725,
+    "mkt": 0.26,
+    "pnl_c": 72.653
+   },
+   {
+    "match": "Red Bull Bragantino @ Fluminense",
+    "date": "2026-07-17",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "Gr\u00eamio @ Mirassol",
+    "date": "2026-07-17",
+    "cost": 0.32,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.32,
+    "pnl_c": -33.523
+   },
+   {
+    "match": "Bahia @ Atl\u00e9tico-MG",
+    "date": "2026-07-21",
+    "cost": 0.68,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.68,
+    "pnl_c": 30.477
+   },
+   {
+    "match": "Cruzeiro @ Internacional",
+    "date": "2026-07-22",
+    "cost": 0.63,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.63,
+    "pnl_c": -64.632
+   },
+   {
+    "match": "Chapecoense @ Santos",
+    "date": "2026-07-25",
+    "cost": 0.27,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.27,
+    "pnl_c": -28.38
+   },
+   {
+    "match": "Mirassol @ Vasco da Gama",
+    "date": "2026-07-25",
+    "cost": 0.65,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.65,
+    "pnl_c": 33.407
+   },
+   {
+    "match": "Botafogo @ Cruzeiro",
+    "date": "2026-07-26",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Atl\u00e9tico-MG @ Palmeiras",
+    "date": "2026-07-26",
+    "cost": 0.69,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.69,
+    "pnl_c": -70.497
+   },
+   {
+    "match": "Vit\u00f3ria @ Remo",
+    "date": "2026-07-26",
+    "cost": 0.32,
+    "won": true,
+    "fair": 0.3725,
+    "mkt": 0.32,
+    "pnl_c": 66.477
+   },
+   {
+    "match": "Flamengo @ Internacional",
+    "date": "2026-07-29",
+    "cost": 0.64,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.64,
+    "pnl_c": 34.387
+   },
+   {
+    "match": "Palmeiras @ Vit\u00f3ria",
+    "date": "2026-07-29",
+    "cost": 0.19,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.19,
+    "pnl_c": -20.077
+   },
+   {
+    "match": "Fluminense @ Botafogo",
+    "date": "2026-08-08",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Mirassol @ Cruzeiro",
+    "date": "2026-08-09",
+    "cost": 0.29,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.29,
+    "pnl_c": -30.441
+   },
+   {
+    "match": "Athletico-PR @ Santos",
+    "date": "2026-08-09",
+    "cost": 0.28,
+    "won": true,
+    "fair": 0.3725,
+    "mkt": 0.28,
+    "pnl_c": 70.589
+   },
+   {
+    "match": "Vit\u00f3ria @ Flamengo",
+    "date": "2026-08-09",
+    "cost": 0.6,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.6,
+    "pnl_c": 38.32
+   },
+   {
+    "match": "Barracas Central @ River Plate",
+    "date": "2026-07-25",
+    "cost": 0.67,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.67,
+    "pnl_c": 31.452
+   },
+   {
+    "match": "Estudiantes de R\u00edo Cuarto @ Argentinos Juniors",
+    "date": "2026-07-28",
+    "cost": 0.69,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.69,
+    "pnl_c": -70.497
+   },
+   {
+    "match": "Uni\u00f3n (Santa Fe) @ Gimnasia (Mendoza)",
+    "date": "2026-08-01",
+    "cost": 0.32,
+    "won": true,
+    "fair": 0.3725,
+    "mkt": 0.32,
+    "pnl_c": 66.477
+   },
+   {
+    "match": "Estudiantes de La Plata @ Boca Juniors",
+    "date": "2026-08-05",
+    "cost": 0.69,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.69,
+    "pnl_c": 29.503
+   },
+   {
+    "match": "Aldosivi @ Rosario Central",
+    "date": "2026-08-07",
+    "cost": 0.64,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.64,
+    "pnl_c": -65.613
+   },
+   {
+    "match": "Newell's Old Boys @ Defensa y Justicia",
+    "date": "2026-08-09",
+    "cost": 0.69,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.69,
+    "pnl_c": -70.497
+   },
+   {
+    "match": "Racing Club @ Argentinos Juniors",
+    "date": "2026-08-09",
+    "cost": 0.31,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.31,
+    "pnl_c": -32.497
+   },
+   {
+    "match": "Chengdu Rongcheng @ Qingdao West Coast",
+    "date": "2026-07-17",
+    "cost": 0.51,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.51,
+    "pnl_c": 47.251
+   },
+   {
+    "match": "Liaoning Tieren @ Beijing Guoan",
+    "date": "2026-07-17",
+    "cost": 0.13,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.13,
+    "pnl_c": -13.792
+   },
+   {
+    "match": "Zhejiang Professional FC @ Chongqing Tonglianglong",
+    "date": "2026-07-18",
+    "cost": 0.66,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.66,
+    "pnl_c": 32.429
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shanghai Shenhua",
+    "date": "2026-07-18",
+    "cost": 0.77,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.77,
+    "pnl_c": 21.76
+   },
+   {
+    "match": "Shenzhen Xinpengcheng @ Wuhan Three Towns",
+    "date": "2026-07-18",
+    "cost": 0.2,
+    "won": true,
+    "fair": 0.3725,
+    "mkt": 0.2,
+    "pnl_c": 78.88
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Qingdao Hainiu",
+    "date": "2026-07-25",
+    "cost": 0.66,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.66,
+    "pnl_c": 32.429
+   },
+   {
+    "match": "Qingdao West Coast @ Liaoning Tieren",
+    "date": "2026-07-25",
+    "cost": 0.55,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.55,
+    "pnl_c": 43.267
+   },
+   {
+    "match": "Shanghai Shenhua @ Shanghai Port",
+    "date": "2026-07-25",
+    "cost": 0.16,
+    "won": true,
+    "fair": 0.3725,
+    "mkt": 0.16,
+    "pnl_c": 83.059
+   },
+   {
+    "match": "Chongqing Tonglianglong @ Wuhan Three Towns",
+    "date": "2026-07-25",
+    "cost": 0.59,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.59,
+    "pnl_c": 39.307
+   },
+   {
+    "match": "Beijing Guoan @ Chengdu Rongcheng",
+    "date": "2026-07-26",
+    "cost": 0.58,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.58,
+    "pnl_c": -59.705
+   },
+   {
+    "match": "Henan @ Shandong Taishan",
+    "date": "2026-07-26",
+    "cost": 0.19,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.19,
+    "pnl_c": -20.077
+   },
+   {
+    "match": "Yunnan Yukun @ Tianjin Jinmen Tiger",
+    "date": "2026-08-01",
+    "cost": 0.61,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.61,
+    "pnl_c": -62.665
+   },
+   {
+    "match": "Zhejiang Professional FC @ Beijing Guoan",
+    "date": "2026-08-01",
+    "cost": 0.2,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.2,
+    "pnl_c": -21.12
+   },
+   {
+    "match": "Shandong Taishan @ Shanghai Port",
+    "date": "2026-08-01",
+    "cost": 0.46,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.46,
+    "pnl_c": 52.261
+   },
+   {
+    "match": "Wuhan Three Towns @ Chengdu Rongcheng",
+    "date": "2026-08-01",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Qingdao Hainiu @ Qingdao West Coast",
+    "date": "2026-08-02",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Shanghai Shenhua @ Qingdao Hainiu",
+    "date": "2026-08-08",
+    "cost": 0.59,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.59,
+    "pnl_c": 39.307
+   },
+   {
+    "match": "Liaoning Tieren @ Dalian Yingbo",
+    "date": "2026-08-08",
+    "cost": 0.66,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.66,
+    "pnl_c": 32.429
+   },
+   {
+    "match": "Chengdu Rongcheng @ Yunnan Yukun",
+    "date": "2026-08-08",
+    "cost": 0.49,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.49,
+    "pnl_c": 49.251
+   },
+   {
+    "match": "Pumas UNAM @ Charlotte FC",
+    "date": "2026-08-04",
+    "cost": 0.24,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.24,
+    "pnl_c": -25.277
+   },
+   {
+    "match": "Real Salt Lake @ Tigres UANL",
+    "date": "2026-08-04",
+    "cost": 0.27,
+    "won": true,
+    "fair": 0.3725,
+    "mkt": 0.27,
+    "pnl_c": 71.62
+   },
+   {
+    "match": "Atlante @ Vancouver Whitecaps",
+    "date": "2026-08-04",
+    "cost": 0.6,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.6,
+    "pnl_c": 38.32
+   },
+   {
+    "match": "Quer\u00e9taro @ FC Dallas",
+    "date": "2026-08-05",
+    "cost": 0.68,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.68,
+    "pnl_c": 30.477
+   },
+   {
+    "match": "Orlando City SC @ Monterrey",
+    "date": "2026-08-05",
+    "cost": 0.57,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.57,
+    "pnl_c": -58.716
+   },
+   {
+    "match": "Seattle Sounders FC @ Toluca",
+    "date": "2026-08-05",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Guadalajara @ LAFC",
+    "date": "2026-08-05",
+    "cost": 0.26,
+    "won": true,
+    "fair": 0.3725,
+    "mkt": 0.26,
+    "pnl_c": 72.653
+   },
+   {
+    "match": "Pachuca @ Columbus Crew",
+    "date": "2026-08-07",
+    "cost": 0.26,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.26,
+    "pnl_c": -27.347
+   },
+   {
+    "match": "Pumas UNAM @ FC Cincinnati",
+    "date": "2026-08-07",
+    "cost": 0.59,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.59,
+    "pnl_c": 39.307
+   },
+   {
+    "match": "FC Juarez @ Vancouver Whitecaps",
+    "date": "2026-08-07",
+    "cost": 0.19,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.19,
+    "pnl_c": -20.077
+   },
+   {
+    "match": "Le\u00f3n @ Orlando City SC",
+    "date": "2026-08-08",
+    "cost": 0.24,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.24,
+    "pnl_c": -25.277
+   },
+   {
+    "match": "Monterrey @ Inter Miami CF",
+    "date": "2026-08-08",
+    "cost": 0.2,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.2,
+    "pnl_c": -21.12
+   },
+   {
+    "match": "FC Dallas @ Guadalajara",
+    "date": "2026-08-08",
+    "cost": 0.85,
+    "won": true,
+    "fair": 0.922,
+    "mkt": 0.85,
+    "pnl_c": 14.107
+   },
+   {
+    "match": "Quer\u00e9taro @ Seattle Sounders FC",
+    "date": "2026-08-09",
+    "cost": 0.26,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.26,
+    "pnl_c": -27.347
+   },
+   {
+    "match": "New York City FC @ Cruz Azul",
+    "date": "2026-08-09",
+    "cost": 0.29,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.29,
+    "pnl_c": -30.441
+   },
+   {
+    "match": "Santos @ Chicago Fire FC",
+    "date": "2026-08-09",
+    "cost": 0.52,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.52,
+    "pnl_c": -53.747
+   },
+   {
+    "match": "Portland Timbers @ Am\u00e9rica",
+    "date": "2026-08-09",
+    "cost": 0.25,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.25,
+    "pnl_c": -26.312
+   },
+   {
+    "match": "Pumas UNAM @ Columbus Crew",
+    "date": "2026-08-11",
+    "cost": 0.29,
+    "won": true,
+    "fair": 0.3725,
+    "mkt": 0.29,
+    "pnl_c": 69.559
+   },
+   {
+    "match": "Atlas @ FC Cincinnati",
+    "date": "2026-08-11",
+    "cost": 0.6,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.6,
+    "pnl_c": -61.68
+   },
+   {
+    "match": "Atlante @ Minnesota United FC",
+    "date": "2026-08-11",
+    "cost": 0.62,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.62,
+    "pnl_c": -63.649
+   },
+   {
+    "match": "FC Juarez @ Real Salt Lake",
+    "date": "2026-08-11",
+    "cost": 0.3,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.3,
+    "pnl_c": -31.47
+   },
+   {
+    "match": "Vancouver Whitecaps @ Tigres UANL",
+    "date": "2026-08-11",
+    "cost": 0.63,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.63,
+    "pnl_c": 35.368
+   },
+   {
+    "match": "Atl\u00e9tico de San Luis @ Orlando City SC",
+    "date": "2026-08-12",
+    "cost": 0.55,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.55,
+    "pnl_c": -56.733
+   },
+   {
+    "match": "Nashville SC @ Monterrey",
+    "date": "2026-08-12",
+    "cost": 0.27,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.27,
+    "pnl_c": -28.38
+   },
+   {
+    "match": "Puebla @ San Diego FC",
+    "date": "2026-08-12",
+    "cost": 0.26,
+    "won": false,
+    "fair": 0.3725,
+    "mkt": 0.26,
+    "pnl_c": -27.347
+   },
+   {
+    "match": "Quer\u00e9taro @ LAFC",
+    "date": "2026-08-12",
+    "cost": 0.46,
+    "won": true,
+    "fair": 0.7404,
+    "mkt": 0.46,
+    "pnl_c": 52.261
+   },
+   {
+    "match": "Guadalajara @ Seattle Sounders FC",
+    "date": "2026-08-12",
+    "cost": 0.58,
+    "won": false,
+    "fair": 0.7404,
+    "mkt": 0.58,
+    "pnl_c": -59.705
+   }
+  ],
+  "CD-UNDER@75'": [
+   {
+    "match": "Atlanta United FC @ Nashville SC",
+    "date": "2026-07-17",
+    "cost": 0.97,
+    "won": true,
+    "fair": 0.9908,
+    "mkt": 0.97,
+    "pnl_c": 2.796
+   },
+   {
+    "match": "Inter Miami CF @ CF Montr\u00e9al",
+    "date": "2026-07-25",
+    "cost": 0.86,
+    "won": true,
+    "fair": 0.9908,
+    "mkt": 0.86,
+    "pnl_c": 13.157
+   },
+   {
+    "match": "Colorado Rapids @ St. Louis CITY SC",
+    "date": "2026-07-25",
+    "cost": 0.97,
+    "won": true,
+    "fair": 0.9908,
+    "mkt": 0.97,
+    "pnl_c": 2.796
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shanghai Shenhua",
+    "date": "2026-07-18",
+    "cost": 0.93,
+    "won": true,
+    "fair": 0.9908,
+    "mkt": 0.93,
+    "pnl_c": 6.544
+   },
+   {
+    "match": "Pachuca @ Charlotte FC",
+    "date": "2026-08-11",
+    "cost": 0.95,
+    "won": true,
+    "fair": 0.9908,
+    "mkt": 0.95,
+    "pnl_c": 4.667
+   }
+  ],
+  "POIS-UNDER@75'": [
+   {
+    "match": "New York City FC @ Columbus Crew",
+    "date": "2026-07-22",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "D.C. United @ Houston Dynamo FC",
+    "date": "2026-07-22",
+    "cost": 0.86,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.86,
+    "pnl_c": 13.157
+   },
+   {
+    "match": "Seattle Sounders FC @ Austin FC",
+    "date": "2026-07-22",
+    "cost": 0.52,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.52,
+    "pnl_c": -53.747
+   },
+   {
+    "match": "FC Dallas @ Portland Timbers",
+    "date": "2026-07-22",
+    "cost": 0.48,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.48,
+    "pnl_c": -49.747
+   },
+   {
+    "match": "Charlotte FC @ Red Bull New York",
+    "date": "2026-07-25",
+    "cost": 0.45,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.45,
+    "pnl_c": 53.268
+   },
+   {
+    "match": "Inter Miami CF @ CF Montr\u00e9al",
+    "date": "2026-07-25",
+    "cost": 0.86,
+    "won": true,
+    "fair": 0.9908,
+    "mkt": 0.86,
+    "pnl_c": 13.157
+   },
+   {
+    "match": "Toronto FC @ D.C. United",
+    "date": "2026-07-25",
+    "cost": 0.52,
+    "won": false,
+    "fair": 0.9321,
+    "mkt": 0.52,
+    "pnl_c": -53.747
+   },
+   {
+    "match": "Seattle Sounders FC @ Philadelphia Union",
+    "date": "2026-07-25",
+    "cost": 0.86,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.86,
+    "pnl_c": 13.157
+   },
+   {
+    "match": "LA Galaxy @ San Jose Earthquakes",
+    "date": "2026-07-25",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "Toronto FC @ New York City FC",
+    "date": "2026-07-31",
+    "cost": 0.53,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.53,
+    "pnl_c": 45.256
+   },
+   {
+    "match": "LAFC @ Vancouver Whitecaps",
+    "date": "2026-08-01",
+    "cost": 0.52,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.52,
+    "pnl_c": 46.253
+   },
+   {
+    "match": "San Diego FC @ Minnesota United FC",
+    "date": "2026-08-01",
+    "cost": 0.48,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.48,
+    "pnl_c": 50.253
+   },
+   {
+    "match": "Houston Dynamo FC @ Sporting Kansas City",
+    "date": "2026-08-01",
+    "cost": 0.49,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.49,
+    "pnl_c": 49.251
+   },
+   {
+    "match": "Real Salt Lake @ St. Louis CITY SC",
+    "date": "2026-08-01",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Seattle Sounders FC @ Portland Timbers",
+    "date": "2026-08-01",
+    "cost": 0.42,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.42,
+    "pnl_c": -43.705
+   },
+   {
+    "match": "Houston Dynamo FC @ New England Revolution",
+    "date": "2026-08-08",
+    "cost": 0.51,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.51,
+    "pnl_c": 47.251
+   },
+   {
+    "match": "Santos @ Botafogo",
+    "date": "2026-07-16",
+    "cost": 0.53,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.53,
+    "pnl_c": -54.744
+   },
+   {
+    "match": "Chapecoense @ Bahia",
+    "date": "2026-07-17",
+    "cost": 0.47,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.47,
+    "pnl_c": 51.256
+   },
+   {
+    "match": "Red Bull Bragantino @ Fluminense",
+    "date": "2026-07-17",
+    "cost": 0.84,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.84,
+    "pnl_c": 15.059
+   },
+   {
+    "match": "Gr\u00eamio @ Mirassol",
+    "date": "2026-07-17",
+    "cost": 0.54,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.54,
+    "pnl_c": -55.739
+   },
+   {
+    "match": "Bahia @ Atl\u00e9tico-MG",
+    "date": "2026-07-21",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "Cruzeiro @ Internacional",
+    "date": "2026-07-22",
+    "cost": 0.49,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.49,
+    "pnl_c": -50.749
+   },
+   {
+    "match": "Internacional @ Athletico-PR",
+    "date": "2026-07-25",
+    "cost": 0.53,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.53,
+    "pnl_c": 45.256
+   },
+   {
+    "match": "Mirassol @ Vasco da Gama",
+    "date": "2026-07-25",
+    "cost": 0.86,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.86,
+    "pnl_c": 13.157
+   },
+   {
+    "match": "Corinthians @ Bahia",
+    "date": "2026-07-26",
+    "cost": 0.57,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.57,
+    "pnl_c": 41.284
+   },
+   {
+    "match": "Botafogo @ Cruzeiro",
+    "date": "2026-07-26",
+    "cost": 0.85,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.85,
+    "pnl_c": 14.107
+   },
+   {
+    "match": "S\u00e3o Paulo @ Flamengo",
+    "date": "2026-07-26",
+    "cost": 0.53,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.53,
+    "pnl_c": 45.256
+   },
+   {
+    "match": "Fluminense @ Gr\u00eamio",
+    "date": "2026-07-26",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "Atl\u00e9tico-MG @ Palmeiras",
+    "date": "2026-07-26",
+    "cost": 0.56,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.56,
+    "pnl_c": -57.725
+   },
+   {
+    "match": "Vit\u00f3ria @ Remo",
+    "date": "2026-07-26",
+    "cost": 0.53,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.53,
+    "pnl_c": 45.256
+   },
+   {
+    "match": "Flamengo @ Internacional",
+    "date": "2026-07-29",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "S\u00e3o Paulo @ Gr\u00eamio",
+    "date": "2026-08-08",
+    "cost": 0.6,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.6,
+    "pnl_c": -61.68
+   },
+   {
+    "match": "Fluminense @ Botafogo",
+    "date": "2026-08-08",
+    "cost": 0.52,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.52,
+    "pnl_c": 46.253
+   },
+   {
+    "match": "Mirassol @ Cruzeiro",
+    "date": "2026-08-09",
+    "cost": 0.07,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.07,
+    "pnl_c": -7.456
+   },
+   {
+    "match": "Athletico-PR @ Santos",
+    "date": "2026-08-09",
+    "cost": 0.5,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.5,
+    "pnl_c": 48.25
+   },
+   {
+    "match": "Vit\u00f3ria @ Flamengo",
+    "date": "2026-08-09",
+    "cost": 0.86,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.86,
+    "pnl_c": 13.157
+   },
+   {
+    "match": "Aldosivi @ Defensa y Justicia",
+    "date": "2026-07-23",
+    "cost": 0.6,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.6,
+    "pnl_c": 38.32
+   },
+   {
+    "match": "Instituto (C\u00f3rdoba) @ V\u00e9lez Sarsfield",
+    "date": "2026-07-24",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "Uni\u00f3n (Santa Fe) @ Platense",
+    "date": "2026-07-24",
+    "cost": 0.55,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.55,
+    "pnl_c": -56.733
+   },
+   {
+    "match": "Barracas Central @ River Plate",
+    "date": "2026-07-25",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "Sarmiento (Jun\u00edn) @ Banfield",
+    "date": "2026-07-28",
+    "cost": 0.57,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.57,
+    "pnl_c": -58.716
+   },
+   {
+    "match": "Estudiantes de R\u00edo Cuarto @ Argentinos Juniors",
+    "date": "2026-07-28",
+    "cost": 0.55,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.55,
+    "pnl_c": -56.733
+   },
+   {
+    "match": "Platense @ Instituto (C\u00f3rdoba)",
+    "date": "2026-07-29",
+    "cost": 0.59,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.59,
+    "pnl_c": -60.693
+   },
+   {
+    "match": "V\u00e9lez Sarsfield @ Talleres (C\u00f3rdoba)",
+    "date": "2026-07-30",
+    "cost": 0.59,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.59,
+    "pnl_c": -60.693
+   },
+   {
+    "match": "Uni\u00f3n (Santa Fe) @ Gimnasia (Mendoza)",
+    "date": "2026-08-01",
+    "cost": 0.56,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.56,
+    "pnl_c": 42.275
+   },
+   {
+    "match": "Gimnasia La Plata @ Aldosivi",
+    "date": "2026-08-02",
+    "cost": 0.57,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.57,
+    "pnl_c": -58.716
+   },
+   {
+    "match": "Rosario Central @ River Plate",
+    "date": "2026-08-02",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "Aldosivi @ Rosario Central",
+    "date": "2026-08-07",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Sarmiento (Jun\u00edn) @ Atl\u00e9tico Tucum\u00e1n",
+    "date": "2026-08-08",
+    "cost": 0.55,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.55,
+    "pnl_c": -56.733
+   },
+   {
+    "match": "Hurac\u00e1n @ San Lorenzo",
+    "date": "2026-08-09",
+    "cost": 0.58,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.58,
+    "pnl_c": 40.295
+   },
+   {
+    "match": "Newell's Old Boys @ Defensa y Justicia",
+    "date": "2026-08-09",
+    "cost": 0.55,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.55,
+    "pnl_c": -56.733
+   },
+   {
+    "match": "Racing Club @ Argentinos Juniors",
+    "date": "2026-08-09",
+    "cost": 0.11,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.11,
+    "pnl_c": -11.685
+   },
+   {
+    "match": "Chengdu Rongcheng @ Qingdao West Coast",
+    "date": "2026-07-17",
+    "cost": 0.75,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.75,
+    "pnl_c": 23.688
+   },
+   {
+    "match": "Zhejiang Professional FC @ Chongqing Tonglianglong",
+    "date": "2026-07-18",
+    "cost": 0.86,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.86,
+    "pnl_c": 13.157
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shanghai Shenhua",
+    "date": "2026-07-18",
+    "cost": 0.93,
+    "won": true,
+    "fair": 0.9908,
+    "mkt": 0.93,
+    "pnl_c": 6.544
+   },
+   {
+    "match": "Shenzhen Xinpengcheng @ Wuhan Three Towns",
+    "date": "2026-07-18",
+    "cost": 0.4,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.4,
+    "pnl_c": 58.32
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Qingdao Hainiu",
+    "date": "2026-07-25",
+    "cost": 0.85,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.85,
+    "pnl_c": 14.107
+   },
+   {
+    "match": "Qingdao West Coast @ Liaoning Tieren",
+    "date": "2026-07-25",
+    "cost": 0.54,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.54,
+    "pnl_c": 44.261
+   },
+   {
+    "match": "Shanghai Shenhua @ Shanghai Port",
+    "date": "2026-07-25",
+    "cost": 0.39,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.39,
+    "pnl_c": 59.335
+   },
+   {
+    "match": "Chongqing Tonglianglong @ Wuhan Three Towns",
+    "date": "2026-07-25",
+    "cost": 0.83,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.83,
+    "pnl_c": 16.012
+   },
+   {
+    "match": "Beijing Guoan @ Chengdu Rongcheng",
+    "date": "2026-07-26",
+    "cost": 0.41,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.41,
+    "pnl_c": -42.693
+   },
+   {
+    "match": "Dalian Yingbo @ Henan",
+    "date": "2026-07-31",
+    "cost": 0.45,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.45,
+    "pnl_c": 53.268
+   },
+   {
+    "match": "Yunnan Yukun @ Tianjin Jinmen Tiger",
+    "date": "2026-08-01",
+    "cost": 0.47,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.47,
+    "pnl_c": -48.744
+   },
+   {
+    "match": "Zhejiang Professional FC @ Beijing Guoan",
+    "date": "2026-08-01",
+    "cost": 0.44,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.44,
+    "pnl_c": -45.725
+   },
+   {
+    "match": "Shandong Taishan @ Shanghai Port",
+    "date": "2026-08-01",
+    "cost": 0.8,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.8,
+    "pnl_c": 18.88
+   },
+   {
+    "match": "Wuhan Three Towns @ Chengdu Rongcheng",
+    "date": "2026-08-01",
+    "cost": 0.74,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.74,
+    "pnl_c": 24.653
+   },
+   {
+    "match": "Qingdao Hainiu @ Qingdao West Coast",
+    "date": "2026-08-02",
+    "cost": 0.46,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.46,
+    "pnl_c": 52.261
+   },
+   {
+    "match": "Chongqing Tonglianglong @ Shenzhen Xinpengcheng",
+    "date": "2026-08-02",
+    "cost": 0.6,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.6,
+    "pnl_c": 38.32
+   },
+   {
+    "match": "Shanghai Shenhua @ Qingdao Hainiu",
+    "date": "2026-08-08",
+    "cost": 0.83,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.83,
+    "pnl_c": 16.012
+   },
+   {
+    "match": "Liaoning Tieren @ Dalian Yingbo",
+    "date": "2026-08-08",
+    "cost": 0.46,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.46,
+    "pnl_c": 52.261
+   },
+   {
+    "match": "Chengdu Rongcheng @ Yunnan Yukun",
+    "date": "2026-08-08",
+    "cost": 0.77,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.77,
+    "pnl_c": 21.76
+   },
+   {
+    "match": "Pumas UNAM @ Charlotte FC",
+    "date": "2026-08-04",
+    "cost": 0.17,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.17,
+    "pnl_c": -17.988
+   },
+   {
+    "match": "Real Salt Lake @ Tigres UANL",
+    "date": "2026-08-04",
+    "cost": 0.53,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.53,
+    "pnl_c": 45.256
+   },
+   {
+    "match": "Atlante @ Vancouver Whitecaps",
+    "date": "2026-08-04",
+    "cost": 0.87,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.87,
+    "pnl_c": 12.208
+   },
+   {
+    "match": "Quer\u00e9taro @ FC Dallas",
+    "date": "2026-08-05",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "Orlando City SC @ Monterrey",
+    "date": "2026-08-05",
+    "cost": 0.37,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.37,
+    "pnl_c": -38.632
+   },
+   {
+    "match": "Seattle Sounders FC @ Toluca",
+    "date": "2026-08-05",
+    "cost": 0.45,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.45,
+    "pnl_c": -46.732
+   },
+   {
+    "match": "Guadalajara @ LAFC",
+    "date": "2026-08-05",
+    "cost": 0.52,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.52,
+    "pnl_c": 46.253
+   },
+   {
+    "match": "Pumas UNAM @ FC Cincinnati",
+    "date": "2026-08-07",
+    "cost": 0.84,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.84,
+    "pnl_c": 15.059
+   },
+   {
+    "match": "Monterrey @ Inter Miami CF",
+    "date": "2026-08-08",
+    "cost": 0.41,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.41,
+    "pnl_c": -42.693
+   },
+   {
+    "match": "FC Dallas @ Guadalajara",
+    "date": "2026-08-08",
+    "cost": 0.83,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.83,
+    "pnl_c": 16.012
+   },
+   {
+    "match": "New York City FC @ Cruz Azul",
+    "date": "2026-08-09",
+    "cost": 0.5,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.5,
+    "pnl_c": -51.75
+   },
+   {
+    "match": "Santos @ Chicago Fire FC",
+    "date": "2026-08-09",
+    "cost": 0.45,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.45,
+    "pnl_c": -46.732
+   },
+   {
+    "match": "Pumas UNAM @ Columbus Crew",
+    "date": "2026-08-11",
+    "cost": 0.42,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.42,
+    "pnl_c": 56.295
+   },
+   {
+    "match": "Atlas @ FC Cincinnati",
+    "date": "2026-08-11",
+    "cost": 0.82,
+    "won": false,
+    "fair": 0.9321,
+    "mkt": 0.82,
+    "pnl_c": -83.033
+   },
+   {
+    "match": "Vancouver Whitecaps @ Tigres UANL",
+    "date": "2026-08-11",
+    "cost": 0.87,
+    "won": true,
+    "fair": 0.9321,
+    "mkt": 0.87,
+    "pnl_c": 12.208
+   },
+   {
+    "match": "Atl\u00e9tico de San Luis @ Orlando City SC",
+    "date": "2026-08-12",
+    "cost": 0.48,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.48,
+    "pnl_c": -49.747
+   },
+   {
+    "match": "Nashville SC @ Monterrey",
+    "date": "2026-08-12",
+    "cost": 0.47,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.47,
+    "pnl_c": -48.744
+   },
+   {
+    "match": "Puebla @ San Diego FC",
+    "date": "2026-08-12",
+    "cost": 0.02,
+    "won": false,
+    "fair": 0.655,
+    "mkt": 0.02,
+    "pnl_c": -2.137
+   },
+   {
+    "match": "Quer\u00e9taro @ LAFC",
+    "date": "2026-08-12",
+    "cost": 0.42,
+    "won": true,
+    "fair": 0.655,
+    "mkt": 0.42,
+    "pnl_c": 56.295
+   }
+  ],
+  "POIS-UNDER@65'": [
+   {
+    "match": "D.C. United @ Houston Dynamo FC",
+    "date": "2026-07-22",
+    "cost": 0.74,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.74,
+    "pnl_c": 24.653
+   },
+   {
+    "match": "Minnesota United FC @ Sporting Kansas City",
+    "date": "2026-07-22",
+    "cost": 0.33,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.33,
+    "pnl_c": -34.548
+   },
+   {
+    "match": "Seattle Sounders FC @ Austin FC",
+    "date": "2026-07-22",
+    "cost": 0.4,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.4,
+    "pnl_c": -41.68
+   },
+   {
+    "match": "St. Louis CITY SC @ LA Galaxy",
+    "date": "2026-07-22",
+    "cost": 0.34,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.34,
+    "pnl_c": -35.571
+   },
+   {
+    "match": "Real Salt Lake @ LAFC",
+    "date": "2026-07-22",
+    "cost": 0.33,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.33,
+    "pnl_c": -34.548
+   },
+   {
+    "match": "FC Dallas @ Portland Timbers",
+    "date": "2026-07-22",
+    "cost": 0.73,
+    "won": false,
+    "fair": 0.8423,
+    "mkt": 0.73,
+    "pnl_c": -74.38
+   },
+   {
+    "match": "Charlotte FC @ Red Bull New York",
+    "date": "2026-07-25",
+    "cost": 0.3,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.3,
+    "pnl_c": 68.53
+   },
+   {
+    "match": "Inter Miami CF @ CF Montr\u00e9al",
+    "date": "2026-07-25",
+    "cost": 0.91,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.91,
+    "pnl_c": 8.427
+   },
+   {
+    "match": "Toronto FC @ D.C. United",
+    "date": "2026-07-25",
+    "cost": 0.72,
+    "won": false,
+    "fair": 0.8423,
+    "mkt": 0.72,
+    "pnl_c": -73.411
+   },
+   {
+    "match": "Seattle Sounders FC @ Philadelphia Union",
+    "date": "2026-07-25",
+    "cost": 0.72,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.72,
+    "pnl_c": 26.589
+   },
+   {
+    "match": "FC Dallas @ San Diego FC",
+    "date": "2026-07-25",
+    "cost": 0.74,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.74,
+    "pnl_c": 24.653
+   },
+   {
+    "match": "Real Salt Lake @ Portland Timbers",
+    "date": "2026-07-25",
+    "cost": 0.06,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.06,
+    "pnl_c": -6.395
+   },
+   {
+    "match": "LA Galaxy @ San Jose Earthquakes",
+    "date": "2026-07-25",
+    "cost": 0.35,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.35,
+    "pnl_c": 63.407
+   },
+   {
+    "match": "Toronto FC @ New York City FC",
+    "date": "2026-07-31",
+    "cost": 0.36,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.36,
+    "pnl_c": 62.387
+   },
+   {
+    "match": "Atlanta United FC @ Philadelphia Union",
+    "date": "2026-08-01",
+    "cost": 0.54,
+    "won": false,
+    "fair": 0.8423,
+    "mkt": 0.54,
+    "pnl_c": -55.739
+   },
+   {
+    "match": "LAFC @ Vancouver Whitecaps",
+    "date": "2026-08-01",
+    "cost": 0.73,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.73,
+    "pnl_c": 25.62
+   },
+   {
+    "match": "Charlotte FC @ Chicago Fire FC",
+    "date": "2026-08-01",
+    "cost": 0.33,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.33,
+    "pnl_c": -34.548
+   },
+   {
+    "match": "San Diego FC @ Minnesota United FC",
+    "date": "2026-08-01",
+    "cost": 0.44,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.44,
+    "pnl_c": 54.275
+   },
+   {
+    "match": "Houston Dynamo FC @ Sporting Kansas City",
+    "date": "2026-08-01",
+    "cost": 0.75,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.75,
+    "pnl_c": 23.688
+   },
+   {
+    "match": "Real Salt Lake @ St. Louis CITY SC",
+    "date": "2026-08-01",
+    "cost": 0.72,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.72,
+    "pnl_c": 26.589
+   },
+   {
+    "match": "Seattle Sounders FC @ Portland Timbers",
+    "date": "2026-08-01",
+    "cost": 0.33,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.33,
+    "pnl_c": -34.548
+   },
+   {
+    "match": "Houston Dynamo FC @ New England Revolution",
+    "date": "2026-08-08",
+    "cost": 0.35,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.35,
+    "pnl_c": 63.407
+   },
+   {
+    "match": "Santos @ Botafogo",
+    "date": "2026-07-16",
+    "cost": 0.35,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.35,
+    "pnl_c": -36.593
+   },
+   {
+    "match": "Chapecoense @ Bahia",
+    "date": "2026-07-17",
+    "cost": 0.37,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.37,
+    "pnl_c": 61.368
+   },
+   {
+    "match": "Red Bull Bragantino @ Fluminense",
+    "date": "2026-07-17",
+    "cost": 0.71,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.71,
+    "pnl_c": 27.559
+   },
+   {
+    "match": "Gr\u00eamio @ Mirassol",
+    "date": "2026-07-17",
+    "cost": 0.42,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.42,
+    "pnl_c": -43.705
+   },
+   {
+    "match": "Bahia @ Atl\u00e9tico-MG",
+    "date": "2026-07-21",
+    "cost": 0.39,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.39,
+    "pnl_c": 59.335
+   },
+   {
+    "match": "Palmeiras @ Coritiba",
+    "date": "2026-07-22",
+    "cost": 0.43,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.43,
+    "pnl_c": -44.716
+   },
+   {
+    "match": "Cruzeiro @ Internacional",
+    "date": "2026-07-22",
+    "cost": 0.39,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.39,
+    "pnl_c": -40.665
+   },
+   {
+    "match": "Internacional @ Athletico-PR",
+    "date": "2026-07-25",
+    "cost": 0.44,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.44,
+    "pnl_c": 54.275
+   },
+   {
+    "match": "Mirassol @ Vasco da Gama",
+    "date": "2026-07-25",
+    "cost": 0.75,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.75,
+    "pnl_c": 23.688
+   },
+   {
+    "match": "Corinthians @ Bahia",
+    "date": "2026-07-26",
+    "cost": 0.44,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.44,
+    "pnl_c": 54.275
+   },
+   {
+    "match": "Botafogo @ Cruzeiro",
+    "date": "2026-07-26",
+    "cost": 0.7,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.7,
+    "pnl_c": 28.53
+   },
+   {
+    "match": "Atl\u00e9tico-MG @ Palmeiras",
+    "date": "2026-07-26",
+    "cost": 0.77,
+    "won": false,
+    "fair": 0.8423,
+    "mkt": 0.77,
+    "pnl_c": -78.24
+   },
+   {
+    "match": "Vit\u00f3ria @ Remo",
+    "date": "2026-07-26",
+    "cost": 0.4,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.4,
+    "pnl_c": 58.32
+   },
+   {
+    "match": "Flamengo @ Internacional",
+    "date": "2026-07-29",
+    "cost": 0.76,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.76,
+    "pnl_c": 22.723
+   },
+   {
+    "match": "Palmeiras @ Vit\u00f3ria",
+    "date": "2026-07-29",
+    "cost": 0.28,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.28,
+    "pnl_c": -29.411
+   },
+   {
+    "match": "Chapecoense @ Coritiba",
+    "date": "2026-08-08",
+    "cost": 0.79,
+    "won": false,
+    "fair": 0.8423,
+    "mkt": 0.79,
+    "pnl_c": -80.161
+   },
+   {
+    "match": "Fluminense @ Botafogo",
+    "date": "2026-08-08",
+    "cost": 0.4,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.4,
+    "pnl_c": 58.32
+   },
+   {
+    "match": "Mirassol @ Cruzeiro",
+    "date": "2026-08-09",
+    "cost": 0.39,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.39,
+    "pnl_c": -40.665
+   },
+   {
+    "match": "Athletico-PR @ Santos",
+    "date": "2026-08-09",
+    "cost": 0.16,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.16,
+    "pnl_c": 83.059
+   },
+   {
+    "match": "Vit\u00f3ria @ Flamengo",
+    "date": "2026-08-09",
+    "cost": 0.75,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.75,
+    "pnl_c": 23.688
+   },
+   {
+    "match": "Gimnasia La Plata @ Racing Club",
+    "date": "2026-07-24",
+    "cost": 0.43,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.43,
+    "pnl_c": -44.716
+   },
+   {
+    "match": "Barracas Central @ River Plate",
+    "date": "2026-07-25",
+    "cost": 0.77,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.77,
+    "pnl_c": 21.76
+   },
+   {
+    "match": "Sarmiento (Jun\u00edn) @ Banfield",
+    "date": "2026-07-28",
+    "cost": 0.42,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.42,
+    "pnl_c": -43.705
+   },
+   {
+    "match": "Estudiantes de R\u00edo Cuarto @ Argentinos Juniors",
+    "date": "2026-07-28",
+    "cost": 0.79,
+    "won": false,
+    "fair": 0.8423,
+    "mkt": 0.79,
+    "pnl_c": -80.161
+   },
+   {
+    "match": "Deportivo Riestra @ Defensa y Justicia",
+    "date": "2026-07-29",
+    "cost": 0.44,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.44,
+    "pnl_c": -45.725
+   },
+   {
+    "match": "Uni\u00f3n (Santa Fe) @ Gimnasia (Mendoza)",
+    "date": "2026-08-01",
+    "cost": 0.41,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.41,
+    "pnl_c": 57.307
+   },
+   {
+    "match": "Gimnasia La Plata @ Aldosivi",
+    "date": "2026-08-02",
+    "cost": 0.58,
+    "won": false,
+    "fair": 0.8423,
+    "mkt": 0.58,
+    "pnl_c": -59.705
+   },
+   {
+    "match": "Estudiantes de La Plata @ Boca Juniors",
+    "date": "2026-08-05",
+    "cost": 0.79,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.79,
+    "pnl_c": 19.839
+   },
+   {
+    "match": "Aldosivi @ Rosario Central",
+    "date": "2026-08-07",
+    "cost": 0.4,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.4,
+    "pnl_c": -41.68
+   },
+   {
+    "match": "Racing Club @ Argentinos Juniors",
+    "date": "2026-08-09",
+    "cost": 0.37,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.37,
+    "pnl_c": -38.632
+   },
+   {
+    "match": "Chengdu Rongcheng @ Qingdao West Coast",
+    "date": "2026-07-17",
+    "cost": 0.61,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.61,
+    "pnl_c": 37.335
+   },
+   {
+    "match": "Liaoning Tieren @ Beijing Guoan",
+    "date": "2026-07-17",
+    "cost": 0.11,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.11,
+    "pnl_c": -11.685
+   },
+   {
+    "match": "Zhejiang Professional FC @ Chongqing Tonglianglong",
+    "date": "2026-07-18",
+    "cost": 0.75,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.75,
+    "pnl_c": 23.688
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Shanghai Shenhua",
+    "date": "2026-07-18",
+    "cost": 0.9,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.9,
+    "pnl_c": 9.37
+   },
+   {
+    "match": "Shenzhen Xinpengcheng @ Wuhan Three Towns",
+    "date": "2026-07-18",
+    "cost": 0.29,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.29,
+    "pnl_c": 69.559
+   },
+   {
+    "match": "Tianjin Jinmen Tiger @ Qingdao Hainiu",
+    "date": "2026-07-25",
+    "cost": 0.76,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.76,
+    "pnl_c": 22.723
+   },
+   {
+    "match": "Qingdao West Coast @ Liaoning Tieren",
+    "date": "2026-07-25",
+    "cost": 0.53,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.53,
+    "pnl_c": 45.256
+   },
+   {
+    "match": "Shanghai Shenhua @ Shanghai Port",
+    "date": "2026-07-25",
+    "cost": 0.26,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.26,
+    "pnl_c": 72.653
+   },
+   {
+    "match": "Chongqing Tonglianglong @ Wuhan Three Towns",
+    "date": "2026-07-25",
+    "cost": 0.72,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.72,
+    "pnl_c": 26.589
+   },
+   {
+    "match": "Beijing Guoan @ Chengdu Rongcheng",
+    "date": "2026-07-26",
+    "cost": 0.68,
+    "won": false,
+    "fair": 0.8423,
+    "mkt": 0.68,
+    "pnl_c": -69.523
+   },
+   {
+    "match": "Dalian Yingbo @ Henan",
+    "date": "2026-07-31",
+    "cost": 0.33,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.33,
+    "pnl_c": 65.452
+   },
+   {
+    "match": "Yunnan Yukun @ Tianjin Jinmen Tiger",
+    "date": "2026-08-01",
+    "cost": 0.32,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.32,
+    "pnl_c": -33.523
+   },
+   {
+    "match": "Zhejiang Professional FC @ Beijing Guoan",
+    "date": "2026-08-01",
+    "cost": 0.28,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.28,
+    "pnl_c": -29.411
+   },
+   {
+    "match": "Shandong Taishan @ Shanghai Port",
+    "date": "2026-08-01",
+    "cost": 0.63,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.63,
+    "pnl_c": 35.368
+   },
+   {
+    "match": "Wuhan Three Towns @ Chengdu Rongcheng",
+    "date": "2026-08-01",
+    "cost": 0.62,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.62,
+    "pnl_c": 36.351
+   },
+   {
+    "match": "Qingdao Hainiu @ Qingdao West Coast",
+    "date": "2026-08-02",
+    "cost": 0.4,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.4,
+    "pnl_c": 58.32
+   },
+   {
+    "match": "Chongqing Tonglianglong @ Shenzhen Xinpengcheng",
+    "date": "2026-08-02",
+    "cost": 0.72,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.72,
+    "pnl_c": 26.589
+   },
+   {
+    "match": "Shanghai Shenhua @ Qingdao Hainiu",
+    "date": "2026-08-08",
+    "cost": 0.68,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.68,
+    "pnl_c": 30.477
+   },
+   {
+    "match": "Liaoning Tieren @ Dalian Yingbo",
+    "date": "2026-08-08",
+    "cost": 0.66,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.66,
+    "pnl_c": 32.429
+   },
+   {
+    "match": "Chengdu Rongcheng @ Yunnan Yukun",
+    "date": "2026-08-08",
+    "cost": 0.63,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.63,
+    "pnl_c": 35.368
+   },
+   {
+    "match": "Pumas UNAM @ Charlotte FC",
+    "date": "2026-08-04",
+    "cost": 0.37,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.37,
+    "pnl_c": -38.632
+   },
+   {
+    "match": "Real Salt Lake @ Tigres UANL",
+    "date": "2026-08-04",
+    "cost": 0.4,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.4,
+    "pnl_c": 58.32
+   },
+   {
+    "match": "Atlante @ Vancouver Whitecaps",
+    "date": "2026-08-04",
+    "cost": 0.76,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.76,
+    "pnl_c": 22.723
+   },
+   {
+    "match": "Quer\u00e9taro @ FC Dallas",
+    "date": "2026-08-05",
+    "cost": 0.79,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.79,
+    "pnl_c": 19.839
+   },
+   {
+    "match": "Orlando City SC @ Monterrey",
+    "date": "2026-08-05",
+    "cost": 0.31,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.31,
+    "pnl_c": -32.497
+   },
+   {
+    "match": "Seattle Sounders FC @ Toluca",
+    "date": "2026-08-05",
+    "cost": 0.34,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.34,
+    "pnl_c": -35.571
+   },
+   {
+    "match": "Guadalajara @ LAFC",
+    "date": "2026-08-05",
+    "cost": 0.39,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.39,
+    "pnl_c": 59.335
+   },
+   {
+    "match": "Pachuca @ Columbus Crew",
+    "date": "2026-08-07",
+    "cost": 0.35,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.35,
+    "pnl_c": -36.593
+   },
+   {
+    "match": "Pumas UNAM @ FC Cincinnati",
+    "date": "2026-08-07",
+    "cost": 0.71,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.71,
+    "pnl_c": 27.559
+   },
+   {
+    "match": "FC Juarez @ Vancouver Whitecaps",
+    "date": "2026-08-07",
+    "cost": 0.27,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.27,
+    "pnl_c": -28.38
+   },
+   {
+    "match": "Le\u00f3n @ Orlando City SC",
+    "date": "2026-08-08",
+    "cost": 0.31,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.31,
+    "pnl_c": -32.497
+   },
+   {
+    "match": "Monterrey @ Inter Miami CF",
+    "date": "2026-08-08",
+    "cost": 0.32,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.32,
+    "pnl_c": -33.523
+   },
+   {
+    "match": "FC Dallas @ Guadalajara",
+    "date": "2026-08-08",
+    "cost": 0.88,
+    "won": true,
+    "fair": 0.9652,
+    "mkt": 0.88,
+    "pnl_c": 11.261
+   },
+   {
+    "match": "Quer\u00e9taro @ Seattle Sounders FC",
+    "date": "2026-08-09",
+    "cost": 0.38,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.38,
+    "pnl_c": -39.649
+   },
+   {
+    "match": "New York City FC @ Cruz Azul",
+    "date": "2026-08-09",
+    "cost": 0.39,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.39,
+    "pnl_c": -40.665
+   },
+   {
+    "match": "Santos @ Chicago Fire FC",
+    "date": "2026-08-09",
+    "cost": 0.71,
+    "won": false,
+    "fair": 0.8423,
+    "mkt": 0.71,
+    "pnl_c": -72.441
+   },
+   {
+    "match": "Pumas UNAM @ Columbus Crew",
+    "date": "2026-08-11",
+    "cost": 0.34,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.34,
+    "pnl_c": 64.429
+   },
+   {
+    "match": "Atlas @ FC Cincinnati",
+    "date": "2026-08-11",
+    "cost": 0.75,
+    "won": false,
+    "fair": 0.8423,
+    "mkt": 0.75,
+    "pnl_c": -76.312
+   },
+   {
+    "match": "Atlante @ Minnesota United FC",
+    "date": "2026-08-11",
+    "cost": 0.34,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.34,
+    "pnl_c": -35.571
+   },
+   {
+    "match": "FC Juarez @ Real Salt Lake",
+    "date": "2026-08-11",
+    "cost": 0.33,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.33,
+    "pnl_c": -34.548
+   },
+   {
+    "match": "Vancouver Whitecaps @ Tigres UANL",
+    "date": "2026-08-11",
+    "cost": 0.75,
+    "won": true,
+    "fair": 0.8423,
+    "mkt": 0.75,
+    "pnl_c": 23.688
+   },
+   {
+    "match": "Atl\u00e9tico de San Luis @ Orlando City SC",
+    "date": "2026-08-12",
+    "cost": 0.7,
+    "won": false,
+    "fair": 0.8423,
+    "mkt": 0.7,
+    "pnl_c": -71.47
+   },
+   {
+    "match": "Nashville SC @ Monterrey",
+    "date": "2026-08-12",
+    "cost": 0.39,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.39,
+    "pnl_c": -40.665
+   },
+   {
+    "match": "Puebla @ San Diego FC",
+    "date": "2026-08-12",
+    "cost": 0.38,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.38,
+    "pnl_c": -39.649
+   },
+   {
+    "match": "Quer\u00e9taro @ LAFC",
+    "date": "2026-08-12",
+    "cost": 0.33,
+    "won": true,
+    "fair": 0.494,
+    "mkt": 0.33,
+    "pnl_c": 65.452
+   },
+   {
+    "match": "Guadalajara @ Seattle Sounders FC",
+    "date": "2026-08-12",
+    "cost": 0.32,
+    "won": false,
+    "fair": 0.494,
+    "mkt": 0.32,
+    "pnl_c": -33.523
+   }
+  ],
+  "POIS-OVER@45'": [
+   {
+    "match": "Tigre @ Estudiantes de R\u00edo Cuarto",
+    "date": "2026-07-25",
+    "cost": 0.07,
+    "won": false,
+    "fair": 0.1359,
+    "mkt": 0.07,
+    "pnl_c": -7.456
+   },
+   {
+    "match": "Aldosivi @ Barracas Central",
+    "date": "2026-07-29",
+    "cost": 0.29,
+    "won": false,
+    "fair": 0.3624,
+    "mkt": 0.29,
+    "pnl_c": -30.441
+   },
+   {
+    "match": "Barracas Central @ Deportivo Riestra",
+    "date": "2026-08-02",
+    "cost": 0.07,
+    "won": false,
+    "fair": 0.1359,
+    "mkt": 0.07,
+    "pnl_c": -7.456
+   },
+   {
+    "match": "Shanghai Shenhua @ Liaoning Tieren",
+    "date": "2026-08-02",
+    "cost": 0.34,
+    "won": false,
+    "fair": 0.719,
+    "mkt": 0.34,
+    "pnl_c": -35.571
+   }
+  ],
+  "POIS-OVER@55'": [
+   {
+    "match": "Estudiantes de La Plata @ Deportivo Riestra",
+    "date": "2026-08-08",
+    "cost": 0.2,
+    "won": false,
+    "fair": 0.2596,
+    "mkt": 0.2,
+    "pnl_c": -21.12
+   },
+   {
+    "match": "Shanghai Shenhua @ Liaoning Tieren",
+    "date": "2026-08-02",
+    "cost": 0.14,
+    "won": false,
+    "fair": 0.6275,
+    "mkt": 0.14,
+    "pnl_c": -14.843
+   }
+  ],
+  "POIS-OVER@65'": [
+   {
+    "match": "Shanghai Shenhua @ Liaoning Tieren",
+    "date": "2026-08-02",
+    "cost": 0.14,
+    "won": false,
+    "fair": 0.506,
+    "mkt": 0.14,
+    "pnl_c": -14.843
+   }
+  ],
+  "POIS-OVER@75'": [
+   {
+    "match": "Shanghai Shenhua @ Liaoning Tieren",
+    "date": "2026-08-02",
+    "cost": 0.09,
+    "won": false,
+    "fair": 1.0,
+    "mkt": 0.09,
+    "pnl_c": -9.573
+   }
+  ]
+ }
+}

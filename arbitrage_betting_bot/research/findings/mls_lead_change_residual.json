@@ -1,0 +1,855 @@
+{
+ "generated_at": "2026-08-13T05:30:47.960385Z",
+ "dates": [
+  "2026-05-02",
+  "2026-05-03",
+  "2026-05-09",
+  "2026-05-10",
+  "2026-05-13",
+  "2026-05-16",
+  "2026-05-17",
+  "2026-05-23",
+  "2026-05-24",
+  "2026-07-16",
+  "2026-07-17",
+  "2026-07-22",
+  "2026-07-25",
+  "2026-07-29",
+  "2026-07-31",
+  "2026-08-01",
+  "2026-08-08"
+ ],
+ "delays": [
+  0,
+  15,
+  30,
+  60
+ ],
+ "skipped": {
+  "not_lead_change": 293,
+  "no_kalshi_match": 74,
+  "no_price_data": 0
+ },
+ "rows": [
+  {
+   "date": "2026-07-16",
+   "match": "Portland Timbers @ Seattle Sounders FC",
+   "scorer": "Portland Timbers",
+   "clock": "19'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26JUL16SEAPOR-POR",
+   "market_result": "yes",
+   "event_ts": "2026-07-17T03:04:44+00:00",
+   "rule": "A2",
+   "baseline": 0.19,
+   "settled": 0.43,
+   "total_move_c": 24.0,
+   "entry_ask": {
+    "0": 0.4,
+    "15": 0.4,
+    "30": 0.4,
+    "60": 0.4
+   }
+  },
+  {
+   "date": "2026-07-22",
+   "match": "New York City FC @ Columbus Crew",
+   "scorer": "New York City FC",
+   "clock": "28'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26JUL22CLBNYC-NYC",
+   "market_result": "yes",
+   "event_ts": "2026-07-23T00:09:16+00:00",
+   "rule": "A2",
+   "baseline": 0.3,
+   "settled": 0.57,
+   "total_move_c": 27.0,
+   "entry_ask": {
+    "0": 0.58,
+    "15": 0.58,
+    "30": 0.58,
+    "60": 0.58
+   }
+  },
+  {
+   "date": "2026-07-22",
+   "match": "Chicago Fire FC @ Inter Miami CF",
+   "scorer": "Chicago Fire FC",
+   "clock": "18'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26JUL22MIACHI-CHI",
+   "market_result": "no",
+   "event_ts": "2026-07-22T23:58:09+00:00",
+   "rule": "A1",
+   "baseline": 0.51,
+   "settled": 0.58,
+   "total_move_c": 7.0,
+   "entry_ask": {
+    "0": 0.59,
+    "15": 0.59,
+    "30": 0.59,
+    "60": 0.56
+   }
+  },
+  {
+   "date": "2026-07-22",
+   "match": "Chicago Fire FC @ Inter Miami CF",
+   "scorer": "Inter Miami CF",
+   "clock": "51'",
+   "scoreline": "1-2",
+   "ticker": "KXMLSGAME-26JUL22MIACHI-MIA",
+   "market_result": "yes",
+   "event_ts": "2026-07-23T00:51:28+00:00",
+   "rule": "A2",
+   "baseline": 0.37,
+   "settled": 0.66,
+   "total_move_c": 29.0,
+   "entry_ask": {
+    "0": 0.66,
+    "15": 0.66,
+    "30": 0.66,
+    "60": 0.65
+   }
+  },
+  {
+   "date": "2026-07-22",
+   "match": "Chicago Fire FC @ Inter Miami CF",
+   "scorer": "Inter Miami CF",
+   "clock": "87'",
+   "scoreline": "2-3",
+   "ticker": "KXMLSGAME-26JUL22MIACHI-MIA",
+   "market_result": "yes",
+   "event_ts": "2026-07-23T01:26:57+00:00",
+   "rule": "A2",
+   "baseline": 0.24,
+   "settled": 0.88,
+   "total_move_c": 64.0,
+   "entry_ask": {
+    "0": 0.85,
+    "15": 0.82,
+    "30": 0.82,
+    "60": 0.82
+   }
+  },
+  {
+   "date": "2026-07-22",
+   "match": "D.C. United @ Houston Dynamo FC",
+   "scorer": "Houston Dynamo FC",
+   "clock": "40'",
+   "scoreline": "0-1",
+   "ticker": "KXMLSGAME-26JUL22HOUDCU-HOU",
+   "market_result": "no",
+   "event_ts": "2026-07-23T01:19:51+00:00",
+   "rule": "A1",
+   "baseline": 0.51,
+   "settled": 0.76,
+   "total_move_c": 25.0,
+   "entry_ask": {
+    "0": 0.74,
+    "15": 0.74,
+    "30": 0.74,
+    "60": 0.74
+   }
+  },
+  {
+   "date": "2026-07-22",
+   "match": "CF Montr\u00e9al @ Nashville SC",
+   "scorer": "Nashville SC",
+   "clock": "68'",
+   "scoreline": "0-1",
+   "ticker": "KXMLSGAME-26JUL22NSHMTL-NSH",
+   "market_result": "yes",
+   "event_ts": "2026-07-23T02:05:52+00:00",
+   "rule": "A2",
+   "baseline": 0.41,
+   "settled": 0.85,
+   "total_move_c": 44.0,
+   "entry_ask": {
+    "0": 0.79,
+    "15": 0.83,
+    "30": 0.83,
+    "60": 0.83
+   }
+  },
+  {
+   "date": "2026-07-22",
+   "match": "Minnesota United FC @ Sporting Kansas City",
+   "scorer": "Sporting Kansas City",
+   "clock": "28'",
+   "scoreline": "0-1",
+   "ticker": "KXMLSGAME-26JUL22SKCMIN-SKC",
+   "market_result": "yes",
+   "event_ts": "2026-07-23T01:07:48+00:00",
+   "rule": "A2",
+   "baseline": 0.29,
+   "settled": 0.55,
+   "total_move_c": 26.0,
+   "entry_ask": {
+    "0": 0.54,
+    "15": 0.54,
+    "30": 0.54,
+    "60": 0.54
+   }
+  },
+  {
+   "date": "2026-07-22",
+   "match": "Seattle Sounders FC @ Austin FC",
+   "scorer": "Austin FC",
+   "clock": "11'",
+   "scoreline": "0-1",
+   "ticker": "KXMLSGAME-26JUL22ATXSEA-ATX",
+   "market_result": "yes",
+   "event_ts": "2026-07-23T01:51:23+00:00",
+   "rule": "A2",
+   "baseline": 0.37,
+   "settled": 0.58,
+   "total_move_c": 21.0,
+   "entry_ask": {
+    "0": 0.6,
+    "15": 0.6,
+    "30": 0.6,
+    "60": 0.57
+   }
+  },
+  {
+   "date": "2026-07-22",
+   "match": "Seattle Sounders FC @ Austin FC",
+   "scorer": "Austin FC",
+   "clock": "86'",
+   "scoreline": "1-2",
+   "ticker": "KXMLSGAME-26JUL22ATXSEA-ATX",
+   "market_result": "yes",
+   "event_ts": "2026-07-23T03:26:49+00:00",
+   "rule": "A2",
+   "baseline": 0.16,
+   "settled": 0.98,
+   "total_move_c": 82.0,
+   "entry_ask": {
+    "0": 0.87,
+    "15": 0.86,
+    "30": 0.86,
+    "60": 0.86
+   }
+  },
+  {
+   "date": "2026-07-22",
+   "match": "FC Dallas @ Portland Timbers",
+   "scorer": "FC Dallas",
+   "clock": "45'+1'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26JUL22PORDAL-DAL",
+   "market_result": "no",
+   "event_ts": "2026-07-23T03:26:09+00:00",
+   "rule": "A2",
+   "baseline": 0.31,
+   "settled": 0.61,
+   "total_move_c": 30.0,
+   "entry_ask": {
+    "0": 0.6,
+    "15": 0.6,
+    "30": 0.6,
+    "60": 0.61
+   }
+  },
+  {
+   "date": "2026-07-22",
+   "match": "FC Dallas @ Portland Timbers",
+   "scorer": "FC Dallas",
+   "clock": "88'",
+   "scoreline": "2-1",
+   "ticker": "KXMLSGAME-26JUL22PORDAL-DAL",
+   "market_result": "no",
+   "event_ts": "2026-07-23T04:27:45+00:00",
+   "rule": "A2",
+   "baseline": 0.14,
+   "settled": 0.08,
+   "total_move_c": -6.0,
+   "entry_ask": {
+    "0": 0.86,
+    "15": 0.86,
+    "30": 0.9,
+    "60": 0.9
+   }
+  },
+  {
+   "date": "2026-07-22",
+   "match": "Orlando City SC @ San Jose Earthquakes",
+   "scorer": "Orlando City SC",
+   "clock": "7'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26JUL22SJORL-ORL",
+   "market_result": "yes",
+   "event_ts": "2026-07-23T02:46:42+00:00",
+   "rule": "A2",
+   "baseline": 0.22,
+   "settled": 0.41,
+   "total_move_c": 19.0,
+   "entry_ask": {
+    "0": 0.39,
+    "15": 0.39,
+    "30": 0.38,
+    "60": 0.38
+   }
+  },
+  {
+   "date": "2026-07-25",
+   "match": "FC Cincinnati @ Columbus Crew",
+   "scorer": "FC Cincinnati",
+   "clock": "9'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26JUL25CLBCIN-CIN",
+   "market_result": "no",
+   "event_ts": "2026-07-25T23:34:29+00:00",
+   "rule": "A2",
+   "baseline": 0.33,
+   "settled": 0.55,
+   "total_move_c": 22.0,
+   "entry_ask": {
+    "0": 0.55,
+    "15": 0.55,
+    "30": 0.55,
+    "60": 0.55
+   }
+  },
+  {
+   "date": "2026-07-25",
+   "match": "FC Cincinnati @ Columbus Crew",
+   "scorer": "Columbus Crew",
+   "clock": "45'+6'",
+   "scoreline": "1-2",
+   "ticker": "KXMLSGAME-26JUL25CLBCIN-CLB",
+   "market_result": "yes",
+   "event_ts": "2026-07-26T00:16:22+00:00",
+   "rule": "A2",
+   "baseline": 0.39,
+   "settled": 0.67,
+   "total_move_c": 28.0,
+   "entry_ask": {
+    "0": 0.7,
+    "15": 0.7,
+    "30": 0.7,
+    "60": 0.68
+   }
+  },
+  {
+   "date": "2026-07-25",
+   "match": "Inter Miami CF @ CF Montr\u00e9al",
+   "scorer": "Inter Miami CF",
+   "clock": "81'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26JUL25MTLMIA-MIA",
+   "market_result": "yes",
+   "event_ts": "2026-07-26T01:18:24+00:00",
+   "rule": "A1",
+   "baseline": 0.62,
+   "settled": 0.86,
+   "total_move_c": 24.0,
+   "entry_ask": {
+    "0": 0.8,
+    "15": 0.8,
+    "30": 0.8,
+    "60": 0.8
+   }
+  },
+  {
+   "date": "2026-07-25",
+   "match": "Toronto FC @ D.C. United",
+   "scorer": "D.C. United",
+   "clock": "41'",
+   "scoreline": "0-1",
+   "ticker": "KXMLSGAME-26JUL25DCUTOR-DCU",
+   "market_result": "yes",
+   "event_ts": "2026-07-26T00:20:58+00:00",
+   "rule": "A2",
+   "baseline": 0.45,
+   "settled": 0.7,
+   "total_move_c": 25.0,
+   "entry_ask": {
+    "0": 0.66,
+    "15": 0.71,
+    "30": 0.71,
+    "60": 0.71
+   }
+  },
+  {
+   "date": "2026-07-25",
+   "match": "Toronto FC @ D.C. United",
+   "scorer": "D.C. United",
+   "clock": "90'+10'",
+   "scoreline": "1-2",
+   "ticker": "KXMLSGAME-26JUL25DCUTOR-DCU",
+   "market_result": "yes",
+   "event_ts": "2026-07-26T01:38:30+00:00",
+   "rule": "A2",
+   "baseline": 0.11,
+   "settled": 0.99,
+   "total_move_c": 88.0,
+   "entry_ask": {
+    "0": 0.95,
+    "15": 0.95,
+    "30": 0.95,
+    "60": 0.95
+   }
+  },
+  {
+   "date": "2026-07-25",
+   "match": "Chicago Fire FC @ New York City FC",
+   "scorer": "New York City FC",
+   "clock": "10'",
+   "scoreline": "0-1",
+   "ticker": "KXMLSGAME-26JUL25NYCCHI-NYC",
+   "market_result": "yes",
+   "event_ts": "2026-07-25T23:50:42+00:00",
+   "rule": "A2",
+   "baseline": 0.41,
+   "settled": 0.62,
+   "total_move_c": 21.0,
+   "entry_ask": {
+    "0": 0.63,
+    "15": 0.63,
+    "30": 0.63,
+    "60": 0.63
+   }
+  },
+  {
+   "date": "2026-07-25",
+   "match": "Chicago Fire FC @ New York City FC",
+   "scorer": "New York City FC",
+   "clock": "29'",
+   "scoreline": "1-2",
+   "ticker": "KXMLSGAME-26JUL25NYCCHI-NYC",
+   "market_result": "yes",
+   "event_ts": "2026-07-26T00:09:32+00:00",
+   "rule": "A2",
+   "baseline": 0.39,
+   "settled": 0.63,
+   "total_move_c": 24.0,
+   "entry_ask": {
+    "0": 0.64,
+    "15": 0.64,
+    "30": 0.61,
+    "60": 0.61
+   }
+  },
+  {
+   "date": "2026-07-25",
+   "match": "Seattle Sounders FC @ Philadelphia Union",
+   "scorer": "Philadelphia Union",
+   "clock": "31'",
+   "scoreline": "0-1",
+   "ticker": "KXMLSGAME-26JUL25PHISEA-PHI",
+   "market_result": "yes",
+   "event_ts": "2026-07-26T00:11:27+00:00",
+   "rule": "A1",
+   "baseline": 0.52,
+   "settled": 0.77,
+   "total_move_c": 25.0,
+   "entry_ask": {
+    "0": 0.76,
+    "15": 0.76,
+    "30": 0.76,
+    "60": 0.77
+   }
+  },
+  {
+   "date": "2026-07-25",
+   "match": "Austin FC @ Houston Dynamo FC",
+   "scorer": "Houston Dynamo FC",
+   "clock": "12'",
+   "scoreline": "0-1",
+   "ticker": "KXMLSGAME-26JUL25HOUATX-HOU",
+   "market_result": "yes",
+   "event_ts": "2026-07-26T00:51:36+00:00",
+   "rule": "A1",
+   "baseline": 0.56,
+   "settled": 0.76,
+   "total_move_c": 20.0,
+   "entry_ask": {
+    "0": 0.74,
+    "15": 0.74,
+    "30": 0.75,
+    "60": 0.75
+   }
+  },
+  {
+   "date": "2026-07-25",
+   "match": "Nashville SC @ Orlando City SC",
+   "scorer": "Orlando City SC",
+   "clock": "72'",
+   "scoreline": "0-1",
+   "ticker": "KXMLSGAME-26JUL25ORLNSH-ORL",
+   "market_result": "yes",
+   "event_ts": "2026-07-26T02:18:47+00:00",
+   "rule": "A2",
+   "baseline": 0.22,
+   "settled": 0.8,
+   "total_move_c": 58.0,
+   "entry_ask": {
+    "0": 0.72,
+    "15": 0.77,
+    "30": 0.77,
+    "60": 0.77
+   }
+  },
+  {
+   "date": "2026-07-25",
+   "match": "Real Salt Lake @ Portland Timbers",
+   "scorer": "Real Salt Lake",
+   "clock": "18'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26JUL25PORRSL-RSL",
+   "market_result": "no",
+   "event_ts": "2026-07-26T02:58:11+00:00",
+   "rule": "A2",
+   "baseline": 0.46,
+   "settled": 0.66,
+   "total_move_c": 20.0,
+   "entry_ask": {
+    "0": 0.66,
+    "15": 0.66,
+    "30": 0.66,
+    "60": 0.67
+   }
+  },
+  {
+   "date": "2026-07-25",
+   "match": "Real Salt Lake @ Portland Timbers",
+   "scorer": "Portland Timbers",
+   "clock": "67'",
+   "scoreline": "1-2",
+   "ticker": "KXMLSGAME-26JUL25PORRSL-POR",
+   "market_result": "yes",
+   "event_ts": "2026-07-26T04:09:05+00:00",
+   "rule": "A1",
+   "baseline": 0.52,
+   "settled": 0.89,
+   "total_move_c": 37.0,
+   "entry_ask": {
+    "0": 0.9,
+    "15": 0.9,
+    "30": 0.9,
+    "60": 0.9
+   }
+  },
+  {
+   "date": "2026-07-25",
+   "match": "LA Galaxy @ San Jose Earthquakes",
+   "scorer": "LA Galaxy",
+   "clock": "13'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26JUL25SJLAG-LAG",
+   "market_result": "no",
+   "event_ts": "2026-07-26T02:52:42+00:00",
+   "rule": "A2",
+   "baseline": 0.3,
+   "settled": 0.47,
+   "total_move_c": 17.0,
+   "entry_ask": {
+    "0": 0.45,
+    "15": 0.45,
+    "30": 0.47,
+    "60": 0.47
+   }
+  },
+  {
+   "date": "2026-07-31",
+   "match": "Toronto FC @ New York City FC",
+   "scorer": "New York City FC",
+   "clock": "8'",
+   "scoreline": "0-1",
+   "ticker": "KXMLSGAME-26JUL31NYCTOR-NYC",
+   "market_result": "no",
+   "event_ts": "2026-07-31T23:48:45+00:00",
+   "rule": "A1",
+   "baseline": 0.59,
+   "settled": 0.77,
+   "total_move_c": 18.0,
+   "entry_ask": {
+    "0": 0.8,
+    "15": 0.8,
+    "30": 0.79,
+    "60": 0.79
+   }
+  },
+  {
+   "date": "2026-08-01",
+   "match": "New England Revolution @ CF Montr\u00e9al",
+   "scorer": "New England Revolution",
+   "clock": "30'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26AUG01MTLNE-NE",
+   "market_result": "no",
+   "event_ts": "2026-08-02T00:10:09+00:00",
+   "rule": "A2",
+   "baseline": 0.29,
+   "settled": 0.54,
+   "total_move_c": 25.0,
+   "entry_ask": {
+    "0": 0.56,
+    "15": 0.56,
+    "30": 0.56,
+    "60": 0.55
+   }
+  },
+  {
+   "date": "2026-08-01",
+   "match": "Nashville SC @ D.C. United",
+   "scorer": "Nashville SC",
+   "clock": "32'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26AUG01DCUNSH-NSH",
+   "market_result": "no",
+   "event_ts": "2026-08-02T00:11:52+00:00",
+   "rule": "A2",
+   "baseline": 0.38,
+   "settled": 0.66,
+   "total_move_c": 28.0,
+   "entry_ask": {
+    "0": 0.68,
+    "15": 0.67,
+    "30": 0.67,
+    "60": 0.67
+   }
+  },
+  {
+   "date": "2026-08-01",
+   "match": "Columbus Crew @ Inter Miami CF",
+   "scorer": "Inter Miami CF",
+   "clock": "16'",
+   "scoreline": "0-1",
+   "ticker": "KXMLSGAME-26AUG01MIACLB-MIA",
+   "market_result": "no",
+   "event_ts": "2026-08-02T00:26:00+00:00",
+   "rule": "A1",
+   "baseline": 0.58,
+   "settled": 0.76,
+   "total_move_c": 18.0,
+   "entry_ask": {
+    "0": 0.75,
+    "15": 0.79,
+    "30": 0.79,
+    "60": 0.79
+   }
+  },
+  {
+   "date": "2026-08-01",
+   "match": "Columbus Crew @ Inter Miami CF",
+   "scorer": "Inter Miami CF",
+   "clock": "45'+5'",
+   "scoreline": "1-2",
+   "ticker": "KXMLSGAME-26AUG01MIACLB-MIA",
+   "market_result": "no",
+   "event_ts": "2026-08-02T01:00:03+00:00",
+   "rule": "A1",
+   "baseline": 0.56,
+   "settled": 0.79,
+   "total_move_c": 23.0,
+   "entry_ask": {
+    "0": 0.78,
+    "15": 0.78,
+    "30": 0.78,
+    "60": 0.77
+   }
+  },
+  {
+   "date": "2026-08-01",
+   "match": "Charlotte FC @ Chicago Fire FC",
+   "scorer": "Charlotte FC",
+   "clock": "18'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26AUG01CHICLT-CLT",
+   "market_result": "no",
+   "event_ts": "2026-08-02T01:00:10+00:00",
+   "rule": "A2",
+   "baseline": 0.18,
+   "settled": 0.2,
+   "total_move_c": 2.0,
+   "entry_ask": {
+    "0": 0.36,
+    "15": 0.36,
+    "30": 0.36,
+    "60": 0.25
+   }
+  },
+  {
+   "date": "2026-08-01",
+   "match": "Charlotte FC @ Chicago Fire FC",
+   "scorer": "Chicago Fire FC",
+   "clock": "68'",
+   "scoreline": "1-2",
+   "ticker": "KXMLSGAME-26AUG01CHICLT-CHI",
+   "market_result": "yes",
+   "event_ts": "2026-08-02T02:09:37+00:00",
+   "rule": "A2",
+   "baseline": 0.41,
+   "settled": 0.81,
+   "total_move_c": 40.0,
+   "entry_ask": {
+    "0": 0.8,
+    "15": 0.8,
+    "30": 0.8,
+    "60": 0.8
+   }
+  },
+  {
+   "date": "2026-08-01",
+   "match": "Houston Dynamo FC @ Sporting Kansas City",
+   "scorer": "Houston Dynamo FC",
+   "clock": "55'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26AUG01SKCHOU-HOU",
+   "market_result": "yes",
+   "event_ts": "2026-08-02T01:51:42+00:00",
+   "rule": "A1",
+   "baseline": 0.57,
+   "settled": 0.88,
+   "total_move_c": 31.0,
+   "entry_ask": {
+    "0": 0.82,
+    "15": 0.82,
+    "30": 0.89,
+    "60": 0.89
+   }
+  },
+  {
+   "date": "2026-08-01",
+   "match": "Austin FC @ Colorado Rapids",
+   "scorer": "Colorado Rapids",
+   "clock": "90'+4'",
+   "scoreline": "0-1",
+   "ticker": "KXMLSGAME-26AUG01COLATX-COL",
+   "market_result": "yes",
+   "event_ts": "2026-08-02T03:31:02+00:00",
+   "rule": "A2",
+   "baseline": 0.13,
+   "settled": 0.99,
+   "total_move_c": 86.0,
+   "entry_ask": {
+    "0": 0.98,
+    "15": 0.98,
+    "30": 0.98,
+    "60": 0.99
+   }
+  },
+  {
+   "date": "2026-08-01",
+   "match": "San Jose Earthquakes @ FC Cincinnati",
+   "scorer": "San Jose Earthquakes",
+   "clock": "26'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26AUG01CINSJ-SJ",
+   "market_result": "no",
+   "event_ts": "2026-08-02T02:12:06+00:00",
+   "rule": "A2",
+   "baseline": 0.24,
+   "settled": 0.47,
+   "total_move_c": 23.0,
+   "entry_ask": {
+    "0": 0.5,
+    "15": 0.5,
+    "30": 0.5,
+    "60": 0.45
+   }
+  },
+  {
+   "date": "2026-08-01",
+   "match": "San Jose Earthquakes @ FC Cincinnati",
+   "scorer": "San Jose Earthquakes",
+   "clock": "56'",
+   "scoreline": "2-1",
+   "ticker": "KXMLSGAME-26AUG01CINSJ-SJ",
+   "market_result": "no",
+   "event_ts": "2026-08-02T03:00:13+00:00",
+   "rule": "A2",
+   "baseline": 0.22,
+   "settled": 0.52,
+   "total_move_c": 30.0,
+   "entry_ask": {
+    "0": 0.49,
+    "15": 0.49,
+    "30": 0.49,
+    "60": 0.5
+   }
+  },
+  {
+   "date": "2026-08-01",
+   "match": "San Jose Earthquakes @ FC Cincinnati",
+   "scorer": "FC Cincinnati",
+   "clock": "82'",
+   "scoreline": "2-3",
+   "ticker": "KXMLSGAME-26AUG01CINSJ-CIN",
+   "market_result": "yes",
+   "event_ts": "2026-08-02T03:26:26+00:00",
+   "rule": "A2",
+   "baseline": 0.07,
+   "settled": 0.91,
+   "total_move_c": 84.0,
+   "entry_ask": {
+    "0": 0.86,
+    "15": 0.86,
+    "30": 0.86,
+    "60": 0.9
+   }
+  },
+  {
+   "date": "2026-08-01",
+   "match": "Seattle Sounders FC @ Portland Timbers",
+   "scorer": "Seattle Sounders FC",
+   "clock": "27'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26AUG01PORSEA-SEA",
+   "market_result": "no",
+   "event_ts": "2026-08-02T03:22:40+00:00",
+   "rule": "A2",
+   "baseline": 0.28,
+   "settled": 0.49,
+   "total_move_c": 21.0,
+   "entry_ask": {
+    "0": 0.51,
+    "15": 0.51,
+    "30": 0.5,
+    "60": 0.5
+   }
+  },
+  {
+   "date": "2026-08-01",
+   "match": "Seattle Sounders FC @ Portland Timbers",
+   "scorer": "Portland Timbers",
+   "clock": "82'",
+   "scoreline": "1-2",
+   "ticker": "KXMLSGAME-26AUG01PORSEA-POR",
+   "market_result": "yes",
+   "event_ts": "2026-08-02T04:42:17+00:00",
+   "rule": "A2",
+   "baseline": 0.29,
+   "settled": 0.9,
+   "total_move_c": 61.0,
+   "entry_ask": {
+    "0": 0.87,
+    "15": 0.87,
+    "30": 0.87,
+    "60": 0.89
+   }
+  },
+  {
+   "date": "2026-08-08",
+   "match": "Houston Dynamo FC @ New England Revolution",
+   "scorer": "Houston Dynamo FC",
+   "clock": "45'+1'",
+   "scoreline": "1-0",
+   "ticker": "KXMLSGAME-26AUG08NEHOU-HOU",
+   "market_result": "yes",
+   "event_ts": "2026-08-08T21:25:58+00:00",
+   "rule": "A2",
+   "baseline": 0.31,
+   "settled": 0.6,
+   "total_move_c": 29.0,
+   "entry_ask": {
+    "0": 0.56,
+    "15": 0.61,
+    "30": 0.61,
+    "60": 0.61
+   }
+  }
+ ]
+}
