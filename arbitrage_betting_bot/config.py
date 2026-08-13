@@ -255,6 +255,39 @@ def quality_filters(bet_type: str, is_draw: bool = False) -> dict:
     return QUALITY_FILTERS.get(bet_type, _DEFAULT_QUALITY_FILTER)
 
 
+# Bet types the directional strategy is allowed to trade. Comma-separated env var.
+# A kill switch, not a tuning knob: it exists so a segment can be stopped immediately
+# via .env without a code change or redeploy. All types are ON by default.
+#
+# Standing context on h2h, recorded so the next person does not have to rediscover it.
+# As of 2026-08-13, across 52 settled live positions:
+#     h2h     -$15.83 on $28.00 staked  (-56.5% ROI, n=18)
+#     totals   +$1.90 on $41.06 staked  (+4.6% ROI,  n=31)
+#     spread   -$1.40 on  $6.81 staked  (-20.6% ROI, n=3)
+# h2h alone exceeds the entire net loss, and the 2026-08-12 weekly review found the
+# same split independently (h2h -65.88% n=13 vs totals +6.82% n=25).
+#
+# h2h is nonetheless left ENABLED. n=18 is far too small to act on: at these stakes a
+# handful of outcomes swings the whole figure, which is exactly the failure mode that
+# invalidated several of the live-betting experiments in research/ (a rule showing
+# +28.1% ROI at n=16 decayed to +3.2% by n=247). Turning a segment off on that evidence
+# would be the same mistake in the opposite direction. Revisit when h2h reaches a sample
+# where the difference is actually distinguishable from noise -- roughly n >= 100.
+#
+# To stop a segment immediately: ENABLED_BET_TYPES=totals,spread in .env, then restart.
+#
+# The default lists every value KalshiMarket.bet_type can take, so this gate never
+# disables something by omission. "btts" is included even though no series currently
+# maps to it -- otherwise wiring up the BTTS series later would silently do nothing.
+# Note the soccer TIE market is bet_type "h2h" (it is distinguished by
+# kalshi_outcome == "tie", not by bet_type), so "draw" is deliberately NOT a value here.
+ENABLED_BET_TYPES: set[str] = {
+    t.strip().lower()
+    for t in os.getenv("ENABLED_BET_TYPES", "h2h,totals,spread,btts").split(",")
+    if t.strip()
+}
+
+
 # Kalshi charges a real fee whenever an order crosses the spread at placement — not
 # a fixed 0%/maker-only rate as originally assumed here. The actual fee per fill is
 # read directly from Kalshi's own order record at fill time (see

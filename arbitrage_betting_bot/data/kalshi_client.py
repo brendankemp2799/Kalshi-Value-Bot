@@ -172,10 +172,10 @@ class KalshiClient:
         self.base_url = config.KALSHI_API_BASE_URL
 
     def _get(self, path: str, params: dict | None = None) -> dict:
-        from data.kalshi_auth import auth_headers
+        from data.kalshi_auth import auth_headers, session
         url = f"{self.base_url}{path}"
         headers = auth_headers("GET", url)
-        resp = requests.get(url, params=params or {}, headers=headers, timeout=15)
+        resp = session().get(url, params=params or {}, headers=headers, timeout=15)
         resp.raise_for_status()
         return resp.json()
 
@@ -196,14 +196,77 @@ class KalshiClient:
             {"start_ts": start_ts, "end_ts": end_ts, "period_interval": period_interval},
         )
 
+    def fetch_trades(
+        self, ticker: str, min_ts: int, max_ts: int, limit: int = 1000
+    ) -> list[dict]:
+        """
+        Individual trade history for a market between two unix timestamps —
+        sub-second `created_time` per trade, unlike the 1-minute floor on
+        fetch_candlesticks(). Paginated via cursor. Hits external-api.kalshi.com
+        (not self.base_url) — same host fetch_balance()/fetch_total_deposited()
+        use for portfolio endpoints; this one is public market data, not account
+        data, but lives on that host regardless. Confirmed live to return data
+        with no auth at all, but signed anyway rather than relying on that.
+        """
+        from data.kalshi_auth import auth_headers, session
+
+        base = "https://external-api.kalshi.com/trade-api/v2"
+        trades: list[dict] = []
+        cursor = None
+        while True:
+            params: dict = {"ticker": ticker, "min_ts": min_ts, "max_ts": max_ts, "limit": limit}
+            if cursor:
+                params["cursor"] = cursor
+            url = f"{base}/markets/trades"
+            headers = auth_headers("GET", url)
+            resp = session().get(url, params=params, headers=headers, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            batch = data.get("trades", [])
+            trades.extend(batch)
+            cursor = data.get("cursor")
+            if not cursor or not batch:
+                break
+        return trades
+
+    def fetch_settled_markets_in_window(
+        self, series_ticker: str, min_close_ts: int, max_close_ts: int
+    ) -> list[dict]:
+        """
+        Settled markets for a series whose close_time falls in
+        [min_close_ts, max_close_ts] — used to find a specific historical
+        game's Kalshi ticker(s) by approximate close time. Deliberately
+        separate from _fetch_series_markets(): that method hardcodes
+        status="open" and has stale-cache-fallback logic built for live
+        trading, which doesn't apply to a historical lookup like this.
+        """
+        results: list[dict] = []
+        cursor = None
+        while True:
+            params: dict = {
+                "series_ticker": series_ticker,
+                "status": "settled",
+                "min_close_ts": min_close_ts,
+                "max_close_ts": max_close_ts,
+                "limit": 200,
+            }
+            if cursor:
+                params["cursor"] = cursor
+            data = self._get("/markets", params)
+            results.extend(data.get("markets", []))
+            cursor = data.get("cursor")
+            if not cursor:
+                break
+        return results
+
     def fetch_balance(self) -> float:
         """Return available trading balance in dollars from Kalshi portfolio API.
         Falls back to config.BANKROLL if the request fails."""
         try:
-            from data.kalshi_auth import auth_headers
+            from data.kalshi_auth import auth_headers, session
             url = "https://external-api.kalshi.com/trade-api/v2/portfolio/balance"
             headers = auth_headers("GET", url)
-            resp = requests.get(url, headers=headers, timeout=10)
+            resp = session().get(url, headers=headers, timeout=10)
             resp.raise_for_status()
             data = resp.json()
             bal = data.get("balance_dollars")
@@ -226,12 +289,12 @@ class KalshiClient:
         Returns None if any API call fails.
         """
         try:
-            from data.kalshi_auth import auth_headers
+            from data.kalshi_auth import auth_headers, session
 
             # 1. Current cash balance
             bal_url = "https://external-api.kalshi.com/trade-api/v2/portfolio/balance"
             headers = auth_headers("GET", bal_url)
-            bal_resp = requests.get(bal_url, headers=headers, timeout=10)
+            bal_resp = session().get(bal_url, headers=headers, timeout=10)
             bal_resp.raise_for_status()
             bal_data = bal_resp.json()
             balance = float(bal_data.get("balance_dollars") or float(bal_data.get("balance", 0)) / 100.0)
@@ -239,7 +302,7 @@ class KalshiClient:
             # 2. Open position cost + fees (deducted from balance when trades were placed)
             pos_url = "https://external-api.kalshi.com/trade-api/v2/portfolio/positions"
             headers = auth_headers("GET", pos_url)
-            pos_resp = requests.get(pos_url, headers=headers, timeout=10)
+            pos_resp = session().get(pos_url, headers=headers, timeout=10)
             pos_resp.raise_for_status()
             market_positions = pos_resp.json().get("market_positions", [])
             open_cost = sum(float(p.get("total_traded_dollars", 0)) for p in market_positions)
@@ -254,7 +317,7 @@ class KalshiClient:
                 if cursor:
                     params["cursor"] = cursor
                 headers = auth_headers("GET", sett_url)
-                sett_resp = requests.get(sett_url, headers=headers, params=params, timeout=10)
+                sett_resp = session().get(sett_url, headers=headers, params=params, timeout=10)
                 sett_resp.raise_for_status()
                 sett_data = sett_resp.json()
                 for s in sett_data.get("settlements", []):

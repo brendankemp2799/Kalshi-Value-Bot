@@ -11,3 +11,8 @@ research/findings/run_log.jsonl
 research/findings/threshold_check.log
 research/findings/cron.log
 research/findings/manual_run_stderr.log
+reaction_latency_cache.json
+reaction_latency_mls_cache.json
+
+# iCloud placeholder stubs for the gitignored caches above (~/Desktop is synced)
+*.icloud

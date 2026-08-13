@@ -61,10 +61,10 @@ _STATUS_URL   = f"{_BASE_URL}/portfolio/orders"          # GET (old path still w
 def _get_order_status(order_id: str) -> dict | None:
     """Fetch current order status. Returns order dict or None on error."""
     try:
-        from data.kalshi_auth import auth_headers
+        from data.kalshi_auth import auth_headers, session
         url = f"{_STATUS_URL}/{order_id}"
         headers = auth_headers("GET", url)
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = session().get(url, headers=headers, timeout=10)
         resp.raise_for_status()
         return resp.json().get("order", {})
     except Exception as e:
@@ -90,10 +90,10 @@ def _actual_fee_dollars(order_id: str) -> float:
 def _cancel_order(order_id: str) -> bool:
     """Cancel a resting GTC order. Returns True if cancelled successfully."""
     try:
-        from data.kalshi_auth import auth_headers
+        from data.kalshi_auth import auth_headers, session
         url = f"{_ORDERS_URL}/{order_id}"
         headers = auth_headers("DELETE", url)
-        resp = requests.delete(url, headers=headers, timeout=10)
+        resp = session().delete(url, headers=headers, timeout=10)
         return resp.ok
     except Exception as e:
         logger.warning("Could not cancel order %s: %s", order_id, e)
@@ -116,7 +116,7 @@ def _place_raw_order(
     it can never open new exposure on the other side. Used for risk-management exits
     (see execution/risk_manager.py); entries always leave this False.
     """
-    from data.kalshi_auth import auth_headers
+    from data.kalshi_auth import auth_headers, session
     payload = {
         "ticker": ticker,
         "client_order_id": client_order_id,
@@ -128,7 +128,7 @@ def _place_raw_order(
         "reduce_only": reduce_only,
     }
     headers = auth_headers("POST", _ORDERS_URL)
-    resp = requests.post(_ORDERS_URL, json=payload, headers=headers, timeout=15)
+    resp = session().post(_ORDERS_URL, json=payload, headers=headers, timeout=15)
     resp.raise_for_status()
     return resp.json()
 
@@ -410,7 +410,7 @@ def list_resting_orders() -> list[dict]:
     that order still existed).
     """
     try:
-        from data.kalshi_auth import auth_headers
+        from data.kalshi_auth import auth_headers, session
         orders: list[dict] = []
         cursor = None
         while True:
@@ -418,7 +418,7 @@ def list_resting_orders() -> list[dict]:
             if cursor:
                 params["cursor"] = cursor
             headers = auth_headers("GET", _STATUS_URL)
-            resp = requests.get(_STATUS_URL, headers=headers, params=params, timeout=10)
+            resp = session().get(_STATUS_URL, headers=headers, params=params, timeout=10)
             resp.raise_for_status()
             data = resp.json()
             orders.extend(data.get("orders", []))

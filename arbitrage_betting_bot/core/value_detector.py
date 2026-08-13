@@ -248,6 +248,20 @@ def detect_value(
         km = me.kalshi_market
         is_draw = km.bet_type == "h2h" and me.kalshi_outcome == "tie"
 
+        # ── Filter: bet type enabled? ─────────────────────────────────────────
+        # Checked before anything else so a disabled type costs no further work.
+        # Note this gates the DIRECTIONAL strategy only: mm_candidates are not
+        # collected for a disabled type either, since the `continue` skips the
+        # whole market -- market making on a segment we refuse to trade
+        # directionally would reintroduce the same exposure by another route.
+        if km.bet_type not in config.ENABLED_BET_TYPES:
+            reason = f"bet_type '{km.bet_type}' disabled (ENABLED_BET_TYPES)"
+            logger.debug("Skip %s vs %s — %s (ticker=%s)",
+                         event.home_team, event.away_team, reason, km.ticker)
+            _log(scan_log, me, km.yes_team or km.title[:30], None, None,
+                 0, 0.0, None, "bet_type_disabled", reason)
+            continue
+
         # ── Filter: Kalshi volume ─────────────────────────────────────────────
         qf = config.quality_filters(km.bet_type, is_draw=is_draw)
         if km.volume < qf["min_kalshi_volume"]:

@@ -223,11 +223,10 @@ def evaluate_stop_loss(pos, market: dict) -> Action:
 def _fetch_live_contract_count(ticker: str) -> float | None:
     """Authoritative held-contract count from Kalshi's own portfolio data (free, not credit-metered)."""
     try:
-        from data.kalshi_auth import auth_headers
-        import requests
+        from data.kalshi_auth import auth_headers, session
         url = "https://external-api.kalshi.com/trade-api/v2/portfolio/positions"
         headers = auth_headers("GET", url)
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = session().get(url, headers=headers, timeout=10)
         resp.raise_for_status()
         for p in resp.json().get("market_positions", []):
             if p.get("ticker") == ticker:

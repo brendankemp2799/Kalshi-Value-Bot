@@ -31,11 +31,10 @@ def _kalshi_position_by_ticker() -> dict[str, float] | None:
     on fetch failure so callers can skip the check rather than false-alarm.
     """
     try:
-        from data.kalshi_auth import auth_headers
-        import requests
+        from data.kalshi_auth import auth_headers, session
         url = "https://external-api.kalshi.com/trade-api/v2/portfolio/positions"
         headers = auth_headers("GET", url)
-        resp = requests.get(url, headers=headers, timeout=10, params={"limit": 1000})
+        resp = session().get(url, headers=headers, timeout=10, params={"limit": 1000})
         resp.raise_for_status()
         by_ticker: dict[str, float] = {}
         for p in resp.json().get("market_positions", []):
@@ -116,8 +115,7 @@ def _all_real_order_ids() -> set[str] | None:
     not credit-metered, but only worth fetching when there's something to check
     against it (see audit_order_ids' cheap early-exit). None on fetch failure."""
     try:
-        from data.kalshi_auth import auth_headers
-        import requests
+        from data.kalshi_auth import auth_headers, session
         url = "https://external-api.kalshi.com/trade-api/v2/portfolio/fills"
         order_ids: set[str] = set()
         cursor = None
@@ -126,7 +124,7 @@ def _all_real_order_ids() -> set[str] | None:
             if cursor:
                 params["cursor"] = cursor
             headers = auth_headers("GET", url)
-            resp = requests.get(url, headers=headers, timeout=15, params=params)
+            resp = session().get(url, headers=headers, timeout=15, params=params)
             resp.raise_for_status()
             data = resp.json()
             fills = data.get("fills", [])

@@ -769,7 +769,30 @@ def _run_variable_loop(
                 if _mm_candidates_cache:
                     try:
                         from execution.market_maker import run_mm_tick
-                        fresh_kalshi = {m.ticker: m for m in kalshi_client.fetch_sports_markets()}
+                        # Only fetch the sports we actually have candidates for. An
+                        # unscoped fetch_sports_markets() pulls all 9 sports (~677
+                        # markets, ~2.9s) every MM_INTERVAL_SECONDS=30s — ~10% of wall
+                        # clock on this single-threaded loop — to look up a handful of
+                        # candidate tickers. Scoping to one sport measured ~0.5s.
+                        #
+                        # Falls back to the full fetch if the sport can't be determined
+                        # for every candidate: run_mm_tick does
+                        # `fresh_kalshi.get(ticker, km)`, so a missing ticker silently
+                        # quotes off the stale scan-time price instead of the live book.
+                        # Never risk that to save a fetch.
+                        scoped: list[str] | None = None
+                        try:
+                            mm_sports = {
+                                c["matched_event"].odds_event.sport_key
+                                for c in _mm_candidates_cache
+                            }
+                            if mm_sports and all(mm_sports):
+                                scoped = sorted(mm_sports)
+                        except (KeyError, AttributeError, TypeError):
+                            scoped = None  # unrecognised candidate shape — fetch everything
+                        fresh_kalshi = {
+                            m.ticker: m for m in kalshi_client.fetch_sports_markets(scoped)
+                        }
                         run_mm_tick(_mm_candidates_cache, fresh_kalshi, tracker, bm, paper)
                     except Exception as e:
                         logger.warning("Market-making tick failed: %s", e)

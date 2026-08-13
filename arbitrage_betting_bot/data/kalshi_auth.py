@@ -1,5 +1,6 @@
 """
-Kalshi RSA request signing.
+Kalshi RSA request signing, plus the shared connection pool every Kalshi
+request goes through.
 
 Kalshi's trading API requires every authenticated request to be signed with
 your RSA private key. The signature proves the request came from you and
@@ -23,9 +24,12 @@ from __future__ import annotations
 
 import base64
 import logging
+import threading
 import time
 from pathlib import Path
 from urllib.parse import urlparse
+
+import requests
 
 import sys
 import os
@@ -35,6 +39,35 @@ import config
 logger = logging.getLogger(__name__)
 
 _private_key_cache = None
+
+_thread_local = threading.local()
+
+
+def session() -> requests.Session:
+    """
+    Connection-pooled requests.Session for Kalshi calls — one per thread.
+
+    Every bare requests.get()/post() opens a fresh TLS connection. Measured from
+    the production droplet (DigitalOcean NYC1) against Kalshi on 2026-08-12:
+    ICMP ping ~3ms, but the TLS handshake (curl time_appconnect) ran 90–140ms
+    versus ~5–10ms for the request itself once connected. So roughly 90% of each
+    call's latency was connection setup being paid over and over. Reusing the
+    connection removes almost all of it — this matters most for order placement,
+    where latency is the difference between the fill you priced and the one you get.
+
+    Per-thread rather than one shared Session because main.py places live orders
+    from a ThreadPoolExecutor and requests.Session is not documented thread-safe.
+    Thread-local keeps the pooling win with no shared mutable state.
+
+    Deliberately left on the default HTTPAdapter, which does NOT retry
+    (max_retries=0). Do not add retries here: an automatic retry on an order POST
+    could double-place a real trade.
+    """
+    s = getattr(_thread_local, "session", None)
+    if s is None:
+        s = requests.Session()
+        _thread_local.session = s
+    return s
 
 
 def _load_private_key():

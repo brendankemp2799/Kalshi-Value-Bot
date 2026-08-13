@@ -45,7 +45,8 @@ def _fetch_market(ticker: str) -> dict | None:
     """Fetch a single Kalshi market by ticker. Returns the market dict or None on error."""
     url = f"{config.KALSHI_API_BASE_URL}/markets/{ticker}"
     try:
-        resp = requests.get(url, headers=auth_headers("GET", url), timeout=10)
+        from data.kalshi_auth import session
+        resp = session().get(url, headers=auth_headers("GET", url), timeout=10)
         resp.raise_for_status()
         return resp.json().get("market", {})
     except requests.HTTPError as e:

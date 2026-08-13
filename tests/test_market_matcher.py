@@ -1,5 +1,7 @@
 """Unit tests for fuzzy matching and event pairing logic."""
-from datetime import datetime, timezone
+from __future__ import annotations  # PEP 604 unions below; local Python is 3.8
+
+from datetime import datetime, timedelta, timezone
 
 from core.market_matcher import _kalshi_game_date, _team_score, match_events
 from data.kalshi_client import KalshiMarket
@@ -17,13 +19,14 @@ def _mlb_event(home: str, away: str, day: int = 22) -> OddsEvent:
     )
 
 
-def _mls_event(home: str, away: str, day: int = 22) -> OddsEvent:
+def _mls_event(home: str, away: str, day: int = 22,
+               when: datetime | None = None) -> OddsEvent:
     return OddsEvent(
         event_id=f"mls-{home[:3]}-{away[:3]}",
         sport_key="soccer_usa_mls",
         home_team=home,
         away_team=away,
-        commence_time=datetime(2026, 7, day, 18, 0, tzinfo=timezone.utc),
+        commence_time=when or datetime(2026, 7, day, 18, 0, tzinfo=timezone.utc),
         bookmakers=[],
     )
 
@@ -151,31 +154,53 @@ def test_h2h_no_cross_game_mismatch():
 
 def test_mls_totals_suffix_lookup():
     """Soccer totals with no teams in title should match via shared event_ticker suffix."""
-    event = _mls_event("Inter Miami CF", "Chicago Fire")
+    # Dated relative to now, never hardcoded. match_events() skips any non-H2H market
+    # whose game date is already past (market_matcher.py's "game already started" guard),
+    # so a fixed date turns this into a time bomb: it passed when written and began
+    # failing silently once that date receded into the past.
+    tomorrow = datetime.now(timezone.utc) + timedelta(days=1)
+    stamp = tomorrow.strftime("%y%b%d").upper()          # e.g. "26AUG14"
+    close = (tomorrow + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+    event = _mls_event("Inter Miami CF", "Chicago Fire",
+                       when=tomorrow.replace(hour=18, minute=0, second=0, microsecond=0))
+    # The event must carry sportsbook totals at the same line the Kalshi market uses.
+    # match_events() skips any totals market whose threshold no book actually quotes
+    # (_sportsbook_lines) — a guard added after this test was written, which is the
+    # second, independent reason it had been failing.
+    event.bookmakers = [{
+        "key": "fanduel",
+        "markets": [{
+            "key": "totals",
+            "outcomes": [
+                {"name": "Over", "point": 3.5, "price": -110},
+                {"name": "Under", "point": 3.5, "price": -110},
+            ],
+        }],
+    }]
 
     h2h_km = KalshiMarket(
-        ticker="KXMLSGAME-26JUL22MIACHI-MIA",
+        ticker=f"KXMLSGAME-{stamp}MIACHI-MIA",
         title="Chicago at Miami Winner?",
         yes_team="Miami", no_team="Chicago",
         yes_price=0.60, no_price=0.40,
         yes_bid=0.58, yes_ask=0.62,
         volume=5000,
-        close_time="2026-07-23T00:00:00Z",
+        close_time=close,
         category="sports",
-        event_ticker="KXMLSGAME-26JUL22MIACHI",
+        event_ticker=f"KXMLSGAME-{stamp}MIACHI",
         bet_type="h2h",
     )
     # "Will over 3.5 goals be scored?" — no team names in title
     totals_km = KalshiMarket(
-        ticker="KXMLSTOTAL-26JUL22MIACHI-3",
+        ticker=f"KXMLSTOTAL-{stamp}MIACHI-3",
         title="Will over 3.5 goals be scored?",
         yes_team="Over", no_team="Under",
         yes_price=0.35, no_price=0.65,
         yes_bid=0.34, yes_ask=0.36,
         volume=2000,
-        close_time="2026-07-23T00:00:00Z",
+        close_time=close,
         category="sports",
-        event_ticker="KXMLSTOTAL-26JUL22MIACHI",  # same suffix as H2H
+        event_ticker=f"KXMLSTOTAL-{stamp}MIACHI",  # same suffix as H2H
         bet_type="totals",
         threshold=3.5,
     )

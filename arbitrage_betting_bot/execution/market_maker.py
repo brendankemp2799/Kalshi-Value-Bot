@@ -486,4 +486,64 @@ def run_mm_tick(
             if leg
         )
 
+    filled_count += _sweep_orphaned_quotes(seen_tickers, is_paper)
     return filled_count
+
+
+def _sweep_orphaned_quotes(seen_tickers: set[str], is_paper: bool) -> int:
+    """
+    Cancel resting quotes on tickers that are no longer in mm_candidates.
+
+    The per-candidate loop above only ever revisits tickers present in the CURRENT
+    tick's candidate list, so once a ticker drops out (game started, spread narrowed,
+    it fell off the scan) anything still resting on it becomes invisible forever:
+    never fill-checked, never cancelled, still live on Kalshi.
+
+    This was documented as a known, accepted gap in _sync_resting_quotes_from_kalshi()
+    ("narrower and rarer than the restart gap... out of scope unless asked for"). It
+    then happened: on 2026-08-13 an audit found 9 resting orders across 5 tickers, the
+    oldest 3 days old, none of them present in the positions table at all — and one
+    (KXMLSGAME-26AUG19RSLDAL-RSL) had partially filled into a real position that was
+    invisible to bankroll accounting, the stop-loss and correlation blocking.
+
+    Deliberately does NOT try to record a fill it finds here. _record_fill() needs the
+    full candidate (odds_event + kalshi_market) to build a position row, and by
+    definition an orphaned ticker no longer has one. Fabricating a row from partial
+    data would be worse than the gap. Instead: cancel unconditionally (which stops any
+    FURTHER orphan fills, the actual bleeding), and log a fill we cannot record at
+    CRITICAL so execution/reconciliation.py's mismatch check and a human both see it.
+    """
+    if is_paper:
+        _resting_quotes.clear()
+        return 0
+
+    from execution.kalshi_executor import cancel_quote, get_order_status
+
+    orphans = [t for t in _resting_quotes if t not in seen_tickers]
+    if not orphans:
+        return 0
+
+    for ticker in orphans:
+        legs = _resting_quotes.pop(ticker, None) or {}
+        for side, leg in (("yes", legs.get("yes")), ("no", legs.get("no"))):
+            if not leg:
+                continue
+            order_id = leg["order_id"]
+            status = get_order_status(order_id)
+            filled = float(status.get("fill_count_fp", 0) or 0) if status else 0.0
+            if filled > 0 and not db.position_exists_for_order_id(order_id):
+                logger.critical(
+                    "MM ORPHAN FILL — %s leg on %s filled %g contract(s) @ %.4f "
+                    "(order_id=%s) but the ticker is no longer an MM candidate, so no "
+                    "position row can be built. Real untracked exposure: reconcile by "
+                    "hand. Cancelling any remainder now.",
+                    side.upper(), ticker, filled, leg["price"], order_id,
+                )
+            if filled < leg["count"]:
+                cancel_quote(order_id)
+
+    logger.warning(
+        "MM: swept %d orphaned ticker(s) no longer in candidates: %s",
+        len(orphans), sorted(orphans),
+    )
+    return 0

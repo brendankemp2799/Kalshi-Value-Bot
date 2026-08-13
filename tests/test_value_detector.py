@@ -3,10 +3,23 @@ from datetime import datetime, timezone
 
 import pytest
 
+import config
 from core.market_matcher import MatchedEvent
 from core.value_detector import detect_value
 from data.kalshi_client import KalshiMarket
 from data.odds_fetcher import OddsEvent
+
+
+@pytest.fixture(autouse=True)
+def _all_bet_types_enabled(monkeypatch):
+    """Pin ENABLED_BET_TYPES so these tests never depend on the live kill switch.
+
+    config.ENABLED_BET_TYPES is operator-controlled (and env-overridable), so leaving
+    it unpinned would make edge-detection tests fail for an unrelated reason the moment
+    someone disables a segment in .env. These tests are about whether detection is
+    *correct*; the gate itself is covered by test_disabled_bet_type_is_skipped.
+    """
+    monkeypatch.setattr(config, "ENABLED_BET_TYPES", {"h2h", "totals", "spread", "btts"})
 
 
 def _mlb_event(home: str, away: str, bookmakers: list) -> OddsEvent:
@@ -246,6 +259,41 @@ def test_soccer_home_team_is_evaluated_when_yes_is_home():
 
     team_names = [e["team_name"] for e in scan_log]
     assert "Inter Miami CF" in team_names
+
+
+# ── ENABLED_BET_TYPES gate ────────────────────────────────────────────────────
+
+def test_disabled_bet_type_is_skipped(monkeypatch):
+    """A bet type absent from config.ENABLED_BET_TYPES produces no opportunity.
+
+    This is the live kill-switch for h2h (-56.5% ROI on n=18), so it must actually
+    stop the bet rather than merely deprioritise it.
+    """
+    monkeypatch.setattr(config, "ENABLED_BET_TYPES", {"totals"})
+    event = _mlb_event("Tampa Bay Rays", "Boston Red Sox", BOOKMAKERS_H2H_HOME_FAVORED)
+    km = _h2h_km("Tampa Bay", "Boston", yes_bid=0.40, yes_ask=0.42)
+    me = MatchedEvent(odds_event=event, kalshi_market=km, kalshi_outcome="yes")
+
+    scan_log: list[dict] = []
+    opps = detect_value([me], min_edge=0.0, scan_log=scan_log)
+
+    assert opps == [], "a disabled bet type must yield no opportunities"
+    assert [e["status"] for e in scan_log] == ["bet_type_disabled"]
+
+
+def test_disabled_bet_type_produces_no_mm_candidate(monkeypatch):
+    """Market making must not quote a segment we refuse to trade directionally --
+    otherwise the same exposure returns by another route."""
+    monkeypatch.setattr(config, "ENABLED_BET_TYPES", {"totals"})
+    event = _mlb_event("Tampa Bay Rays", "Boston Red Sox", BOOKMAKERS_H2H_HOME_FAVORED)
+    # Wide spread -> would normally be surfaced as an MM candidate.
+    km = _h2h_km("Tampa Bay", "Boston", yes_bid=0.30, yes_ask=0.60)
+    me = MatchedEvent(odds_event=event, kalshi_market=km, kalshi_outcome="yes")
+
+    mm_candidates: list[dict] = []
+    detect_value([me], min_edge=0.0, scan_log=[], mm_candidates=mm_candidates)
+
+    assert mm_candidates == []
 
 
 # ── Totals: NO side ───────────────────────────────────────────────────────────
