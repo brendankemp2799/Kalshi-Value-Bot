@@ -22,20 +22,33 @@ entry) and decide whether to close it. They're symmetric and independent:
   The stop rises as peak_price rises — protects more of the gain the further a winner
   runs, with no cap on the upside while the position keeps working.
 
-  Stop loss (limits losses): stateless — no arming, no peak tracking. Triggers a
-  full-position close as soon as price has moved against entry by config.STOP_LOSS_MOVE.
-  Added after real bet history showed positions that never armed the trailing stop (and
-  so had no risk management applied at all) were the dominant source of losses.
+  Stop loss (limits losses): no peak tracking (unlike the trailing stop, it can't
+  ratchet). Triggers a full-position close as soon as price has moved against entry
+  by a threshold. Added after real bet history showed positions that never armed the
+  trailing stop (and so had no risk management applied at all) were the dominant
+  source of losses.
 
-      stop:  entry_price - config.STOP_LOSS_MOVE
+      stop:  entry_price - _dynamic_stop_loss_move(pos)
+
+  For non-totals bet types this is just the flat config.STOP_LOSS_MOVE. For totals
+  specifically, it's time-ramped the same way the trailing-stop arm move is — see
+  _dynamic_stop_loss_move() below — added 2026-08-13 after a real incident (position
+  #315, Baltimore/Minnesota Under 8.5) where a thin, ~24c-wide quote spike right at
+  the end of the 1st inning triggered the flat 0.20 stop on what was, in hindsight, a
+  tiny and misleading early-game sample; the game finished well over the total. A
+  totals market's price early in a game reflects far less of the full-game signal it's
+  meant to predict than a moneyline market does at the same point, so it's widened
+  (config.STOP_LOSS_MOVE_TOTALS_EARLY) near kickoff and narrows back to the flat
+  config.STOP_LOSS_MOVE by the sport's expected game duration.
 
 The two never conflict — the trailing stop only ever triggers above entry price, the
 stop-loss only ever triggers below it.
 
 See config.TRAILING_STOP_*/config.ENABLE_TRAILING_STOP and
-config.STOP_LOSS_MOVE/config.ENABLE_STOP_LOSS for the parameters and master on/off
-switches. Only ever call execute_trailing_stop()/execute_stop_loss() from the main scan
-loop (main.py) — never from the dashboard — since they can place real orders.
+config.STOP_LOSS_MOVE/config.STOP_LOSS_MOVE_TOTALS_EARLY/config.ENABLE_STOP_LOSS for
+the parameters and master on/off switches. Only ever call
+execute_trailing_stop()/execute_stop_loss() from the main scan loop (main.py) — never
+from the dashboard — since they can place real orders.
 """
 from __future__ import annotations
 
@@ -82,29 +95,28 @@ def _achievable_exit_price(side: str, market: dict) -> float | None:
         return None
 
 
-def _dynamic_arm_move(pos) -> float:
+def _elapsed_fraction(pos) -> float:
     """
-    Trailing-stop arm threshold as a function of elapsed time since game start —
-    larger (harder to arm, more tolerant of noise) near kickoff, smaller (arms more
-    readily, protects gains sooner) as the game approaches/passes its expected
-    duration. Linear ramp between config.TRAILING_STOP_ARM_MOVE_EARLY and
-    config.TRAILING_STOP_ARM_MOVE_LATE; clamped to that range outside [0, expected
-    duration] (pre-game and overtime/extra-innings both clamp rather than extrapolate).
+    Fraction of the sport's expected game duration elapsed since commence_time,
+    clamped to [0, 1] (pre-game and overtime/extra-innings both clamp rather than
+    extrapolate). Shared by every time-ramped threshold in this module (trailing-
+    stop arm move, totals stop-loss move) so they all treat "how far into the game
+    are we" the same way.
 
-    Falls back to TRAILING_STOP_ARM_MOVE_EARLY (the safer, more tolerant bound) if
-    `commence_time` is missing or unparseable, same fallback convention as the
-    existing commence_time handling in execution/auto_settle.py.
+    Falls back to 0.0 (i.e. "just started" — the safer, more tolerant end for every
+    current caller) if `commence_time` is missing or unparseable, same fallback
+    convention as the existing commence_time handling in execution/auto_settle.py.
     """
     commence_str = pos["commence_time"] if "commence_time" in pos.keys() else None
     if not commence_str:
-        return config.TRAILING_STOP_ARM_MOVE_EARLY
+        return 0.0
 
     try:
         commence = datetime.fromisoformat(commence_str)
         if commence.tzinfo is None:
             commence = commence.replace(tzinfo=timezone.utc)
     except ValueError:
-        return config.TRAILING_STOP_ARM_MOVE_EARLY
+        return 0.0
 
     sport = pos["sport"] if "sport" in pos.keys() else None
     duration_minutes = config.SPORT_EXPECTED_DURATION_MINUTES.get(
@@ -112,10 +124,46 @@ def _dynamic_arm_move(pos) -> float:
     )
 
     elapsed_minutes = (datetime.now(timezone.utc) - commence).total_seconds() / 60.0
-    elapsed_fraction = max(0.0, min(1.0, elapsed_minutes / duration_minutes))
+    return max(0.0, min(1.0, elapsed_minutes / duration_minutes))
 
+
+def _dynamic_arm_move(pos) -> float:
+    """
+    Trailing-stop arm threshold as a function of elapsed time since game start —
+    larger (harder to arm, more tolerant of noise) near kickoff, smaller (arms more
+    readily, protects gains sooner) as the game approaches/passes its expected
+    duration. Linear ramp between config.TRAILING_STOP_ARM_MOVE_EARLY and
+    config.TRAILING_STOP_ARM_MOVE_LATE.
+    """
+    elapsed_fraction = _elapsed_fraction(pos)
     early = config.TRAILING_STOP_ARM_MOVE_EARLY
     late = config.TRAILING_STOP_ARM_MOVE_LATE
+    return early - elapsed_fraction * (early - late)
+
+
+def _dynamic_stop_loss_move(pos) -> float:
+    """
+    Stop-loss threshold, widened early in a game for totals markets specifically —
+    all other bet types keep the flat config.STOP_LOSS_MOVE. Added 2026-08-13 after
+    a real incident (position #315, Baltimore/Minnesota Under 8.5): a thin, ~24c-wide
+    quote spike right at the end of the 1st inning triggered the flat 0.20 stop; the
+    game went on to finish well over the total (12 runs). A totals market's price
+    early in a game reflects a very small sample (often one inning/quarter) relative
+    to the full-game outcome it's meant to predict, so it's structurally noisier than
+    a moneyline market at the same point in time — same reasoning as
+    _dynamic_arm_move's ramp, applied to the stop-loss's totals case specifically
+    rather than to every bet type, since that's the only case this incident (and the
+    reasoning behind it) actually covers. Linear ramp between
+    config.STOP_LOSS_MOVE_TOTALS_EARLY and config.STOP_LOSS_MOVE (reused as the
+    "late" bound, unchanged from its existing flat value).
+    """
+    bet_type = pos["bet_type"] if "bet_type" in pos.keys() else None
+    if bet_type != "totals":
+        return config.STOP_LOSS_MOVE
+
+    elapsed_fraction = _elapsed_fraction(pos)
+    early = config.STOP_LOSS_MOVE_TOTALS_EARLY
+    late = config.STOP_LOSS_MOVE
     return early - elapsed_fraction * (early - late)
 
 
@@ -151,8 +199,10 @@ def evaluate_trailing_stop(pos, market: dict) -> Action:
 def evaluate_stop_loss(pos, market: dict) -> Action:
     """
     Pure decision function — no side effects, no I/O. `pos` is a positions row
-    (sqlite3.Row) with at least: side, market_price. Unlike evaluate_trailing_stop(),
-    this is stateless: no peak tracking, just a fixed offset from entry.
+    (sqlite3.Row) with at least: side, market_price, bet_type, commence_time, sport.
+    Unlike evaluate_trailing_stop(), this is stateless: no peak tracking, just a
+    fixed offset from entry — except for totals markets early in a game, where the
+    offset itself is time-ramped; see _dynamic_stop_loss_move().
     """
     side = (pos["side"] or "yes").lower()
     entry_price = pos["market_price"]
@@ -163,7 +213,7 @@ def evaluate_stop_loss(pos, market: dict) -> Action:
 
     _EPS = 1e-9
 
-    stop_level = entry_price - config.STOP_LOSS_MOVE
+    stop_level = entry_price - _dynamic_stop_loss_move(pos)
     if achievable <= stop_level + _EPS:
         return Action(kind=ActionKind.TRIGGER_CLOSE, exit_price=achievable)
 

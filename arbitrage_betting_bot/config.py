@@ -112,6 +112,18 @@ POSITION_MONITOR_INTERVAL_SECONDS: int = int(os.getenv("POSITION_MONITOR_INTERVA
 # Master switch — defaults off. Validate in paper mode before enabling live.
 ENABLE_STOP_LOSS: bool = os.getenv("ENABLE_STOP_LOSS", "false").lower() == "true"
 STOP_LOSS_MOVE: float = 0.20   # adverse move (price units) from entry that triggers a cut
+# Totals-only, time-ramped widening of the stop above — added 2026-08-13 after a real
+# incident (position #315, Baltimore/Minnesota Under 8.5): a thin, ~24c-wide quote
+# spike right at the end of the 1st inning triggered the flat 0.20 stop; the game went
+# on to finish well over the total (12 runs). A totals market's price early in a game
+# reflects a much smaller sample (often one inning/quarter) of the full-game outcome
+# it's meant to predict than a moneyline market does at the same point, making it
+# structurally noisier early on — see execution/risk_manager.py::_dynamic_stop_loss_move()
+# for the ramp (ramps down to the flat STOP_LOSS_MOVE above by the sport's expected
+# game duration, config.SPORT_EXPECTED_DURATION_MINUTES, same mechanism the trailing
+# stop's arm move already uses). Not applied to h2h/spread — this incident and the
+# reasoning behind it are specific to totals.
+STOP_LOSS_MOVE_TOTALS_EARLY: float = 0.35
 
 # ── Market Making (passive two-sided quoting) ───────────────────────────────────
 # Unified with the directional strategy, not a separate bot: for any matched market
