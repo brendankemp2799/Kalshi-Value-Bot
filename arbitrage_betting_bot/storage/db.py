@@ -537,6 +537,26 @@ def mark_order_verified(position_id: int) -> None:
         )
 
 
+def position_exists_for_order_id(order_id: str) -> bool:
+    """
+    Whether a position already exists for this exact Kalshi order_id. Guards
+    execution/market_maker.py's fill-check against double-recording a fill it's
+    already seen — normally impossible (each resting order is checked exactly
+    once, right before being cancelled or fully consumed), but became possible
+    once market_maker.py started recovering resting-order state from Kalshi
+    after a restart (see _sync_resting_quotes_from_kalshi()): a recovered order
+    that was already manually or automatically backfilled must not be
+    re-recorded just because its historical fill_count_fp is read again.
+    """
+    if not order_id:
+        return False
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM positions WHERE order_id = ? LIMIT 1", (order_id,)
+        ).fetchone()
+        return row is not None
+
+
 # ── Closing Line Value ──────────────────────────────────────────────────────────
 
 def get_positions_pending_closing_lines(

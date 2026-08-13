@@ -41,12 +41,71 @@ logger = logging.getLogger(__name__)
 
 # Process-local record of currently-resting (unfilled-as-of-last-tick) quote
 # orders, keyed by ticker → {"yes": {"order_id", "price", "count"} | None,
-# "no": {...} | None}. Not persisted: if the bot restarts, any real orders still
-# resting on Kalshi become untracked here (though still visible/cancellable
-# manually on Kalshi, and still subject to the same reconciliation pass
-# everything else goes through) — cancel any resting orders manually before
-# restarting the process while MM is enabled to avoid orphaned duplicate quotes.
+# "no": {...} | None}. Not persisted across restarts by itself — but
+# _sync_resting_quotes_from_kalshi() rebuilds it from Kalshi's own resting-order
+# list once per process startup, so a restart no longer loses track of orders
+# that were already resting (see that function's docstring for the incident that
+# motivated this).
 _resting_quotes: dict[str, dict] = {}
+
+# Guards _sync_resting_quotes_from_kalshi() to run at most once per process.
+_startup_synced = False
+
+
+def _sync_resting_quotes_from_kalshi() -> None:
+    """
+    Rebuild _resting_quotes from Kalshi's own resting-order list, once per
+    process lifetime. Before this existed, a restart while MM had real orders
+    resting meant those orders became permanently invisible to the fill-check in
+    run_mm_tick() — confirmed 2026-08-12: a real 5-contract NO fill on
+    KXMLSGAME-26AUG19PORSD-POR went completely unrecorded (no bankroll
+    accounting, no stop-loss, no correlation tracking) for 3.5+ hours, caught
+    only by execution/reconciliation.py's mismatch log, with nothing acting on
+    it until a human noticed. Kalshi's own order book is the authoritative
+    source of what's actually resting, so syncing from it on startup makes
+    recovery automatic instead of relying on "cancel everything before
+    restarting" discipline.
+
+    Known residual gap: this only recovers state at startup. A ticker that
+    later drops out of mm_candidates entirely (e.g. game already started, no
+    longer quoted) while something of ours is still resting on it won't be
+    revisited by run_mm_tick()'s per-candidate loop, since that loop only checks
+    tickers present in the current tick's candidate list. Not addressed here —
+    narrower and rarer than the restart gap this fixes, and out of scope unless
+    asked for.
+    """
+    global _startup_synced
+    if _startup_synced:
+        return
+    _startup_synced = True
+
+    from execution.kalshi_executor import list_resting_orders
+    orders = list_resting_orders()
+    if not orders:
+        return
+
+    recovered: dict[str, dict] = {}
+    for o in orders:
+        ticker = o.get("ticker")
+        remaining = float(o.get("remaining_count_fp", 0) or 0)
+        if not ticker or remaining <= 0:
+            continue
+        # outcome_side is Kalshi's own field for which economic side a
+        # sell-yes/buy-no order represents — matches the "yes leg" / "no leg"
+        # distinction _resting_quotes already uses everywhere else here.
+        leg_side = "yes" if o.get("outcome_side") == "yes" else "no"
+        price_field = "yes_price_dollars" if leg_side == "yes" else "no_price_dollars"
+        price = float(o.get(price_field, 0) or 0)
+        recovered.setdefault(ticker, {"yes": None, "no": None})[leg_side] = {
+            "order_id": o.get("order_id"), "price": price, "count": remaining,
+        }
+
+    if recovered:
+        logger.warning(
+            "MM: recovered %d ticker(s) with resting orders from before this "
+            "process started: %s", len(recovered), sorted(recovered),
+        )
+        _resting_quotes.update(recovered)
 
 
 class MMActionKind(str, Enum):
@@ -262,6 +321,9 @@ def run_mm_tick(
         place_resting_quote, cancel_quote, get_order_status, order_fee_paid,
     )
 
+    if not is_paper:
+        _sync_resting_quotes_from_kalshi()
+
     filled_count = 0
     seen_tickers: set[str] = set()
     pending_notional = _resting_notional()  # carried over from the prior tick
@@ -294,7 +356,14 @@ def run_mm_tick(
                 pending_notional -= leg["price"] * leg["count"]
                 status = get_order_status(leg["order_id"])
                 filled = float(status.get("fill_count_fp", 0) or 0) if status else 0.0
-                if filled > 0:
+                # order_id is normally checked exactly once (this block), right
+                # before being cancelled or fully consumed, so filled here always
+                # meant "new since we placed it." That stopped being true once
+                # _sync_resting_quotes_from_kalshi() started recovering orders
+                # that may have already been (manually or automatically)
+                # backfilled from a prior restart — guard against re-recording
+                # the same historical fill twice.
+                if filled > 0 and not db.position_exists_for_order_id(leg["order_id"]):
                     fee = order_fee_paid(leg["order_id"])
                     _record_fill(candidate, side, leg["price"], filled, fee, False,
                                  order_id=leg["order_id"])

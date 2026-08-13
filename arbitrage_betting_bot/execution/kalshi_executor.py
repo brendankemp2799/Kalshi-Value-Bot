@@ -398,6 +398,39 @@ def get_order_status(order_id: str) -> dict | None:
     return _get_order_status(order_id)
 
 
+def list_resting_orders() -> list[dict]:
+    """
+    Every currently-resting order on the account, paginated. Used by
+    market_maker.py to rebuild its in-memory quote-tracking state after a process
+    restart — Kalshi's own order book is the authoritative source of what's
+    actually still resting, closing the gap that used to require manually
+    cancelling resting orders before restarting the process (see the 2026-08-12
+    incident: a real 5-contract fill on a resting order went unrecorded for 3.5+
+    hours after a restart, because the old in-memory-only tracking had no idea
+    that order still existed).
+    """
+    try:
+        from data.kalshi_auth import auth_headers
+        orders: list[dict] = []
+        cursor = None
+        while True:
+            params: dict = {"status": "resting", "limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+            headers = auth_headers("GET", _STATUS_URL)
+            resp = requests.get(_STATUS_URL, headers=headers, params=params, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            orders.extend(data.get("orders", []))
+            cursor = data.get("cursor")
+            if not cursor:
+                break
+        return orders
+    except Exception as e:
+        logger.warning("Could not list resting orders: %s", e)
+        return []
+
+
 def order_fee_paid(order_id: str) -> float:
     """Public wrapper around _actual_fee_dollars()."""
     return _actual_fee_dollars(order_id)
