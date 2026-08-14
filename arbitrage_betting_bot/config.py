@@ -19,7 +19,18 @@ BANKROLL: float = float(os.getenv("BANKROLL", "1000"))
 
 # ── Risk Management ───────────────────────────────────────────────────────────
 KELLY_FRACTION: float = 0.25          # Use quarter-Kelly to reduce variance
-MIN_BET_DOLLARS: float = 0.5          # Absolute floor — Kalshi minimum is ~$0.01 per contract
+# How far buying ONE whole contract may overshoot the Kelly target before the bet is
+# skipped. Contracts are indivisible, so at a small bankroll a +EV Kelly result is
+# often smaller than a single contract; the question is how much over-betting that
+# forced rounding-up is worth tolerating. 1.5x means: take the bet if one contract
+# costs up to 50% more than Kelly asked for, otherwise pass.
+#
+# Replaces the former MIN_BET_DOLLARS = $0.50 gate, now removed. That floor was
+# arbitrary (its own comment noted Kalshi's minimum is ~$0.01/contract) and
+# discontinuous at this bankroll: $0.47 was rejected outright while $0.51 was rounded
+# UP to a whole contract costing as much as $0.65 — same economics, opposite outcome.
+# One live scan showed it discarding 5 opportunities Kelly had already judged +EV.
+MAX_ROUNDING_OVERSHOOT: float = float(os.getenv("MAX_ROUNDING_OVERSHOOT", "1.5"))
 MAX_BET_DOLLARS: float = 100.0        # Hard dollar cap per bet
 MAX_PCT_BANKROLL: float = 0.05        # Max 5% of bankroll per single bet
 MAX_TOTAL_EXPOSURE_PCT: float = 0.30  # Max 30% of bankroll deployed at once

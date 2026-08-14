@@ -133,6 +133,34 @@ def _place_raw_order(
     return resp.json()
 
 
+def _contract_count(stake_dollars: float, price: float) -> int:
+    """
+    Whole contracts to buy for a target dollar stake, rounded to NEAREST rather than
+    down, subject to the hard risk caps.
+
+    Why not floor(): contracts are indivisible, so at a small bankroll Kelly's output
+    lives inside the rounding error. Measured on 44 reproducible live bets (2026-08-14):
+    floor() under-sized 42 of them and over-sized none — median -11.6%, p10 -29.7%,
+    worst -47.4%. 72% of bets were 1-3 contracts, where one contract is a 33-100% step,
+    so the bias was large and entirely one-directional. Rounding to nearest makes the
+    error symmetric instead of a systematic haircut.
+
+    No cap is re-applied here. `stake_dollars` arrives already capped by the sizing
+    layer against the LIVE bankroll (calculate_kelly's max_bet_dollars /
+    max_pct_bankroll), which this module cannot see -- config.BANKROLL is only a static
+    fallback and would be the wrong number to clamp against. Rounding up overshoots by
+    at most half a contract price (<$0.50 at observed prices), which is immaterial
+    against those caps.
+
+    Never returns less than 1: a sub-contract target still has to buy one contract or
+    not bet at all, and that decision belongs to the caller (see main.py's minimum-stake
+    gate), not here.
+    """
+    if price <= 0:
+        return 1
+    return max(1, round(stake_dollars / price))
+
+
 def _limit_timeout(commence_time: datetime | None) -> int:
     """Return the appropriate GTC limit-order timeout in seconds based on time to game."""
     if commence_time is None:
@@ -216,7 +244,7 @@ def place_order(
         return "", "failed", "KALSHI_API_KEY not configured", 0.0, "", 0.0
 
     price = max(0.01, min(0.99, market_price))
-    count = max(1, math.floor(stake_dollars / price))
+    count = _contract_count(stake_dollars, price)
 
     if side == "yes":
         api_side = "bid"

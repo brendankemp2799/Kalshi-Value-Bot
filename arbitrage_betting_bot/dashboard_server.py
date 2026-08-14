@@ -92,6 +92,21 @@ def _kalshi_market_url(ticker: str) -> str:
     return f"https://kalshi.com/markets/{series.lower()}/{slug}/{event}"
 
 
+def _col(row, name: str, default=None):
+    """Read a column that may not exist yet.
+
+    sqlite3.Row raises IndexError (not KeyError) for an unknown column, and the
+    dashboard can run against a database whose migrations have not been applied —
+    it is a separate process from the bot, and storage/db.py already carries
+    defensive re-creates for exactly this first-run case. Newly added columns must
+    therefore degrade to `default` rather than 500 the whole page.
+    """
+    try:
+        return row[name]
+    except (IndexError, KeyError):
+        return default
+
+
 def _bet_type_label(raw: str | None) -> str:
     return {
         "h2h":    "Moneyline",
@@ -639,6 +654,17 @@ def position_detail(position_id: int):
         "entered": _fmt_dt(p["entered_at"]),
         "stake": round(p["stake"], 2),
         "price_pct": round(p["market_price"] * 100, 1),
+        # Contracts are the unit actually traded; stake is just contracts x price.
+        # Showing it makes the integer-rounding step visible instead of looking like
+        # an arbitrary dollar figure.
+        "contracts": (round(p["stake"] / p["market_price"])
+                      if p["market_price"] else None),
+        # The single largest driver of bet size: a maker_only bet is sized at the
+        # fee-free mid (fee_rate=0) and can come out ~2x larger than a HIGHER-edge
+        # taker bet. Without this, two bets at the same price with different sizes
+        # look inexplicable. None for rows predating the column.
+        "maker_only": (None if _col(p, "maker_only") is None
+                       else bool(_col(p, "maker_only"))),
         "edge": round(p["edge"] * 100, 1) if p["edge"] is not None else None,
         "status": p["status"],
         "pnl": round(p["pnl"], 2) if p["pnl"] is not None else None,
@@ -1252,6 +1278,12 @@ DETAIL_TEMPLATE = """<!DOCTYPE html>
       <div class="cell"><div class="cell-label">Placed At</div><div class="cell-value" style="font-size:13px">{{ p.entered }}</div></div>
       <div class="cell"><div class="cell-label">Stake</div><div class="cell-value">${{ "%.2f"|format(p.stake) }}</div></div>
       <div class="cell"><div class="cell-label">Entry Price</div><div class="cell-value">{{ p.price_pct }}¢</div></div>
+      {% if p.contracts is not none %}
+      <div class="cell"><div class="cell-label">Contracts</div><div class="cell-value">{{ p.contracts }}</div></div>
+      {% endif %}
+      {% if p.maker_only is not none %}
+      <div class="cell"><div class="cell-label">Sized As</div><div class="cell-value" style="color:{{ 'var(--blue)' if p.maker_only else 'var(--muted)' }}">{{ 'maker-only (mid, 0% fee)' if p.maker_only else 'taker (ask + fee)' }}</div></div>
+      {% endif %}
       {% if p.edge is not none %}
       <div class="cell"><div class="cell-label">Edge at Entry</div><div class="cell-value pos">+{{ p.edge }}%</div></div>
       {% endif %}

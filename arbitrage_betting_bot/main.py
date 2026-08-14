@@ -281,11 +281,23 @@ def run_scan(
             _update_scan_log(scan_log, opp, "kelly_no_edge",
                              "Kelly criterion: mathematical edge doesn't justify a bet")
             continue
-        min_bet = config.MIN_BET_DOLLARS
-        if sizing.recommended_dollars < min_bet:
+        # Smallest tradeable unit is ONE contract, so the real question is not "is the
+        # Kelly bet above some dollar figure" but "does buying one whole contract
+        # overshoot what Kelly asked for by more than we're willing to tolerate".
+        #
+        # The old fixed $0.50 floor was arbitrary (its own comment noted Kalshi's
+        # minimum is ~$0.01/contract) and produced an incoherent cliff at this
+        # bankroll: a $0.47 recommendation was rejected outright while $0.51 was
+        # rounded UP to a whole contract that could cost $0.65. Same economics,
+        # opposite outcome. Measured on one live scan, it discarded 5 opportunities
+        # that Kelly had already judged +EV.
+        one_contract = max(0.01, min(0.99, opp.market_price))
+        overshoot = one_contract / max(sizing.recommended_dollars, 1e-9)
+        if overshoot > config.MAX_ROUNDING_OVERSHOOT:
             reason = (
-                f"Kelly bet ${sizing.recommended_dollars:.2f} below "
-                f"minimum ${min_bet:.2f}"
+                f"1 contract (${one_contract:.2f}) overshoots Kelly "
+                f"${sizing.recommended_dollars:.2f} by {overshoot:.1f}x "
+                f"(max {config.MAX_ROUNDING_OVERSHOOT:.1f}x)"
             )
             logger.debug("Skip %s — %s", opp.team_name, reason)
             _update_scan_log(scan_log, opp, "kelly_no_edge", reason)
@@ -376,8 +388,14 @@ def run_scan(
             send_alert(opp, sizing, dry_run=False, paper=True)
             alerted += 1
             log_alert(opp_id, sizing.recommended_dollars, bm.bankroll)
+            # Same rounding rule as the live path (execution/kalshi_executor.py) —
+            # sharing the helper keeps paper results comparable to live ones. Using
+            # floor() here while live used floor() too still under-sized both by a
+            # median 11.6%; the point is that paper must not diverge from live now
+            # that live rounds to nearest.
+            from execution.kalshi_executor import _contract_count
             _price = max(0.01, min(0.99, opp.market_price))
-            _count = max(1, math.floor(sizing.recommended_dollars / _price))
+            _count = _contract_count(sizing.recommended_dollars, _price)
             actual_stake = round(_count * _price, 2)
             paper_position_id = add_position(
                 sport=event.sport_key,
@@ -399,6 +417,7 @@ def run_scan(
                 bet_type=opp.matched_event.kalshi_market.bet_type,
                 threshold=opp.matched_event.kalshi_market.threshold,
                 bookmakers_json=json.dumps(event.bookmakers),
+                maker_only=opp.maker_only,
             )
             try:
                 link_book_probability_to_position(scan_id, ticker, opp.team_name, paper_position_id)
@@ -469,6 +488,7 @@ def run_scan(
                         failure_reason=failure_reason or None,
                         fill_type=fill_type or "taker",
                         entry_fee_paid=fee_paid,
+                        maker_only=opp.maker_only,
                     )
                 except Exception as e:
                     logger.critical(

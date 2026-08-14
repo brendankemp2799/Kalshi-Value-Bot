@@ -192,6 +192,16 @@ def _migrate() -> None:
             ("order_verified_at", "ALTER TABLE positions ADD COLUMN order_verified_at TEXT"),
             ("strategy", "ALTER TABLE positions ADD COLUMN strategy TEXT NOT NULL DEFAULT 'value_edge'"),
             ("closing_line_last_attempt_at", "ALTER TABLE positions ADD COLUMN closing_line_last_attempt_at TEXT"),
+            # Whether sizing treated this as a maker_only opportunity (priced at the
+            # fee-free mid) or a normal one (priced at the ask with the taker fee).
+            # This is the single largest driver of bet size — a maker_only bet is sized
+            # with fee_rate=0 and can come out ~2x larger than a HIGHER-edge taker bet
+            # — but it was not stored, so past sizing could not be reconstructed
+            # (only 44 of 87 live bets could be reproduced on 2026-08-14). NULL for
+            # rows written before this column existed. Note fill_type is NOT a
+            # substitute: that is the post-fill fee classification, not the pre-trade
+            # sizing assumption.
+            ("maker_only", "ALTER TABLE positions ADD COLUMN maker_only INTEGER"),
         ]:
             if col not in existing:
                 conn.execute(ddl)
@@ -308,6 +318,7 @@ def add_position(
     fill_type: str = "taker",
     entry_fee_paid: float = 0.0,
     strategy: str = "value_edge",
+    maker_only: bool | None = None,
 ) -> int:
     with get_connection() as conn:
         cur = conn.execute(
@@ -318,8 +329,8 @@ def add_position(
                  order_id, execution_status, market_ticker, side,
                  edge, bookmaker_count, consensus_std, kalshi_spread, commence_time,
                  bet_type, threshold, bookmakers_json, failure_reason, fill_type,
-                 entry_fee_paid, strategy)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 entry_fee_paid, strategy, maker_only)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 datetime.utcnow().isoformat(),
@@ -342,6 +353,7 @@ def add_position(
                 fill_type,
                 entry_fee_paid,
                 strategy,
+                None if maker_only is None else (1 if maker_only else 0),
             ),
         )
         return cur.lastrowid
