@@ -121,10 +121,14 @@ def _eval_edge(
          first, then fall back to crossing the ask if unfilled -- even the
          worst case (ask) is still worth it.
       2. Otherwise, mid_edge (priced at the actual mid, ask_price - spread/2)
-         clears plain min_edge -> maker_only=True. Kalshi's own resting/maker
-         fills are confirmed genuinely 0% fee (see execution/kalshi_executor.py
-         fee model, verified against real settled fills and Kalshi's own fee
-         docs), so this is a real, if thinner, edge -- but crossing the ask
+         clears plain min_edge -> maker_only=True. Maker fills are very nearly
+         free -- across 139 filled orders sampled 2026-08-15 Kalshi charged a
+         maker fee on exactly one, at ~0.0178 * p * (1-p) per contract. This
+         comment previously claimed maker fills were "confirmed genuinely 0%
+         fee", which overstated it: the fee exists, it is just rarely levied on
+         the series we trade (see execution/kalshi_executor.py's fee model note).
+         Treating it as zero here is therefore slightly optimistic, not exact.
+         Either way this is a real, if thinner, edge -- but crossing the ask
          would NOT clear the bar, so execute_trade() must only attempt the
          passive mid order and walk away (no bet, no cost) if it doesn't fill,
          rather than crossing the spread into a losing trade.
@@ -213,17 +217,63 @@ def _quality_check(
     qf = config.quality_filters(bet_type, is_draw=is_draw)
     if book_count < qf["min_bookmaker_count"]:
         return "few_books", f"Only {book_count} books (min {qf['min_bookmaker_count']})"
-    if km.spread > qf["max_kalshi_spread"]:
-        return (
-            "spread_too_wide",
-            f"Kalshi spread {km.spread*100:.1f}¢ > max {qf['max_kalshi_spread']*100:.0f}¢",
-        )
     if std_dev > qf["high_uncertainty_std"] and book_count < qf["high_uncertainty_min_books"]:
         return (
             "high_uncertainty",
             f"High uncertainty: std_dev {std_dev:.3f} with only {book_count} books",
         )
     return None
+
+
+def _spread_too_wide(km, bet_type: str, is_draw: bool = False) -> str | None:
+    """
+    Reason string if Kalshi's spread exceeds this bet type's max, else None.
+
+    Deliberately NOT part of _quality_check(). It used to be, and because
+    _quality_check() runs before the edge is computed, a `continue` there meant a
+    wide-spread market's edge was NEVER EVALUATED — spread width silently became
+    the routing decision and any directional value in the market was discarded
+    unexamined. Splitting it out lets callers evaluate the edge first and then
+    decide, which is the only way to know what routing to MM actually costs.
+
+    See config.ALLOW_WIDE_SPREAD_MAKER for what callers do with this.
+    """
+    qf = config.quality_filters(bet_type, is_draw=is_draw)
+    if km.spread > qf["max_kalshi_spread"]:
+        return f"Kalshi spread {km.spread*100:.1f}¢ > max {qf['max_kalshi_spread']*100:.0f}¢"
+    return None
+
+
+def _resolve_wide_spread(
+    maker_only: bool,
+    wide_reason: str | None,
+) -> tuple[bool, str, str]:
+    """
+    Decide what to do with an evaluated opportunity in a wide-spread market.
+
+    Returns (allow, status, reason).
+
+    A PASSIVE (maker_only) order is allowed through: it rests at the mid and, if
+    nobody crosses it, expires having cost nothing — the downside is bounded at
+    zero, so the wide spread costs us nothing to try.
+
+    A CROSSING order is not, regardless of edge. max_kalshi_spread is a market
+    quality signal as much as an execution-cost one: a wide spread means thin,
+    stale pricing, and paying the ask into that is the trade most likely to be
+    picking up someone else's information. _eval_edge() only proves the trade is
+    +EV *if the consensus is right*, which is exactly the assumption a wide,
+    untraded book undermines.
+    """
+    if wide_reason is None:
+        return True, "value", "Edge found — bet placed"
+    if maker_only and config.ALLOW_WIDE_SPREAD_MAKER:
+        return True, "value", f"Edge found (passive only) — {wide_reason}"
+    if maker_only:
+        return False, "spread_too_wide", wide_reason
+    return False, "spread_too_wide_take", (
+        f"{wide_reason} — edge clears at the ask but crossing a wide spread is "
+        f"not allowed; routed to market making instead"
+    )
 
 
 def detect_value(
@@ -303,7 +353,16 @@ def _maybe_mm_candidate(
     """Append a market-making candidate iff the ONLY reason this market was rejected
     is that Kalshi's spread is too wide to cross directionally — not low liquidity,
     too few books, or high disagreement, all of which are just as disqualifying for
-    resting a quote as for taking a directional side."""
+    resting a quote as for taking a directional side.
+
+    As of 2026-08-15 every caller reaches here AFTER _eval_edge has run, so a market
+    arrives with its directional value already known. It is routed to MM only when
+    that value was absent, or was present but could only be captured by crossing the
+    wide spread (which _resolve_wide_spread refuses). A wide market with PASSIVE edge
+    now becomes a directional maker_only bet instead and never reaches this function —
+    previously the spread check short-circuited before the edge was computed, so such
+    markets were sent here unexamined and, once MM's centering gate was added, were
+    then rejected by MM too and traded by nobody."""
     if mm_candidates is None or status != "spread_too_wide":
         return
     mm_candidates.append({
@@ -331,6 +390,14 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log, mm_candidates=
     # Skip the non-YES team for soccer so each team's Kalshi market is only
     # evaluated when it is explicitly the subject of the market.
     is_soccer = "soccer" in event.sport_key
+
+    # Both loop iterations price the SAME Kalshi ticker (the away side off
+    # 1 - yes_bid). So the MM decision cannot be made inside the loop: one side
+    # may find a passive bet while the other finds nothing, and emitting an MM
+    # quote on a ticker we are already betting would put the bot on both sides of
+    # its own position. Hold the candidate and decide once, after the loop.
+    opps_before = len(opportunities)
+    pending_mm: tuple | None = None
 
     for outcome, team in [(Outcome.HOME, event.home_team), (Outcome.AWAY, event.away_team)]:
         if is_soccer:
@@ -365,10 +432,14 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log, mm_candidates=
             # unambiguous YES-side consensus — the other loop iteration re-derives
             # the same ticker's price from the opposite (1 - bid) direction, which
             # isn't a clean reservation-price input for a resting quote.
-            if is_yes_side:
-                _maybe_mm_candidate(mm_candidates, me, team, consensus, book_count,
-                                     std_dev, status, reason)
+            # NOT an MM candidate: few_books/high_uncertainty are just as
+            # disqualifying for resting a quote as for taking a side. Only
+            # spread_too_wide routes to MM, and that is now decided after the
+            # edge is evaluated, further down.
             continue
+
+        # Evaluated, not short-circuited: see _spread_too_wide()'s docstring.
+        wide_reason = _spread_too_wide(km, "h2h")
 
         if outcome == Outcome.HOME:
             if me.kalshi_outcome == "yes":
@@ -385,11 +456,25 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log, mm_candidates=
         if result is None:
             best_edge = consensus - kalshi_price
             eff_min = _effective_min_edge(kalshi_price, min_edge)
-            reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
+            if wide_reason:
+                status, reason = "spread_too_wide", wide_reason
+            else:
+                status = "no_edge"
+                reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
             _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
-                 best_edge, "no_edge", reason, kalshi_side)
+                 best_edge, status, reason, kalshi_side)
+            if wide_reason and is_yes_side:
+                pending_mm = (me, team, consensus, book_count, std_dev, status, reason)
             continue
         edge, maker_only = result
+        allow, status, reason = _resolve_wide_spread(maker_only, wide_reason)
+        if not allow:
+            _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
+                 edge, status, reason, kalshi_side, maker_only=maker_only)
+            if is_yes_side:
+                pending_mm = (me, team, consensus, book_count, std_dev,
+                              "spread_too_wide", reason)
+            continue
         opportunities.append(ValueOpportunity(
             matched_event=me, outcome=outcome, team_name=team,
             consensus_prob=consensus, market_price=kalshi_price, edge=edge,
@@ -398,9 +483,13 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log, mm_candidates=
             maker_only=maker_only,
         ))
         _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
-             edge, "value", "Edge found — bet placed", kalshi_side, maker_only=maker_only)
+             edge, status, reason, kalshi_side, maker_only=maker_only)
         logger.debug("VALUE H2H: %s — edge %.1f%% net  (consensus %.1f%% vs price %.1f%%, maker_only=%s, books=%d)",
                     team, edge*100, consensus*100, kalshi_price*100, maker_only, book_count)
+
+    # Quote this ticker only if NEITHER side of it became a directional bet.
+    if pending_mm is not None and len(opportunities) == opps_before:
+        _maybe_mm_candidate(mm_candidates, *pending_mm)
 
 
 def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log, mm_candidates=None):
@@ -416,19 +505,32 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log, mm_candida
         status, reason = qcheck
         _log(scan_log, me, "Draw", None, consensus, book_count, std_dev, None,
              status, reason, kalshi_side)
-        _maybe_mm_candidate(mm_candidates, me, "Draw", consensus, book_count,
-                             std_dev, status, reason)
         return
+    wide_reason = _spread_too_wide(km, "h2h", is_draw=True)
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
     result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if result is None:
         best_edge = consensus - kalshi_price
         eff_min = _effective_min_edge(kalshi_price, min_edge)
-        reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
+        if wide_reason:
+            status, reason = "spread_too_wide", wide_reason
+        else:
+            status = "no_edge"
+            reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
-             best_edge, "no_edge", reason, kalshi_side)
+             best_edge, status, reason, kalshi_side)
+        if wide_reason:
+            _maybe_mm_candidate(mm_candidates, me, "Draw", consensus, book_count,
+                                 std_dev, status, reason)
         return
     edge, maker_only = result
+    allow, status, reason = _resolve_wide_spread(maker_only, wide_reason)
+    if not allow:
+        _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
+             edge, status, reason, kalshi_side, maker_only=maker_only)
+        _maybe_mm_candidate(mm_candidates, me, "Draw", consensus, book_count,
+                             std_dev, "spread_too_wide", reason)
+        return
     opportunities.append(ValueOpportunity(
         matched_event=me, outcome=Outcome.DRAW, team_name="Draw",
         consensus_prob=consensus, market_price=kalshi_price, edge=edge,
@@ -437,7 +539,7 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log, mm_candida
         maker_only=maker_only,
     ))
     _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
-         edge, "value", "Edge found — bet placed", kalshi_side, maker_only=maker_only)
+         edge, status, reason, kalshi_side, maker_only=maker_only)
     logger.debug("VALUE DRAW: %s vs %s — edge %.1f%% net (maker_only=%s)",
                 event.home_team, event.away_team, edge*100, maker_only)
 
@@ -488,20 +590,36 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidat
         status, reason = qcheck
         _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
              status, reason, "yes")
-        _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
-                             std_dev, status, reason)
         return
 
+    # As in _detect_h2h: the Over (YES) and Under (NO) evaluations below are two
+    # sides of ONE ticker, so the MM decision is held until both have run.
+    opps_before = len(opportunities)
+    pending_mm: tuple | None = None
+
+    wide_reason = _spread_too_wide(km, "totals")
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
     result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if result is None:
         best_edge = consensus - kalshi_price
         eff_min = _effective_min_edge(kalshi_price, min_edge)
-        reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
+        if wide_reason:
+            status, reason = "spread_too_wide", wide_reason
+        else:
+            status = "no_edge"
+            reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-             best_edge, "no_edge", reason, "yes")
+             best_edge, status, reason, "yes")
+        if wide_reason:
+            pending_mm = (me, label, consensus, book_count, std_dev, status, reason)
     else:
         edge, maker_only = result
+        allow, status, reason = _resolve_wide_spread(maker_only, wide_reason)
+        if not allow:
+            _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
+                 edge, status, reason, "yes", maker_only=maker_only)
+            pending_mm = (me, label, consensus, book_count, std_dev,
+                          "spread_too_wide", reason)
         opportunities.append(ValueOpportunity(
             matched_event=me, outcome=outcome_type, team_name=label,
             consensus_prob=consensus, market_price=kalshi_price, edge=edge,
@@ -510,7 +628,7 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidat
             maker_only=maker_only,
         ))
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-             edge, "value", "Edge found — bet placed", "yes", maker_only=maker_only)
+             edge, status, reason, "yes", maker_only=maker_only)
         logger.debug("VALUE TOTALS: %s (%s vs %s) — edge %.1f%% net (maker_only=%s)",
                     label, event.home_team, event.away_team, edge*100, maker_only)
 
@@ -523,11 +641,23 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidat
         if no_result is None:
             no_best = no_consensus - no_price
             eff_min = _effective_min_edge(no_price, min_edge)
-            reason = f"Edge {no_best*100:.2f}% net below minimum {eff_min*100:.2f}%"
+            if wide_reason:
+                no_status, reason = "spread_too_wide", wide_reason
+            else:
+                no_status = "no_edge"
+                reason = f"Edge {no_best*100:.2f}% net below minimum {eff_min*100:.2f}%"
             _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
-                 no_best, "no_edge", reason, "no")
+                 no_best, no_status, reason, "no")
         else:
             no_edge, no_maker_only = no_result
+            # The NO side is priced off (1 - yes_bid), so it is the SAME book and
+            # the same spread -- the wide-spread rule applies identically here.
+            no_allow, no_status, reason = _resolve_wide_spread(no_maker_only, wide_reason)
+            if not no_allow:
+                _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
+                     no_edge, no_status, reason, "no", maker_only=no_maker_only)
+                no_result = None
+        if no_result is not None:
             opportunities.append(ValueOpportunity(
                 matched_event=me, outcome=Outcome.NO_OVER, team_name=no_label,
                 consensus_prob=no_consensus, market_price=no_price, edge=no_edge,
@@ -536,9 +666,14 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidat
                 maker_only=no_maker_only,
             ))
             _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
-                 no_edge, "value", "Edge found on NO side — bet placed", "no", maker_only=no_maker_only)
+                 no_edge, no_status, "Edge found on NO side — " + reason, "no",
+                 maker_only=no_maker_only)
             logger.debug("VALUE TOTALS (NO/Under): %s (%s vs %s) — edge %.1f%% net (maker_only=%s)",
                         no_label, event.home_team, event.away_team, no_edge*100, no_maker_only)
+
+    # Quote this ticker only if NEITHER the Over nor the Under side became a bet.
+    if pending_mm is not None and len(opportunities) == opps_before:
+        _maybe_mm_candidate(mm_candidates, *pending_mm)
 
 
 # ── Spread ────────────────────────────────────────────────────────────────────
@@ -593,20 +728,33 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log, mm_candidat
         status, reason = qcheck
         _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
              status, reason, "yes")
-        _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
-                             std_dev, status, reason)
         return
 
+    wide_reason = _spread_too_wide(km, "spread")
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
     result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if result is None:
         best_edge = consensus - kalshi_price
         eff_min = _effective_min_edge(kalshi_price, min_edge)
-        reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
+        if wide_reason:
+            status, reason = "spread_too_wide", wide_reason
+        else:
+            status = "no_edge"
+            reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-             best_edge, "no_edge", reason, "yes")
+             best_edge, status, reason, "yes")
+        if wide_reason:
+            _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
+                                 std_dev, status, reason)
         return
     edge, maker_only = result
+    allow, status, reason = _resolve_wide_spread(maker_only, wide_reason)
+    if not allow:
+        _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
+             edge, status, reason, "yes", maker_only=maker_only)
+        _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
+                             std_dev, "spread_too_wide", reason)
+        return
     opportunities.append(ValueOpportunity(
         matched_event=me, outcome=Outcome.COVER, team_name=label,
         consensus_prob=consensus, market_price=kalshi_price, edge=edge,
@@ -615,7 +763,7 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log, mm_candidat
         maker_only=maker_only,
     ))
     _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-         edge, "value", "Edge found — bet placed", "yes", maker_only=maker_only)
+         edge, status, reason, "yes", maker_only=maker_only)
     logger.debug("VALUE SPREAD: %s (%s vs %s) — edge %.1f%% net (maker_only=%s)",
                 label, event.home_team, event.away_team, edge*100, maker_only)
 

@@ -27,6 +27,16 @@ Fee model:
   fields (GET /portfolio/orders/{id}) after every fill rather than inferred/assumed,
   since guessing this got it wrong before (see _actual_fee_dollars()).
 
+  Maker fees are NOT reliably zero, though they are close to it in practice. Measured
+  across 139 filled orders on 2026-08-15: 125 carried a taker fee, 13 carried no fee
+  of any kind, and exactly ONE carried a maker fee (KXEPLGAME-26AUG23BRIAVL-AVL, 1
+  contract @ $0.31, $0.0038). That single data point implies a maker rate of 0.0178
+  — essentially the 0.0175 (25% of the taker rate) assumed in config.py — so the
+  formula appears correct and is simply seldom levied on the series we trade. The one
+  charged fill was EPL and all 13 free ones were MLB/MLS, which HINTS at a
+  series-dependent schedule, but n=1 is not evidence of that; do not code against it.
+  Anything that must assume a maker fee should assume it IS charged (conservative).
+
 Execution strategy:
   Step 1: GTC at mid price, adaptive timeout (2–10 min based on game time).
           Skipped when edge >= config.LARGE_EDGE_SKIP_PASSIVE (large edges are
@@ -79,12 +89,47 @@ def _actual_fee_dollars(order_id: str) -> float:
     code hardcoded "always maker, 0% fee" and was wrong for any fill that crossed the
     spread at placement.
     """
+    maker_fee, taker_fee = _fee_breakdown(order_id)
+    return round(maker_fee + taker_fee, 6)
+
+
+def _fee_breakdown(order_id: str) -> tuple[float, float]:
+    """(maker_fee, taker_fee) in dollars, straight from Kalshi's own order record."""
     status = _get_order_status(order_id)
     if not status:
-        return 0.0
-    maker_fee = float(status.get("maker_fees_dollars", 0) or 0)
-    taker_fee = float(status.get("taker_fees_dollars", 0) or 0)
-    return round(maker_fee + taker_fee, 6)
+        return 0.0, 0.0
+    return (float(status.get("maker_fees_dollars", 0) or 0),
+            float(status.get("taker_fees_dollars", 0) or 0))
+
+
+def _classify_fill(order_id: str, crossed_at_placement: bool) -> tuple[str, float]:
+    """
+    Return ("maker" | "taker", total_fee) for a filled order.
+
+    This used to be `"taker" if fee_paid > 0 else "maker"`, which is CIRCULAR:
+    it defines a maker fill as one that paid nothing, so "every maker fill was
+    free" became true by construction and the label could never disagree with
+    the fee. That silently mislabelled any genuine maker fill Kalshi did charge
+    as a "taker" fill, and made our own database useless for answering "does
+    Kalshi charge makers?" — which it is not, empirically: across 139 filled
+    orders sampled 2026-08-15, Kalshi returned a non-zero maker_fees_dollars on
+    exactly one (KXEPLGAME-26AUG23BRIAVL-AVL, 1 contract @ $0.31, $0.0038,
+    implying a rate of 0.0178 against our assumed 0.0175 — so the FORMULA is
+    right, it is simply rarely levied on the series we trade).
+
+    Kalshi's own fee fields are authoritative when either is non-zero. When both
+    are zero the fee cannot disambiguate, so fall back to what the order actually
+    did: one that filled the instant it was placed necessarily crossed the book
+    (taker); one that sat and was later filled by a counterparty coming to us is
+    a maker fill.
+    """
+    maker_fee, taker_fee = _fee_breakdown(order_id)
+    total = round(maker_fee + taker_fee, 6)
+    if taker_fee > 0:
+        return "taker", total
+    if maker_fee > 0:
+        return "maker", total
+    return ("taker" if crossed_at_placement else "maker"), total
 
 
 def _cancel_order(order_id: str) -> bool:
@@ -274,8 +319,10 @@ def place_order(
 
             if filled >= count:
                 actual_stake = round(filled * price, 2)
-                fee_paid = _actual_fee_dollars(order_id)
-                fill_type = "taker" if fee_paid > 0 else "maker"
+                # Filled the instant it was placed: the mid must have crossed
+                # the live book, so this is economically a TAKER fill even though
+                # it was priced at the mid.
+                fill_type, fee_paid = _classify_fill(order_id, crossed_at_placement=True)
                 logger.info(
                     "Kalshi GTC mid fill (immediate): %s %s %g contracts @ %.4f  actual_stake=$%.2f  fee=$%.4f",
                     api_side.upper(), ticker, filled, yes_price_mid, actual_stake, fee_paid,
@@ -312,8 +359,8 @@ def place_order(
 
             if filled > 0:
                 actual_stake = round(filled * price, 2)
-                fee_paid = _actual_fee_dollars(order_id)
-                fill_type = "taker" if fee_paid > 0 else "maker"
+                # Rested at the mid and a counterparty came to us: a real maker fill.
+                fill_type, fee_paid = _classify_fill(order_id, crossed_at_placement=False)
                 logger.info(
                     "Kalshi GTC mid fill: %s %s %g/%d contracts @ %.4f  actual_stake=$%.2f  fee=$%.4f (order_id=%s)",
                     api_side.upper(), ticker, filled, count, yes_price_mid, actual_stake, fee_paid, order_id,
@@ -366,8 +413,8 @@ def place_order(
 
         if filled >= count:
             actual_stake = round(filled * price, 2)
-            fee_paid = _actual_fee_dollars(order_id)
-            fill_type = "taker" if fee_paid > 0 else "maker"
+            # Step 2 is designed to cross the book immediately: a TAKER fill.
+            fill_type, fee_paid = _classify_fill(order_id, crossed_at_placement=True)
             logger.info(
                 "Kalshi GTC ask fill (immediate): %s %s %g contracts @ %.4f  actual_stake=$%.2f  fee=$%.4f",
                 api_side.upper(), ticker, filled, yes_price_ask, actual_stake, fee_paid,
@@ -385,8 +432,9 @@ def place_order(
 
         if filled > 0:
             actual_stake = round(filled * price, 2)
-            fee_paid = _actual_fee_dollars(order_id)
-            fill_type = "taker" if fee_paid > 0 else "maker"
+            # Priced at the ask but did NOT fill on placement, so the ask had
+            # already moved up and this order rested below it before filling.
+            fill_type, fee_paid = _classify_fill(order_id, crossed_at_placement=False)
             logger.info(
                 "Kalshi GTC ask fill: %s %s %g/%d contracts @ %.4f  actual_stake=$%.2f  fee=$%.4f (order_id=%s)",
                 api_side.upper(), ticker, filled, count, yes_price_ask, actual_stake, fee_paid, order_id,

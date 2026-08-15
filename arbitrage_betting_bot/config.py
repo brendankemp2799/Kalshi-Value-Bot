@@ -141,7 +141,12 @@ STOP_LOSS_MOVE_TOTALS_EARLY: float = 0.35
 # whose Kalshi spread is too wide to cross directionally (see max_kalshi_spread
 # above), rest quotes inside the spread instead and capture it net of Kalshi's maker
 # fee (25% of the taker formula — see KALSHI_TAKER_FEE_RATE_ESTIMATE below; there is
-# no maker rebate for a retail account). Fills flow into the same `positions` table
+# no maker rebate for a retail account). That 25% figure was an assumption when
+# written; it has since been measured once and held: the only maker fee Kalshi
+# charged across 139 filled orders (2026-08-15) implied 0.0178, vs the 0.0175 assumed
+# here. But it was charged on 1 of 139 — MM_MIN_NET_PER_PAIR below deliberately
+# assumes it is ALWAYS charged, which makes MM quote less, never more. Fills flow
+# into the same `positions` table
 # (positions.strategy='market_making') and are covered by the existing trailing-stop/
 # stop-loss risk management with no separate exit-risk code.
 #
@@ -347,6 +352,29 @@ QUALITY_FILTERS: dict[str, dict] = {
     "spread": dict(_DEFAULT_QUALITY_FILTER),
     "draw":   dict(_DEFAULT_QUALITY_FILTER),  # soccer 3-way TIE market
 }
+
+
+# A market whose spread exceeds max_kalshi_spread used to be discarded by
+# _quality_check() BEFORE its edge was ever computed, then handed to the market
+# maker. That made spread width the routing decision and meant a wide market with
+# real directional value was simply never evaluated as a bet — and after the MM
+# centering gate was added (2026-08-14), a market whose consensus sat outside the
+# book got rejected by MM too, so nobody traded it at all.
+#
+# With this True, a wide-spread market is still edge-evaluated, and a PASSIVE
+# (maker_only) opportunity in one is allowed: it rests at the mid and walks away
+# at no cost if unfilled, so the downside is bounded at zero.
+#
+# Crossing a wide spread is NOT allowed regardless of this flag. max_kalshi_spread
+# is a market-QUALITY signal as much as an execution-cost one — a wide spread means
+# thin, stale, unreliable pricing — and paying the ask into that is exactly the
+# trade we do not want. Such markets are logged 'spread_too_wide_take' and routed
+# to MM as before.
+#
+# Measured on one live tick (40 MM candidates, 2026-08-15): 0 would have crossed
+# at the ask, 7 had passive edge (1.1%-4.6%), 33 had no edge at all. So this is a
+# correctness fix with a small expected effect, not a volume increase.
+ALLOW_WIDE_SPREAD_MAKER: bool = os.getenv("ALLOW_WIDE_SPREAD_MAKER", "true").lower() == "true"
 
 
 def quality_filters(bet_type: str, is_draw: bool = False) -> dict:

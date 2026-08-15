@@ -901,7 +901,7 @@ SCAN_TEMPLATE = """<!DOCTYPE html>
   .badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;letter-spacing:0.4px;}
   .s-value      {color:var(--green);background:rgba(34,197,94,0.1);}
   .s-no_edge    {color:var(--blue);background:rgba(59,130,246,0.1);}
-  .s-spread_too_wide,.s-low_volume,.s-few_books,.s-no_consensus,.s-no_threshold
+  .s-spread_too_wide,.s-spread_too_wide_take,.s-low_volume,.s-few_books,.s-no_consensus,.s-no_threshold
                 {color:var(--yellow);background:rgba(245,158,11,0.1);}
   .s-blocked    {color:var(--orange);background:rgba(249,115,22,0.1);}
   .s-kelly_no_edge{color:var(--purple);background:rgba(168,85,247,0.1);}
@@ -1133,7 +1133,7 @@ SCAN_DETAIL_TEMPLATE = """<!DOCTYPE html>
   .s-blocked     { color: var(--orange); background: rgba(249,115,22,0.1); }
   .s-kelly_no_edge { color: var(--purple); background: rgba(168,85,247,0.1); }
   .s-daily_cap   { color: var(--red);    background: rgba(239,68,68,0.1); }
-  .s-spread_too_wide,.s-few_books,.s-no_consensus,.s-no_threshold,.s-low_volume
+  .s-spread_too_wide,.s-spread_too_wide_take,.s-few_books,.s-no_consensus,.s-no_threshold,.s-low_volume
                  { color: var(--yellow); background: rgba(245,158,11,0.1); }
 
   /* ── Mobile ── */
