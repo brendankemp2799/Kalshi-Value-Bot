@@ -131,7 +131,13 @@ class KalshiMarket:
     close_time: str
     category: str
     event_ticker: str = field(default="")
-    bet_type: str = field(default="h2h")       # "h2h", "totals", "spread", "btts"
+    # Only "h2h", "totals" and "spread" are ever produced — see _SERIES_TO_BET_TYPE,
+    # which is the sole writer of this field. BTTS was removed in cf173c7 (2026-04-07)
+    # because the Odds API's `us` region carries no BTTS odds, leaving nothing to build
+    # a consensus against. Worth revisiting: the region has since been widened to
+    # "us,eu" (de87491, 2026-07-19), so that reason may no longer hold — but adding a
+    # 4th market would raise Odds API cost from 3x2=6 to 4x2=8 credits per fetch.
+    bet_type: str = field(default="h2h")       # "h2h" | "totals" | "spread"
     threshold: float | None = field(default=None)  # line value (totals/spread only)
 
     @property

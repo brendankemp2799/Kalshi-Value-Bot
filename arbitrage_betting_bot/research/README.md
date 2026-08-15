@@ -85,14 +85,29 @@ logged in via `claude setup-token`, `~/.local/bin` added to PATH, and
 fully wiped cron-equivalent environment (`env -i HOME=/root PATH=/usr/bin:/bin`) —
 this is not theoretical, it produced a real hypothesis file from live data.
 
-Then a crontab entry (`crontab -e` on the droplet):
-```cron
-# Free daily threshold check, 6:47am server time (off the hour, low collision risk)
-47 6 * * * cd /opt/arbitrage-bot/arbitrage_betting_bot && python3 research/metrics.py --check-thresholds >> research/findings/threshold_check.log 2>&1
+**These ARE installed on the droplet** (as of 2026-08-15 — this section previously said
+"nobody has added these yet", which was stale). Current `crontab -l`:
 
-# Weekly Performance Analyst, Sunday 7:15am server time
-15 7 * * 0 cd /opt/arbitrage-bot/arbitrage_betting_bot && ./research/run_weekly.sh >> research/findings/cron.log 2>&1
+```cron
+20 12 * * * cd /opt/arbitrage-bot/arbitrage_betting_bot && systemd-run --scope --quiet -p MemoryMax=200M -p MemorySwapMax=0 python3 research/metrics.py --check-thresholds >> research/findings/threshold_check.log 2>&1
+
+35 12 * * 0 cd /opt/arbitrage-bot/arbitrage_betting_bot && systemd-run --scope --quiet -p MemoryMax=400M -p MemorySwapMax=0 ./research/run_weekly.sh >> research/findings/cron.log 2>&1
 ```
 
-Nobody has added these yet — this is intentionally left for you to do explicitly once
-you've watched a few manual runs and are comfortable with what they produce.
+Two differences from what was originally proposed above, both from a real incident on
+2026-08-13:
+
+- **Rescheduled 06:47 → 12:20 UTC.** The 06:47 job OOM-killed the LIVE trading bot:
+  cron started `metrics.py` at 06:47:01 and the kernel killed `arbitrage-bot` 51
+  seconds later to free memory. 06:47 UTC also sits right after US evening games
+  settle, the bot's busiest window. 12:20 UTC (~08:20 ET) is before any games.
+- **Wrapped in `systemd-run` with a hard memory cap.** `MemorySwapMax=0` is required
+  for the cap to bite — `MemoryMax` alone limits RAM only, and since a 2GB swapfile was
+  added the same day an over-limit job would simply spill into swap instead of being
+  stopped. Verified: 300MB allocated under a 200M `MemoryMax` succeeded; with
+  `MemorySwapMax=0` it is SIGKILLed. Both real jobs were confirmed to complete inside
+  these caps.
+
+The trading bot itself now carries `OOMScoreAdjust=-500` (and the dashboard `+200`),
+so the kernel prefers killing research work over the live trader. See
+`/etc/systemd/system/arbitrage-bot.service.d/oom.conf`.

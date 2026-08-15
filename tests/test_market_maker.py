@@ -133,3 +133,68 @@ def test_listing_failure_is_survivable(monkeypatch):
     monkeypatch.setattr(ke, "list_resting_orders",
                         lambda: (_ for _ in ()).throw(RuntimeError("api down")))
     assert mm.sweep_orphaned_quotes(set(), is_paper=False) == 0
+
+
+# ── startup recovery: duplicate quotes ────────────────────────────────────────
+
+@pytest.fixture
+def recovery(monkeypatch):
+    """Stub Kalshi for _sync_resting_quotes_from_kalshi()."""
+    import execution.kalshi_executor as ke
+    state = {"orders": [], "cancelled": [], "cancel_ok": True}
+    monkeypatch.setattr(ke, "list_resting_orders", lambda: state["orders"])
+
+    def _cancel(oid):
+        if state["cancel_ok"]:
+            state["cancelled"].append(oid)
+        return state["cancel_ok"]
+
+    monkeypatch.setattr(ke, "cancel_quote", _cancel)
+    mm._resting_quotes.clear()
+    monkeypatch.setattr(mm, "_startup_synced", False, raising=False)
+    return state
+
+
+def _resting(order_id: str, ticker: str, side: str, count: float = 9.0) -> dict:
+    return {
+        "order_id": order_id, "ticker": ticker, "outcome_side": side,
+        "remaining_count_fp": count,
+        "yes_price_dollars": "0.48", "no_price_dollars": "0.52",
+    }
+
+
+def test_recovery_keeps_one_quote_per_side(recovery):
+    recovery["orders"] = [
+        _resting("y1", "T1", "yes"),
+        _resting("n1", "T1", "no"),
+    ]
+    mm._sync_resting_quotes_from_kalshi()
+    assert mm._resting_quotes["T1"]["yes"]["order_id"] == "y1"
+    assert mm._resting_quotes["T1"]["no"]["order_id"] == "n1"
+    assert recovery["cancelled"] == []
+
+
+def test_recovery_cancels_duplicate_on_same_ticker_and_side(recovery, caplog):
+    """The real orphan set had PAIRS on one ticker+side. _resting_quotes can only hold
+    one, and the previous version let the later order silently overwrite the earlier —
+    leaving it live and untracked forever."""
+    recovery["orders"] = [
+        _resting("keep", "CINNYC", "yes"),
+        _resting("dup", "CINNYC", "yes"),
+    ]
+    with caplog.at_level("CRITICAL"):
+        mm._sync_resting_quotes_from_kalshi()
+    assert mm._resting_quotes["CINNYC"]["yes"]["order_id"] == "keep"
+    assert recovery["cancelled"] == ["dup"], "the extra must be cancelled, not dropped"
+    assert "DUPLICATE" in caplog.text
+
+
+def test_recovery_failed_duplicate_cancel_is_logged_as_error(recovery, caplog):
+    recovery["cancel_ok"] = False
+    recovery["orders"] = [
+        _resting("keep", "T1", "yes"),
+        _resting("stuck", "T1", "yes"),
+    ]
+    with caplog.at_level("ERROR"):
+        mm._sync_resting_quotes_from_kalshi()
+    assert "FAILED to cancel duplicate" in caplog.text

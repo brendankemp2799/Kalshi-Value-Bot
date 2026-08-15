@@ -204,7 +204,15 @@ SPORTS: list[str] = [
 
 # ── Odds API ──────────────────────────────────────────────────────────────────
 ODDS_API_BASE_URL: str = "https://api.the-odds-api.com/v4"
-ODDS_API_REGIONS: str = "us,eu"  # eu adds Pinnacle + sharp exchanges at no extra credit cost
+# WARNING: adding a region is NOT free. The Odds API bills markets x regions per
+# request, so "us,eu" with 3 markets costs 6 credits per sport-fetch, not 3 — the EU
+# region is half your entire credit spend. This comment previously read "at no extra
+# credit cost", which is wrong and hid the cost for a month: measured burn is ~1,279
+# credits/day = ~38,400/month against a 20,000/month plan (192% of plan, exhausted
+# around the 15th of each cycle). Dropping to "us" alone roughly halves it, at the cost
+# of losing Pinnacle from the consensus — a real trade-off in signal quality, not free
+# money. See research/ notes and the api_credits table for the measurements.
+ODDS_API_REGIONS: str = "us,eu"
 ODDS_API_MARKETS: str = "h2h"          # default fallback
 ODDS_API_ODDS_FORMAT: str = "american"
 

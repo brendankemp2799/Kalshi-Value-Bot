@@ -68,13 +68,15 @@ def _sync_resting_quotes_from_kalshi() -> None:
     recovery automatic instead of relying on "cancel everything before
     restarting" discipline.
 
-    Known residual gap: this only recovers state at startup. A ticker that
-    later drops out of mm_candidates entirely (e.g. game already started, no
-    longer quoted) while something of ours is still resting on it won't be
-    revisited by run_mm_tick()'s per-candidate loop, since that loop only checks
-    tickers present in the current tick's candidate list. Not addressed here —
-    narrower and rarer than the restart gap this fixes, and out of scope unless
-    asked for.
+    The gap this docstring used to describe as out-of-scope — a ticker dropping out
+    of mm_candidates while something is still resting on it — is now handled by
+    sweep_orphaned_quotes(), after it stopped being hypothetical: 7 orders across 4
+    tickers were found resting 3-4 days, one of which had filled into real untracked
+    exposure.
+
+    Duplicate handling: MM's invariant is one resting quote per (ticker, side), and
+    _resting_quotes can only represent one. If Kalshi reports more, the extras are
+    cancelled here rather than silently dropped — see the inline note below.
     """
     global _startup_synced
     if _startup_synced:
@@ -86,7 +88,11 @@ def _sync_resting_quotes_from_kalshi() -> None:
     if not orders:
         return
 
+    from execution.kalshi_executor import cancel_quote
+
     recovered: dict[str, dict] = {}
+    duplicates: list[tuple[str, str, str]] = []   # (ticker, side, order_id)
+
     for o in orders:
         ticker = o.get("ticker")
         remaining = float(o.get("remaining_count_fp", 0) or 0)
@@ -98,9 +104,37 @@ def _sync_resting_quotes_from_kalshi() -> None:
         leg_side = "yes" if o.get("outcome_side") == "yes" else "no"
         price_field = "yes_price_dollars" if leg_side == "yes" else "no_price_dollars"
         price = float(o.get(price_field, 0) or 0)
-        recovered.setdefault(ticker, {"yes": None, "no": None})[leg_side] = {
+        slot = recovered.setdefault(ticker, {"yes": None, "no": None})
+
+        # MM's invariant is exactly ONE resting quote per (ticker, side). If Kalshi
+        # reports two, something already went wrong upstream — most likely a placement
+        # that looked like it failed but actually landed, so a replacement was issued
+        # alongside it. The dict can only hold one, and the previous version silently
+        # let the later order overwrite the earlier, leaving the earlier one live and
+        # untracked forever. That is the same defect that produced the orphaned pairs
+        # found on 2026-08-15 (two 9-contract orders each on CINNYC-CIN, CINNYC-NYC
+        # and CLBMTL-MTL). Keep the first, cancel the rest, and say so loudly.
+        if slot[leg_side] is not None:
+            dup_id = o.get("order_id")
+            duplicates.append((ticker, leg_side, dup_id))
+            if dup_id and not cancel_quote(dup_id):
+                logger.error(
+                    "MM recovery: FAILED to cancel duplicate %s quote %s on %s — it "
+                    "is still live and untracked.", leg_side.upper(), dup_id, ticker,
+                )
+            continue
+
+        slot[leg_side] = {
             "order_id": o.get("order_id"), "price": price, "count": remaining,
         }
+
+    if duplicates:
+        logger.critical(
+            "MM recovery: found %d DUPLICATE resting quote(s) — more than one order on "
+            "the same ticker+side, which breaks MM's one-quote-per-side invariant. "
+            "Kept the first of each and cancelled the extras: %s",
+            len(duplicates), duplicates,
+        )
 
     if recovered:
         logger.warning(
