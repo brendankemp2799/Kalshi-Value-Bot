@@ -24,6 +24,8 @@ import logging
 import math
 import re
 import time
+import uuid
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -156,6 +158,21 @@ class MMAction:
     yes_bid_price: float | None = None   # price of YES we'd buy at
     no_bid_price: float | None = None    # price of NO we'd buy at
     clip_dollars: float | None = None
+    # Why this decision was reached — "ok" when quoting, otherwise the specific
+    # gate that rejected it. Exists so run_mm_tick() can report WHY a candidate
+    # wasn't quoted instead of silently dropping it: every rejection path in this
+    # module used to be logger.debug, which is off in production, so a tick that
+    # evaluated ~60 candidates and rejected 59 emitted nothing at all.
+    reason: str = ""
+    net_per_pair: float | None = None    # expected profit per matched pair, after fees
+
+
+def _maker_fee_per_contract(price: float) -> float:
+    """Kalshi's maker fee is 25% of the taker formula (0.07 * p * (1-p) per
+    contract) and there is no retail maker rebate. Kalshi rounds the fee UP to the
+    whole cent PER ORDER, which this does not model — so at small clip sizes the
+    real fee is higher than this estimate, never lower."""
+    return config.MM_MAKER_FEE_RATE * price * (1.0 - price)
 
 
 def _resting_notional() -> float:
@@ -211,18 +228,63 @@ def evaluate_mm_candidate(candidate: dict, net_inventory_contracts: float = 0.0,
     (possibly stale) center rather than pricing with false precision. Missing
     scanned_at (e.g. a candidate dict built directly, as in tests) is treated as
     age zero — no widening, matches pre-staleness-handling behavior.
+    Eligibility gates, in order, each returning MMActionKind.NONE with a `reason`:
+    no_consensus, outside_fair_value_band, spread_too_narrow, insufficient_volume,
+    too_few_books, high_disagreement, consensus_outside_spread, crossed_book,
+    below_fee_floor, clip_zero.
+
+    `kalshi_volume`, `yes_bid`, `yes_ask`, `bookmaker_count` and `consensus_std` are
+    each OPTIONAL: when a key is absent its gate is skipped. run_mm_tick() always
+    supplies volume/bid/ask from the live book and the scan supplies the consensus
+    quality fields, so the live path is fully gated. The skip exists for
+    mm_backtest.py, which replays historical candlesticks and genuinely cannot
+    reconstruct per-candle sportsbook book counts — making those hard requirements
+    would silently reject every historical candle and have the backtest report zero
+    opportunities rather than fail loudly.
     """
     consensus = candidate.get("consensus_prob")
     spread = candidate.get("kalshi_spread")
     if consensus is None or spread is None:
-        return MMAction(kind=MMActionKind.NONE)
+        return MMAction(kind=MMActionKind.NONE, reason="no_consensus")
 
     lo, hi = config.MM_FAIR_VALUE_BAND
     if not (lo <= consensus <= hi):
-        return MMAction(kind=MMActionKind.NONE)
+        return MMAction(kind=MMActionKind.NONE, reason="outside_fair_value_band")
 
     if spread < config.MM_MIN_SPREAD_TO_QUOTE:
-        return MMAction(kind=MMActionKind.NONE)
+        return MMAction(kind=MMActionKind.NONE, reason="spread_too_narrow")
+
+    # Liquidity. On Kalshi sports a wide spread usually means nobody is there at
+    # all, rather than that a fat spread is on offer: of 230 live wide-spread
+    # markets surveyed 2026-08-14, 179 (78%) had never traded. A quote in a market
+    # with no counterparty flow cannot fill no matter how well it is priced.
+    volume = candidate.get("kalshi_volume")
+    if volume is not None and volume < config.MM_MIN_VOLUME:
+        return MMAction(kind=MMActionKind.NONE, reason="insufficient_volume")
+
+    # Fair-value confidence. A two-sided quote is centered on consensus, so low
+    # confidence in that center hurts more here than for a directional bet —
+    # both legs are mispriced at once, in opposite directions.
+    books = candidate.get("bookmaker_count")
+    if books is not None and books < config.MM_MIN_BOOKMAKERS:
+        return MMAction(kind=MMActionKind.NONE, reason="too_few_books")
+
+    std = candidate.get("consensus_std")
+    if std is not None and std > config.MM_MAX_CONSENSUS_STD:
+        return MMAction(kind=MMActionKind.NONE, reason="high_disagreement")
+
+    # Centering. MM's premise is that the market is roughly right and we are paid
+    # to wait inside it. A consensus outside Kalshi's touch asserts the opposite —
+    # that the market is WRONG — which is a directional signal, not a spread to
+    # capture, and quoting it produces a book-crossing order (see the guard below).
+    yes_bid = candidate.get("yes_bid")
+    yes_ask = candidate.get("yes_ask")
+    have_book = (yes_bid is not None and yes_ask is not None
+                 and yes_ask > yes_bid > 0)
+    if have_book:
+        tol = config.MM_CENTERING_TOLERANCE
+        if not (yes_bid - tol <= consensus <= yes_ask + tol):
+            return MMAction(kind=MMActionKind.NONE, reason="consensus_outside_spread")
 
     # Inventory skew: 1c per net contract held, capped at +/-5c, shifting the
     # reservation price away from raw consensus so quotes lean toward flattening
@@ -237,9 +299,35 @@ def evaluate_mm_candidate(candidate: dict, net_inventory_contracts: float = 0.0,
     yes_bid_price = round(max(0.01, reservation - half), 2)
     no_bid_price = round(max(0.01, 1.0 - min(0.99, reservation + half)), 2)
 
+    # Crossing guard. place_resting_quote() rests a plain GTC limit order, and its
+    # docstring treats immediate matching as a benign edge case — it is not. A
+    # crossing quote pays the TAKER fee (4x maker) at a price the directional
+    # model never validated as +EV, and only the crossing leg fills, leaving naked
+    # directional exposure instead of the matched pair that equal-contract sizing
+    # exists to guarantee. Buying YES at >= yes_ask crosses; buying NO at price p
+    # is economically selling YES at 1-p, which crosses when 1-p <= yes_bid.
+    if have_book:
+        yes_bid_price = min(yes_bid_price, round(yes_ask - 0.01, 2))
+        no_bid_price = min(no_bid_price, round(1.0 - yes_bid - 0.01, 2))
+        if yes_bid_price < 0.01 or no_bid_price < 0.01:
+            return MMAction(kind=MMActionKind.NONE, reason="crossed_book")
+
+    # Fee floor, checked AFTER clamping because clamping inward can consume the
+    # whole margin. A matched pair costs yes_bid_price + no_bid_price and always
+    # pays exactly $1, so gross capture is 1 - pair_cost, and both legs pay a
+    # maker fee. Below ~1.3c of spread this is negative however the quote is
+    # placed — which is why the median 1c-spread Kalshi market is unquotable.
+    pair_cost = yes_bid_price + no_bid_price
+    net_per_pair = (1.0 - pair_cost
+                    - _maker_fee_per_contract(yes_bid_price)
+                    - _maker_fee_per_contract(no_bid_price))
+    if net_per_pair < config.MM_MIN_NET_PER_PAIR:
+        return MMAction(kind=MMActionKind.NONE, reason="below_fee_floor",
+                        net_per_pair=net_per_pair)
+
     clip = mm_clip_size(spread, bankroll=bankroll)
     if clip <= 0:
-        return MMAction(kind=MMActionKind.NONE)
+        return MMAction(kind=MMActionKind.NONE, reason="clip_zero")
 
     return MMAction(
         kind=MMActionKind.QUOTE,
@@ -247,6 +335,8 @@ def evaluate_mm_candidate(candidate: dict, net_inventory_contracts: float = 0.0,
         yes_bid_price=yes_bid_price,
         no_bid_price=no_bid_price,
         clip_dollars=clip,
+        reason="ok",
+        net_per_pair=net_per_pair,
     )
 
 
@@ -351,6 +441,20 @@ def run_mm_tick(
     candidates from collectively exceeding the cap even though none of them do
     individually.
 
+    QUEUE PRIORITY. A leg whose freshly-computed price and size are identical to
+    what is already resting is LEFT ALONE — not cancelled and re-placed. Kalshi's
+    book fills same-price orders in time priority, so the previous
+    cancel-and-replace-unconditionally behavior sent our order to the back of the
+    queue every MM_INTERVAL_SECONDS (120x/hour), permanently behind anyone who
+    placed a quote and left it. That cost nothing while our candidate markets had
+    no flow at all, but it makes a fill nearly impossible in the ones that do.
+
+    VISIBILITY. Every candidate's outcome — quoted, kept, cancelled or rejected,
+    with the specific gate that rejected it — is written to db.log_mm_decisions()
+    and summarised at INFO. Before this, all four rejection paths were
+    logger.debug (off in production) and the module's only INFO line was the fill
+    log, so a tick that evaluated ~60 candidates and quoted 1 was silent.
+
     Returns the number of legs filled this tick.
     """
     from execution.kalshi_executor import (
@@ -361,34 +465,87 @@ def run_mm_tick(
         _sync_resting_quotes_from_kalshi()
 
     filled_count = 0
+    kept_legs = 0
+    placed_legs = 0
     seen_tickers: set[str] = set()
     pending_notional = _resting_notional()  # carried over from the prior tick
     cap_dollars = config.MM_MAX_EXPOSURE_PCT * bm.bankroll
+    decisions: list[dict] = []
+    reasons: Counter = Counter()
+
+    def _record(candidate: dict, live_km: KalshiMarket, action_name: str,
+                reason: str, mm: MMAction | None = None,
+                contracts: int | None = None) -> None:
+        """One row per candidate for db.log_mm_decisions() / the INFO summary."""
+        reasons[reason] += 1
+        event = candidate["matched_event"].odds_event
+        decisions.append({
+            "sport": event.sport_key,
+            "kalshi_ticker": live_km.ticker,
+            "team_name": candidate.get("team_name"),
+            "bet_type": live_km.bet_type,
+            "kalshi_bid": live_km.yes_bid,
+            "kalshi_ask": live_km.yes_ask,
+            "kalshi_spread": live_km.spread,
+            "kalshi_volume": live_km.volume,
+            "consensus_prob": candidate.get("consensus_prob"),
+            "bookmaker_count": candidate.get("bookmaker_count"),
+            "consensus_std": candidate.get("consensus_std"),
+            "yes_quote": mm.yes_bid_price if mm else None,
+            "no_quote": mm.no_bid_price if mm else None,
+            "net_per_pair": mm.net_per_pair if mm else None,
+            "clip_dollars": mm.clip_dollars if mm else None,
+            "contracts": contracts,
+            "action": action_name,
+            "reason": reason,
+        })
+
+    def _drop_prior(ticker: str, legs: dict) -> None:
+        """Cancel whatever survived the fill check and forget the ticker. Used on
+        every path that stops quoting a market — without it, a candidate rejected
+        by a gate would leave its old quote resting on a market we've decided not
+        to make, which is precisely how the orphans of 2026-08-13 accumulated."""
+        for leg in (legs.get("yes"), legs.get("no")):
+            if leg:
+                cancel_quote(leg["order_id"])
+        _resting_quotes.pop(ticker, None)
 
     for candidate in mm_candidates:
         km = candidate["matched_event"].kalshi_market
         ticker = km.ticker
+        live_km = fresh_kalshi.get(ticker, km)
         if ticker in seen_tickers:
+            _record(candidate, live_km, "rejected", "duplicate_ticker")
             continue
         seen_tickers.add(ticker)
 
-        live_km = fresh_kalshi.get(ticker, km)
-        candidate = {**candidate, "kalshi_spread": live_km.spread}
+        # Overlay the LIVE book on the cached candidate. kalshi_spread was already
+        # refreshed here; volume and the raw bid/ask are new, and feed the
+        # liquidity gate, the centering gate and the crossing guard respectively.
+        candidate = {
+            **candidate,
+            "kalshi_spread": live_km.spread,
+            "kalshi_volume": live_km.volume,
+            "yes_bid": live_km.yes_bid,
+            "yes_ask": live_km.yes_ask,
+        }
 
-        # Before touching whatever was resting from the previous tick, check
-        # whether a real counterparty filled it in the meantime — the normal way
-        # a maker quote gets filled, not the immediate-at-placement edge case.
-        # Missing this meant real fills could go completely unrecorded (no
-        # bankroll accounting, no stop-loss, no correlation tracking) until an
-        # eventual reconciliation-mismatch log, with no automatic remediation.
+        # ── Phase A: resolve whatever was resting from the previous tick ───────
+        # Check fills BEFORE deciding anything else — the normal way a maker quote
+        # fills is a counterparty crossing it later, not instantly at placement,
+        # and an unrecorded fill means no bankroll accounting, no stop-loss and no
+        # correlation tracking. Unlike the previous version this does NOT cancel
+        # here: an unfilled leg whose price is unchanged is kept below, and
+        # cancelling it first would throw away its queue position for nothing.
         prior = _resting_quotes.pop(ticker, None)
+        surviving: dict[str, dict | None] = {"yes": None, "no": None}
         if prior and not is_paper:
             for side, leg in (("yes", prior.get("yes")), ("no", prior.get("no"))):
                 if not leg:
                     continue
                 # This leg's old notional is being resolved one way or another
-                # (filled and moved into bm.mm_exposure, or cancelled) — either
-                # way it's coming out of the "still just resting" running total.
+                # (filled, cancelled, or kept and re-added below) — either way it
+                # comes out of the running total here and is re-counted later.
                 pending_notional -= leg["price"] * leg["count"]
                 status = get_order_status(leg["order_id"])
                 filled = float(status.get("fill_count_fp", 0) or 0) if status else 0.0
@@ -404,9 +561,15 @@ def run_mm_tick(
                     _record_fill(candidate, side, leg["price"], filled, fee, False,
                                  order_id=leg["order_id"])
                     filled_count += 1
-                if filled < leg["count"]:
+                # Only a completely untouched leg is a candidate for keeping. A
+                # partial fill has already consumed its queue position and is no
+                # longer the size we sized it to be, so it gets replaced.
+                if filled <= 0:
+                    surviving[side] = leg
+                elif filled < leg["count"]:
                     cancel_quote(leg["order_id"])
 
+        # ── Phase B: should we still be quoting this market at all? ────────────
         # Re-check the live spread against the SAME threshold the directional
         # strategy uses to decide a market is too wide to cross — not just
         # MM_MIN_SPREAD_TO_QUOTE, which is calibrated to the same value and so
@@ -417,6 +580,9 @@ def run_mm_tick(
         # config.MM_INTERVAL_SECONDS against the live book).
         max_spread = config.quality_filters(km.bet_type, is_draw=(km.bet_type == "h2h" and candidate["team_name"] == "Draw"))["max_kalshi_spread"]
         if live_km.spread <= max_spread:
+            _drop_prior(ticker, surviving)
+            _record(candidate, live_km, "cancelled" if prior else "rejected",
+                    "spread_narrowed_to_tradeable")
             continue
 
         # Staleness trip-wire: consensus_prob (the quote's center) is a snapshot
@@ -431,22 +597,25 @@ def run_mm_tick(
         baseline_mid = (km.yes_bid + km.yes_ask) / 2.0
         live_mid = (live_km.yes_bid + live_km.yes_ask) / 2.0
         if abs(live_mid - baseline_mid) >= config.MM_STALE_DRIFT_CANCEL:
-            logger.debug(
-                "MM quote paused for %s: Kalshi mid drifted %.3f -> %.3f since "
-                "this candidate's last scan (>= %.2f threshold)",
-                ticker, baseline_mid, live_mid, config.MM_STALE_DRIFT_CANCEL,
-            )
+            _drop_prior(ticker, surviving)
+            _record(candidate, live_km, "cancelled" if prior else "rejected",
+                    "stale_consensus_drift")
             continue
 
         net_inventory = _net_inventory_contracts(ticker, is_paper)
         action = evaluate_mm_candidate(candidate, net_inventory, bankroll=bm.bankroll)
         if action.kind == MMActionKind.NONE:
+            _drop_prior(ticker, surviving)
+            _record(candidate, live_km, "cancelled" if prior else "rejected",
+                    action.reason or "no_action", action)
             continue
 
         opp = _candidate_opportunity(candidate)
         allowed, reason = tracker.is_allowed(opp, action.clip_dollars, is_mm=True)
         if not allowed:
-            logger.debug("MM quote blocked for %s: %s", ticker, reason)
+            _drop_prior(ticker, surviving)
+            _record(candidate, live_km, "cancelled" if prior else "rejected",
+                    f"blocked:{reason}", action)
             continue
 
         # Both legs get the SAME contract count, not the same dollar amount. The
@@ -462,8 +631,6 @@ def run_mm_tick(
         # costume, not the safe spread capture this is supposed to be.
         pair_cost = action.yes_bid_price + action.no_bid_price
         count = max(1, math.floor(action.clip_dollars / pair_cost)) if pair_cost > 0 else 0
-        yes_count = count
-        no_count = count
         new_notional = count * pair_cost
 
         # Aggregate cap, on top of is_allowed()'s per-candidate check above: would
@@ -473,10 +640,9 @@ def run_mm_tick(
         # tick (pending_notional), push total committed notional past the cap?
         committed = bm.mm_exposure + (0.0 if is_paper else pending_notional)
         if committed + new_notional > cap_dollars + 1e-6:
-            logger.debug(
-                "MM quote blocked for %s: aggregate exposure would reach $%.2f "
-                "(cap $%.2f)", ticker, committed + new_notional, cap_dollars,
-            )
+            _drop_prior(ticker, surviving)
+            _record(candidate, live_km, "cancelled" if prior else "rejected",
+                    "aggregate_exposure_cap", action, count)
             continue
 
         if is_paper:
@@ -487,40 +653,70 @@ def run_mm_tick(
             # see fills that happen mid-interval, only at each tick's snapshot)
             # preview of live behavior instead of assuming instant fills the way
             # the directional strategy's paper mode does.
+            paper_fills = 0
             if live_km.yes_ask > 0 and live_km.yes_ask <= action.yes_bid_price:
-                _record_fill(candidate, "yes", action.yes_bid_price, yes_count, 0.0, True)
-                filled_count += 1
+                _record_fill(candidate, "yes", action.yes_bid_price, count, 0.0, True)
+                paper_fills += 1
             if live_km.yes_bid > 0 and (1.0 - live_km.yes_bid) <= action.no_bid_price:
-                _record_fill(candidate, "no", action.no_bid_price, no_count, 0.0, True)
-                filled_count += 1
+                _record_fill(candidate, "no", action.no_bid_price, count, 0.0, True)
+                paper_fills += 1
+            filled_count += paper_fills
+            _record(candidate, live_km, "placed",
+                    "paper_filled" if paper_fills else "ok", action, count)
             continue
 
-        yes_order_id, yes_filled, yes_fee = place_resting_quote(ticker, "yes", action.yes_bid_price, yes_count)
-        no_order_id, no_filled, no_fee = place_resting_quote(ticker, "no", action.no_bid_price, no_count)
+        # ── Phase C: keep unchanged legs, replace only what actually moved ─────
+        # Kalshi fills same-price orders in time priority. Cancelling and
+        # re-placing a leg at a price it is already resting at surrenders that
+        # priority for no benefit — every MM_INTERVAL_SECONDS, which at the
+        # default 30s is 120 times an hour, permanently behind anyone who quoted
+        # once and left it.
+        new_legs: dict[str, dict | None] = {"yes": None, "no": None}
+        for side, price in (("yes", action.yes_bid_price), ("no", action.no_bid_price)):
+            old = surviving.get(side)
+            if old and old["price"] == price and old["count"] == count:
+                new_legs[side] = old
+                kept_legs += 1
+                continue
+            if old:
+                cancel_quote(old["order_id"])
+            order_id, leg_filled, fee = place_resting_quote(ticker, side, price, count)
+            placed_legs += 1
+            if leg_filled > 0:
+                _record_fill(candidate, side, price, leg_filled, fee, False,
+                             order_id=order_id)
+                filled_count += 1
+            if leg_filled < count:
+                new_legs[side] = {"order_id": order_id, "price": price, "count": count}
 
-        _resting_quotes[ticker] = {
-            "yes": ({"order_id": yes_order_id, "price": action.yes_bid_price, "count": yes_count}
-                    if yes_filled < yes_count else None),
-            "no": ({"order_id": no_order_id, "price": action.no_bid_price, "count": no_count}
-                   if no_filled < no_count else None),
-        }
+        _resting_quotes[ticker] = new_legs
 
-        if yes_filled > 0:
-            _record_fill(candidate, "yes", action.yes_bid_price, yes_filled, yes_fee, False,
-                         order_id=yes_order_id)
-            filled_count += 1
-        if no_filled > 0:
-            _record_fill(candidate, "no", action.no_bid_price, no_filled, no_fee, False,
-                         order_id=no_order_id)
-            filled_count += 1
-
-        # Whatever's left resting (not filled at placement) is real pending
-        # exposure for the rest of this tick's aggregate check.
+        # Whatever's left resting (kept, or newly placed and not filled at
+        # placement) is real pending exposure for the rest of this tick's
+        # aggregate check.
         pending_notional += sum(
             leg["price"] * leg["count"]
-            for leg in (_resting_quotes[ticker]["yes"], _resting_quotes[ticker]["no"])
-            if leg
+            for leg in (new_legs["yes"], new_legs["no"]) if leg
         )
+        _record(candidate, live_km,
+                "kept" if (new_legs["yes"] and new_legs["yes"] is surviving.get("yes")
+                           and new_legs["no"] and new_legs["no"] is surviving.get("no"))
+                else "placed",
+                "ok", action, count)
+
+    if decisions:
+        quoted = sum(1 for d in decisions if d["action"] in ("placed", "kept"))
+        logger.info(
+            "MM tick: %d candidate(s) -> %d quoted (%d leg(s) placed, %d kept), "
+            "%d fill(s). Outcomes: %s",
+            len(decisions), quoted, placed_legs, kept_legs, filled_count,
+            ", ".join(f"{r}={n}" for r, n in reasons.most_common()),
+        )
+        try:
+            db.log_mm_decisions(uuid.uuid4().hex, decisions)
+        except Exception as e:
+            # Visibility must never be able to take down trading.
+            logger.warning("MM: could not persist decision log: %s", e)
 
     return filled_count
 

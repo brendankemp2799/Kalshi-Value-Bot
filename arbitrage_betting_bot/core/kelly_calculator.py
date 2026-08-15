@@ -176,7 +176,7 @@ def mm_clip_size(
     kalshi_spread: float,
     bankroll: float = config.BANKROLL,
     max_clip_dollars: float = config.MM_MAX_CLIP_DOLLARS,
-    max_pct_bankroll: float = config.MAX_PCT_BANKROLL,
+    max_concurrent: int = config.MM_MAX_CONCURRENT_QUOTES,
 ) -> float:
     """
     Size one leg of a market-making quote. Kelly doesn't apply here — there's no
@@ -190,10 +190,20 @@ def mm_clip_size(
 
     Scales linearly from 40% of the cap at the minimum quotable spread
     (config.MM_MIN_SPREAD_TO_QUOTE) up to the full cap at 2x that spread.
+
+    The bankroll-percentage cap is MM_MAX_EXPOSURE_PCT / MM_MAX_CONCURRENT_QUOTES,
+    NOT MAX_PCT_BANKROLL. It used to be the latter, which is numerically identical
+    to the whole MM budget (MM_MAX_EXPOSURE_PCT * bankroll) — so a single clip
+    consumed essentially the entire allowance and run_mm_tick()'s aggregate cap
+    rejected every subsequent candidate. Measured live at a $157.72 bankroll:
+    total MM budget $7.89, one clip $7.04-$7.68, candidates that fit: 1 (out of
+    ~60 per scan). Dividing by max_concurrent is what makes the aggregate cap a
+    real ceiling rather than a one-candidate gate.
     """
     min_spread = config.MM_MIN_SPREAD_TO_QUOTE
     if kalshi_spread <= 0 or min_spread <= 0:
         return 0.0
     scale = min(1.0, max(0.4, kalshi_spread / (2.0 * min_spread)))
     dollars = scale * max_clip_dollars
-    return round(min(dollars, max_clip_dollars, max_pct_bankroll * bankroll), 2)
+    pct_cap = config.MM_MAX_EXPOSURE_PCT / max(1, max_concurrent)
+    return round(min(dollars, max_clip_dollars, pct_cap * bankroll), 2)

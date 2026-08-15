@@ -134,7 +134,26 @@ def simulate_market(
         spread = round(cur_ask - cur_bid, 4)
         res.kalshi_spread = max(res.kalshi_spread, spread)
 
-        candidate = {"consensus_prob": consensus, "kalshi_spread": spread}
+        # yes_bid/yes_ask feed the centering gate and the crossing guard added
+        # 2026-08-14, and are reconstructable per-candle — pass them, or this
+        # backtest silently validates a laxer strategy than the one that runs,
+        # the exact drift that calling the live function is meant to prevent.
+        #
+        # Three gates are deliberately NOT exercised here, so this fill rate is an
+        # upper bound on the live one:
+        #   - kalshi_volume: config.MM_MIN_VOLUME gates on a market's LIFETIME
+        #     contract volume; `vol` above is one candle's. Passing it would
+        #     compare a per-minute number against a lifetime threshold and reject
+        #     nearly every candle for the wrong reason. The `vol <= 0` skip above
+        #     is the liquidity condition this loop can honestly express.
+        #   - bookmaker_count / consensus_std: historical per-candle sportsbook
+        #     coverage isn't recoverable.
+        candidate = {
+            "consensus_prob": consensus,
+            "kalshi_spread": spread,
+            "yes_bid": cur_bid,
+            "yes_ask": cur_ask,
+        }
         action = evaluate_mm_candidate(candidate, net_inventory_contracts=net_inventory)
         if action.kind != MMActionKind.QUOTE:
             continue

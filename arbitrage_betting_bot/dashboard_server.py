@@ -751,6 +751,74 @@ def scan_results():
     return render_template_string(SCAN_TEMPLATE, entries=entries, scanned_at=scanned_at, last_active=last_active)
 
 
+_MM_REASON_HELP = {
+    "ok": "Quoted — passed every gate.",
+    "paper_filled": "Paper mode: the live book already crossed our intended price.",
+    "insufficient_volume": f"Market has traded under {config.MM_MIN_VOLUME:.0f} contracts. "
+                           "78% of wide-spread Kalshi sports markets have never traded at all.",
+    "consensus_outside_spread": "Sportsbook fair value sits outside Kalshi's bid/ask. "
+                                "That's a directional signal, not a spread to capture.",
+    "crossed_book": "No room to quote inside the book without crossing it.",
+    "below_fee_floor": "Capture wouldn't cover the maker fee on both legs.",
+    "too_few_books": f"Fewer than {config.MM_MIN_BOOKMAKERS} sportsbooks — fair value not confident enough to centre on.",
+    "high_disagreement": f"Sportsbooks disagree by more than {config.MM_MAX_CONSENSUS_STD:.2f} std.",
+    "outside_fair_value_band": "Deep favourite or longshot — outside MM_FAIR_VALUE_BAND.",
+    "spread_too_narrow": "Spread is tight enough for the directional strategy to just cross it.",
+    "spread_narrowed_to_tradeable": "Spread narrowed since the last scan — directional territory now.",
+    "stale_consensus_drift": "Kalshi's price moved since our last sportsbook read; quoting paused.",
+    "aggregate_exposure_cap": "Total MM exposure cap reached for this tick.",
+    "duplicate_ticker": "Already evaluated this ticker earlier in the tick.",
+    "no_consensus": "No sportsbook consensus available.",
+    "clip_zero": "Computed clip size rounded to zero.",
+}
+
+
+@app.route("/mm")
+@_requires_auth
+def mm_decisions():
+    """What the market maker did on its most recent tick, and why.
+
+    The directional strategy has had /scan since the beginning; MM had no
+    equivalent, and since every rejection path in execution/market_maker.py was
+    logger.debug (off in production), a tick that evaluated ~60 candidates and
+    quoted 1 left no trace anywhere. This is that page."""
+    rows = db.get_last_mm_tick()
+    decided_at = _fmt_dt(rows[0]["decided_at"]) if rows else "No MM tick recorded yet"
+
+    entries, counts = [], {}
+    for r in rows:
+        reason = r["reason"] or ""
+        counts[reason] = counts.get(reason, 0) + 1
+        entries.append({
+            "sport":      _short_sport(r["sport"] or ""),
+            "team":       r["team_name"] or "",
+            "bet_type":   _bet_type_label(r["bet_type"] or "h2h"),
+            "ticker":     r["kalshi_ticker"] or "",
+            "url":        _kalshi_market_url(r["kalshi_ticker"] or ""),
+            "book":       (f"{r['kalshi_bid']*100:.0f} / {r['kalshi_ask']*100:.0f}"
+                           if r["kalshi_bid"] is not None and r["kalshi_ask"] is not None else "—"),
+            "spread":     round(r["kalshi_spread"] * 100, 1) if r["kalshi_spread"] is not None else None,
+            "volume":     int(r["kalshi_volume"]) if r["kalshi_volume"] is not None else None,
+            "consensus":  round(r["consensus_prob"] * 100, 1) if r["consensus_prob"] is not None else None,
+            "books":      r["bookmaker_count"],
+            "quote":      (f"{r['yes_quote']*100:.0f} / {(1-r['no_quote'])*100:.0f}"
+                           if r["yes_quote"] is not None and r["no_quote"] is not None else "—"),
+            "net":        round(r["net_per_pair"] * 100, 2) if r["net_per_pair"] is not None else None,
+            "contracts":  r["contracts"],
+            "action":     r["action"],
+            "reason":     reason,
+            "help":       _MM_REASON_HELP.get(reason, ""),
+        })
+
+    quoted = sum(1 for e in entries if e["action"] in ("placed", "kept"))
+    summary = sorted(counts.items(), key=lambda kv: -kv[1])
+    return render_template_string(
+        MM_TEMPLATE, entries=entries, decided_at=decided_at,
+        total=len(entries), quoted=quoted, summary=summary,
+        enabled=config.ENABLE_MARKET_MAKING,
+    )
+
+
 @app.route("/")
 @_requires_auth
 def index():
@@ -1474,6 +1542,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <h1>Kalshi Arb Bot</h1>
   <div class="header-right">
     <a href="/scan" style="font-size:12px;color:var(--blue);text-decoration:none;padding:4px 10px;border:1px solid var(--blue);border-radius:6px;white-space:nowrap;">Last Scan</a>
+    <a href="/mm" style="font-size:12px;color:var(--blue);text-decoration:none;padding:4px 10px;border:1px solid var(--blue);border-radius:6px;white-space:nowrap;">Market Making</a>
     <span id="mode-badge" class="mode-badge">—</span>
     <span class="refresh-info" id="last-updated">Loading…</span>
   </div>
@@ -1942,3 +2011,141 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# Companion to SCAN_TEMPLATE for the market-making side. Deliberately a separate,
+# self-contained page rather than a tab on /scan: the two strategies answer
+# different questions ("is this mispriced enough to take?" vs "is this stable
+# enough to quote inside?") and share almost no columns.
+MM_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Market Making — Arb Bot</title>
+<style>
+  :root {
+    --bg:#0f1117;--surface:#1a1d27;--border:#2a2d3a;--text:#e2e8f0;
+    --muted:#64748b;--green:#22c55e;--red:#ef4444;--blue:#3b82f6;
+    --yellow:#f59e0b;--orange:#f97316;--purple:#a855f7;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{overflow-x:hidden;}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;}
+  header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+  header a{color:var(--muted);text-decoration:none;font-size:13px;white-space:nowrap;}
+  header a:hover{color:var(--text);}
+  header h1{font-size:16px;font-weight:600;}
+  .meta{color:var(--muted);font-size:12px;}
+  main{padding:20px;max-width:1500px;margin:0 auto;}
+  .cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;min-width:120px;}
+  .card .n{font-size:22px;font-weight:600;}
+  .card .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
+  .off{background:rgba(239,68,68,.12);border:1px solid var(--red);color:var(--red);
+       border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;}
+  .why{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+       padding:12px 16px;margin-bottom:16px;}
+  .why h2{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:8px;}
+  .why ul{list-style:none;display:flex;flex-direction:column;gap:5px;}
+  .why li{display:flex;gap:10px;align-items:baseline;font-size:12px;}
+  .why .cnt{font-variant-numeric:tabular-nums;font-weight:600;min-width:32px;text-align:right;color:var(--text);}
+  .why .txt{color:var(--muted);}
+  table{width:100%;border-collapse:collapse;background:var(--surface);
+        border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;
+     color:var(--muted);padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  td{padding:9px 10px;border-bottom:1px solid var(--border);font-size:12px;white-space:nowrap;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:rgba(255,255,255,.02);}
+  .num{font-variant-numeric:tabular-nums;text-align:right;}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;
+        font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
+  .a-placed{background:rgba(34,197,94,.15);color:var(--green);}
+  .a-kept{background:rgba(59,130,246,.15);color:var(--blue);}
+  .a-cancelled{background:rgba(249,115,22,.15);color:var(--orange);}
+  .a-rejected{background:rgba(100,116,139,.15);color:var(--muted);}
+  .reason{color:var(--muted);font-size:11px;}
+  .reason strong{color:var(--text);font-weight:500;display:block;}
+  .empty{text-align:center;color:var(--muted);padding:28px;}
+  a.tick{color:var(--text);text-decoration:none;}
+  a.tick:hover{color:var(--blue);}
+  @media (max-width:820px){
+    thead{display:none;}
+    table,tbody,tr,td{display:block;width:100%;}
+    tr{border-bottom:1px solid var(--border);padding:8px 0;}
+    td{border:none;padding:4px 12px;display:flex;gap:10px;white-space:normal;}
+    td::before{content:attr(data-label);font-size:10px;color:var(--muted);
+               text-transform:uppercase;letter-spacing:.5px;font-weight:600;min-width:78px;}
+    .num{text-align:left;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← Dashboard</a>
+  <a href="/scan">Last Scan</a>
+  <h1>Market Making</h1>
+  <span class="meta">Last tick: {{ decided_at }}</span>
+</header>
+<main>
+  {% if not enabled %}
+  <div class="off">Market making is currently <strong>disabled</strong>
+    (ENABLE_MARKET_MAKING=false). The rows below are from the last tick that ran.</div>
+  {% endif %}
+
+  <div class="cards">
+    <div class="card"><div class="n">{{ total }}</div><div class="l">Candidates</div></div>
+    <div class="card"><div class="n" style="color:var(--green)">{{ quoted }}</div><div class="l">Quoted</div></div>
+    <div class="card"><div class="n" style="color:var(--muted)">{{ total - quoted }}</div><div class="l">Not quoted</div></div>
+  </div>
+
+  {% if summary %}
+  <div class="why">
+    <h2>Why</h2>
+    <ul>
+      {% for reason, n in summary %}
+      <li><span class="cnt">{{ n }}</span><span class="txt"><strong style="color:var(--text)">{{ reason }}</strong></span></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <table>
+    <thead>
+      <tr>
+        <th>Sport</th><th>Market</th><th>Type</th>
+        <th class="num">Book</th><th class="num">Spread</th><th class="num">Volume</th>
+        <th class="num">Consensus</th><th class="num">Books</th>
+        <th class="num">Our quote</th><th class="num">Net/pair</th><th class="num">Size</th>
+        <th>Action</th><th>Reason</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if not entries %}
+      <tr><td colspan="13" class="empty">No MM tick recorded yet — enable market making and let one tick run.</td></tr>
+      {% endif %}
+      {% for e in entries %}
+      <tr>
+        <td data-label="Sport">{{ e.sport }}</td>
+        <td data-label="Market"><a class="tick" href="{{ e.url }}" target="_blank" rel="noopener"><strong>{{ e.team }}</strong></a></td>
+        <td data-label="Type">{{ e.bet_type }}</td>
+        <td data-label="Book" class="num">{{ e.book }}</td>
+        <td data-label="Spread" class="num">{% if e.spread is not none %}{{ e.spread }}¢{% else %}—{% endif %}</td>
+        <td data-label="Volume" class="num">{% if e.volume is not none %}{{ '{:,}'.format(e.volume) }}{% else %}—{% endif %}</td>
+        <td data-label="Consensus" class="num">{% if e.consensus is not none %}{{ e.consensus }}%{% else %}—{% endif %}</td>
+        <td data-label="Books" class="num">{{ e.books if e.books is not none else '—' }}</td>
+        <td data-label="Our quote" class="num">{{ e.quote }}</td>
+        <td data-label="Net/pair" class="num" {% if e.net is not none and e.net > 0 %}style="color:var(--green)"{% endif %}>
+          {% if e.net is not none %}{{ e.net }}¢{% else %}—{% endif %}</td>
+        <td data-label="Size" class="num">{{ e.contracts if e.contracts is not none else '—' }}</td>
+        <td data-label="Action"><span class="pill a-{{ e.action }}">{{ e.action }}</span></td>
+        <td data-label="Reason" class="reason"><strong>{{ e.reason }}</strong>{{ e.help }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</main>
+</body>
+</html>
+"""

@@ -169,6 +169,88 @@ MM_INTERVAL_SECONDS: int = int(os.getenv("MM_INTERVAL_SECONDS", "30"))  # Kalshi
 MM_STALE_DRIFT_CANCEL: float = 0.05          # Kalshi mid move since candidate's scan -> pause quoting it
 MM_STALE_WIDEN_MAX_MULTIPLIER: float = 1.5   # half-spread multiplier at max staleness (full poll interval old)
 
+# ── MM eligibility gates (added 2026-08-14) ───────────────────────────────────
+# Before these, the ONLY things MM checked were "is the spread wide" and "is
+# consensus within 0.15-0.85". A survey of all 979 live Kalshi sports markets on
+# 2026-08-14 showed why that isn't enough:
+#
+#   universe                n    median volume   vol>=10k   ZERO volume
+#   spread >= 5c (MM's)   230              0           17     179 (78%)
+#   spread 2-4c           230             10           12      90
+#   all sports markets    979             35          141     362
+#
+# On Kalshi sports, wide spread and liquidity are close to mutually exclusive --
+# the spread is wide BECAUSE nobody is quoting there. 78% of the markets MM was
+# willing to quote had never traded at all, so no amount of quote-price tuning
+# could produce a fill in them.
+
+# Minimum lifetime contract volume before MM will quote a market. The
+# distribution is a cliff, not a gradient (wide-spread markets surviving each
+# threshold: >=0 -> 198, >=1 -> 38, >=50 -> 20, >=100 -> 18, >=1000 -> 12), so
+# nearly all of the benefit comes from excluding never-traded markets at all;
+# 100 sits just past the handful-of-trades noise floor.
+MM_MIN_VOLUME: float = float(os.getenv("MM_MIN_VOLUME", "100"))
+
+# Fair-value confidence. _maybe_mm_candidate() only forwards markets the
+# DIRECTIONAL strategy already accepted on book count and disagreement -- but
+# that check is min_bookmaker_count=2, and its high_uncertainty_std=0.04 test
+# only applies once high_uncertainty_min_books=4 books are present. So a 2-book
+# market with a 0.10 std passes it. Resting a two-sided quote centered on that
+# consensus is strictly worse than taking one side of it, because both legs are
+# wrong at once. These apply unconditionally.
+MM_MIN_BOOKMAKERS: int = int(os.getenv("MM_MIN_BOOKMAKERS", "3"))
+MM_MAX_CONSENSUS_STD: float = float(os.getenv("MM_MAX_CONSENSUS_STD", "0.04"))
+
+# Centering. MM's premise is "the market is roughly right and I'm paid to wait";
+# a consensus sitting OUTSIDE Kalshi's bid/ask is the opposite claim -- it says
+# the market is wrong, which is a directional signal, not a spread to capture.
+# Quoting it anyway produced a concrete bug: consensus 0.70 against a 0.45/0.55
+# book yields a 0.665 YES bid, above the ask, so place_resting_quote() crosses
+# and we pay the TAKER fee (4x maker) on a price the directional model never
+# validated -- and only the crossing leg fills, leaving a naked directional
+# position wearing a market-making costume, which is exactly what equal-contract
+# pairing exists to prevent. Tolerance allows consensus to sit slightly outside
+# the touch without disqualifying an otherwise-centered market.
+MM_CENTERING_TOLERANCE: float = float(os.getenv("MM_CENTERING_TOLERANCE", "0.02"))
+
+# Hard floor on expected profit per MATCHED pair (one YES + one NO contract),
+# after Kalshi's maker fee on both legs. A matched pair costs
+# yes_bid_price + no_bid_price and always pays exactly $1, so the gross capture
+# is 1 - pair_cost and the fee is ~0.0175*p*(1-p) per leg (~0.44c each near 50c,
+# ~0.87c the pair). That sets a real break-even spread, which is why quoting the
+# median 1c-spread market can never work:
+#
+#   spread   pair cost   gross    fees    NET per pair
+#     1c        0.9930   0.70c   0.87c        -0.17c
+#     2c        0.9860   1.40c   0.87c        +0.53c
+#     3c        0.9790   2.10c   0.87c        +1.23c
+#     5c        0.9650   3.50c   0.87c        +2.63c
+#    12c        0.9160   8.40c   0.87c        +7.53c
+#
+# Enforced after the crossing guard clamps prices inward, since clamping can
+# eat the entire margin.
+MM_MIN_NET_PER_PAIR: float = float(os.getenv("MM_MIN_NET_PER_PAIR", "0.01"))
+MM_MAKER_FEE_RATE: float = 0.0175  # 25% of KALSHI_TAKER_FEE_RATE_ESTIMATE (0.07)
+
+# How many candidates MM should be able to quote at once. mm_clip_size() used to
+# cap a single clip at MAX_PCT_BANKROLL * bankroll -- the SAME number as the
+# total MM budget (MM_MAX_EXPOSURE_PCT * bankroll), so the first candidate
+# consumed 89-97% of the entire allowance and every one after it was rejected by
+# run_mm_tick()'s aggregate cap. Observed live: ~60 candidates per scan, one
+# quoted, 59 silently skipped.
+#
+# There is a floor on how far this can be raised. Kalshi rounds each order's fee
+# UP to the whole cent, so splitting the budget more ways eventually makes each
+# clip small enough that rounding dominates. Measured at a $157.72 bankroll and
+# 4 concurrent quotes: a clip funds 2 contracts/leg, whose true maker fee is
+# $0.0087 and bills at $0.01 — a 1.1x overhead, i.e. real but not yet the binding
+# constraint. It would bite hard at 1 contract per leg.
+#
+# At that same bankroll, 4 concurrent quotes yields (spread -> net per matched
+# pair, after fees): 6c -> 3.13c, 8c -> 5.13c, 10c -> 6.13c, 16c -> 11.14c, with
+# 4 candidates fitting inside the $7.89 budget at ~$1.9 notional each.
+MM_MAX_CONCURRENT_QUOTES: int = int(os.getenv("MM_MAX_CONCURRENT_QUOTES", "4"))
+
 # ── Scheduling ────────────────────────────────────────────────────────────────
 # Variable-frequency polling: each sport is fetched at a rate based on its
 # nearest upcoming game. Sports with no game within 1 hour use the default

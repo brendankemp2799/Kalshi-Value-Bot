@@ -13,7 +13,7 @@ import logging
 import sqlite3
 import sys
 import os
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -147,6 +147,44 @@ def init_db() -> None:
                 commence_time           TEXT,
                 actual_outcome          REAL,
                 outcome_check_attempts  INTEGER NOT NULL DEFAULT 0
+            );
+
+            -- Why the market maker did or didn't quote each candidate on the most
+            -- recent MM tick. The directional strategy has written every candidate
+            -- and its rejection reason to scan_log since the beginning; MM had no
+            -- equivalent, and because every rejection path in
+            -- execution/market_maker.py was logger.debug (off in production), a
+            -- tick that evaluated ~60 candidates and quoted 1 produced no record
+            -- of any kind. This is that record.
+            --
+            -- Holds ONE tick only, replaced wholesale each time (same pattern as
+            -- scan_log): the MM tick runs every MM_INTERVAL_SECONDS=30s, so
+            -- retaining history here would write ~170k rows/day to answer a
+            -- question ("what is MM doing right now, and why") that is about the
+            -- present. Fills are the durable record and they already go to
+            -- `positions` with strategy='market_making'.
+            CREATE TABLE IF NOT EXISTS mm_decision_log (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                tick_id         TEXT NOT NULL,
+                decided_at      TEXT NOT NULL,
+                sport           TEXT,
+                kalshi_ticker   TEXT NOT NULL,
+                team_name       TEXT,
+                bet_type        TEXT,
+                kalshi_bid      REAL,
+                kalshi_ask      REAL,
+                kalshi_spread   REAL,
+                kalshi_volume   REAL,
+                consensus_prob  REAL,
+                bookmaker_count INTEGER,
+                consensus_std   REAL,
+                yes_quote       REAL,   -- price we'd buy YES at (NULL if not quoting)
+                no_quote        REAL,   -- price we'd buy NO at
+                net_per_pair    REAL,   -- expected profit per matched pair, after fees
+                clip_dollars    REAL,
+                contracts       INTEGER,
+                action          TEXT NOT NULL,  -- placed | kept | rejected | cancelled
+                reason          TEXT NOT NULL
             );
         """)
     _migrate()
@@ -765,6 +803,59 @@ def log_scan_results(scan_id: str, entries: list[dict]) -> None:
             """,
             [{**e, "scan_id": scan_id, "bookmakers_json": e.get("bookmakers_json")} for e in entries],
         )
+
+
+_MM_DECISION_COLUMNS = (
+    "sport", "kalshi_ticker", "team_name", "bet_type", "kalshi_bid", "kalshi_ask",
+    "kalshi_spread", "kalshi_volume", "consensus_prob", "bookmaker_count",
+    "consensus_std", "yes_quote", "no_quote", "net_per_pair", "clip_dollars",
+    "contracts", "action", "reason",
+)
+
+
+def log_mm_decisions(tick_id: str, entries: list[dict]) -> None:
+    """Write every candidate the market maker evaluated on one tick, replacing the
+    prior tick's rows. See the mm_decision_log DDL in init_db() for why only one
+    tick is retained. Missing keys default to NULL so callers can pass a partial
+    dict for a candidate rejected before the later fields were computed."""
+    if not entries:
+        return
+    cols = ", ".join(_MM_DECISION_COLUMNS)
+    placeholders = ", ".join(f":{c}" for c in _MM_DECISION_COLUMNS)
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        conn.execute("DELETE FROM mm_decision_log WHERE tick_id != ?", (tick_id,))
+        conn.executemany(
+            f"INSERT INTO mm_decision_log (tick_id, decided_at, {cols}) "
+            f"VALUES (:tick_id, :decided_at, {placeholders})",
+            [
+                {
+                    **{c: None for c in _MM_DECISION_COLUMNS},
+                    **e,
+                    "tick_id": tick_id,
+                    "decided_at": now,
+                }
+                for e in entries
+            ],
+        )
+
+
+def get_last_mm_tick() -> list[sqlite3.Row]:
+    """Every candidate from the most recent MM tick — quoted ones first, then the
+    rejections. Returns [] if MM has never run (the dashboard may query before
+    ENABLE_MARKET_MAKING has ever been on)."""
+    with get_connection() as conn:
+        try:
+            return conn.execute(
+                """
+                SELECT * FROM mm_decision_log
+                ORDER BY CASE action WHEN 'placed' THEN 0 WHEN 'kept' THEN 1
+                                     WHEN 'cancelled' THEN 2 ELSE 3 END,
+                         net_per_pair DESC
+                """
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
 
 
 def get_last_scan() -> list[sqlite3.Row]:
