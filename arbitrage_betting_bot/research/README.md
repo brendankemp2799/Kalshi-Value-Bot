@@ -85,13 +85,49 @@ logged in via `claude setup-token`, `~/.local/bin` added to PATH, and
 fully wiped cron-equivalent environment (`env -i HOME=/root PATH=/usr/bin:/bin`) —
 this is not theoretical, it produced a real hypothesis file from live data.
 
-**These ARE installed on the droplet** (as of 2026-08-15 — this section previously said
-"nobody has added these yet", which was stale). Current `crontab -l`:
+## Status 2026-08-15: the weekly LLM pass is DISABLED, the daily check is not
+
+Only the free daily `metrics.py --check-thresholds` job is scheduled. `run_weekly.sh`
+is commented out in the crontab.
+
+**Why.** Across its whole life the LLM layer produced 4 hypotheses. **Zero** were
+investigated by the pipeline and **zero** led to a code change — all of them are still
+`status: open`:
+
+| hypothesis | status |
+|---|---|
+| 2026-08-09-maker-fill-win-rate-roi-mismatch | open (later refuted by hand — n=9 artifact) |
+| 2026-08-12-execution-failure-no-ask-fallback | open (later found not to be a bug: `maker_only` correctly declining trades) |
+| 2026-08-12-totals-fill-rate-selection-bias | open |
+| 2026-08-13-sub-1.5pct-edge-band-invisible | open |
+
+The Quant Research and Skeptic agents that would *close* a hypothesis have never run —
+`run_deep.sh` was never scheduled. So the layer is a hypothesis generator with no
+consumer, and the backlog only grows.
+
+Against that: $2.79 across 4 logged runs (2 of which failed outright on a 401), it
+OOM-killed the live trading bot on 2026-08-13, and one run logged being OOM-killed 5/5
+times trying to save its own snapshot. By design (see the guarantee at the top of this
+file) it can never modify the trading system, so its only possible output is documents.
+
+**The daily check stays** — pure deterministic Python, no LLM, no cost. It produces the
+per-bet-type ROI, fill rates and drawdown numbers that real decisions have actually been
+made from.
+
+**To re-enable the weekly pass**, uncomment the line in the crontab — but first give it
+a consumer: schedule `run_deep.sh` so hypotheses get closed, and cap the open backlog
+(~2) so generation cannot outrun review.
+
+---
+
+**The daily entry IS installed on the droplet** (as of 2026-08-15 — this section
+previously said "nobody has added these yet", which was stale). Current `crontab -l`:
 
 ```cron
 20 12 * * * cd /opt/arbitrage-bot/arbitrage_betting_bot && systemd-run --scope --quiet -p MemoryMax=200M -p MemorySwapMax=0 python3 research/metrics.py --check-thresholds >> research/findings/threshold_check.log 2>&1
 
-35 12 * * 0 cd /opt/arbitrage-bot/arbitrage_betting_bot && systemd-run --scope --quiet -p MemoryMax=400M -p MemorySwapMax=0 ./research/run_weekly.sh >> research/findings/cron.log 2>&1
+# DISABLED 2026-08-15 — see rationale above.
+# 35 12 * * 0 cd /opt/arbitrage-bot/arbitrage_betting_bot && systemd-run --scope --quiet -p MemoryMax=400M -p MemorySwapMax=0 ./research/run_weekly.sh >> research/findings/cron.log 2>&1
 ```
 
 Two differences from what was originally proposed above, both from a real incident on
