@@ -786,6 +786,24 @@ def _run_variable_loop(
             if (not dry_run and config.ENABLE_MARKET_MAKING
                     and (now_ts - last_mm_check) >= config.MM_INTERVAL_SECONDS):
                 last_mm_check = now_ts
+
+                # Sweep orphaned resting orders FIRST and unconditionally — before the
+                # `if _mm_candidates_cache` guard below. An orphan is by definition an
+                # order whose ticker is no longer a candidate, so gating the sweep on
+                # having candidates reproduces the exact blind spot it exists to close:
+                # if the candidate list ever empties, forgotten orders would rest on
+                # Kalshi forever, still filling. Reads Kalshi's own resting-order list,
+                # so it needs no in-memory state and works from a cold start.
+                try:
+                    from execution.market_maker import sweep_orphaned_quotes
+                    _active = {
+                        c["matched_event"].kalshi_market.ticker
+                        for c in _mm_candidates_cache
+                    } if _mm_candidates_cache else set()
+                    sweep_orphaned_quotes(_active, paper)
+                except Exception as e:
+                    logger.warning("Orphan-quote sweep failed: %s", e)
+
                 if _mm_candidates_cache:
                     try:
                         from execution.market_maker import run_mm_tick

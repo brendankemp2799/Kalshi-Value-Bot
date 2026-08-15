@@ -1,85 +1,135 @@
 """Tests for the market-maker orphan sweeper.
 
-execution/market_maker.py had no test coverage at all, despite evaluate_mm_candidate()
-and friends being written as pure functions specifically so they could be tested. These
-cover _sweep_orphaned_quotes(), added after an audit found 9 real resting orders across
-5 tickers (oldest 3 days) that the per-candidate loop could never revisit.
+execution/market_maker.py had no test coverage at all. These cover
+sweep_orphaned_quotes(), added after an audit found 9 real resting orders across 5
+tickers (oldest 3 days). One of them kept filling while unobserved, growing from 1 to
+8 contracts of exposure that the positions table recorded as status='failed', $0.00.
+
+The first version of the sweeper had two defects that these tests pin down so they
+cannot come back:
+  - it read the in-memory _resting_quotes dict, which is keyed {ticker: {yes, no}} and
+    therefore collapses two orders on the same ticker+side into one;
+  - it lived inside run_mm_tick(), which only runs when candidates exist -- gating an
+    orphan sweep on having candidates reproduces the blind spot it exists to close.
 """
 from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 import execution.market_maker as mm
 
 
-def _leg(order_id: str, price: float = 0.50, count: float = 9.0) -> dict:
-    return {"order_id": order_id, "price": price, "count": count}
+def _order(order_id: str, ticker: str, age_seconds: float,
+           filled: float = 0.0, remaining: float = 9.0) -> dict:
+    created = datetime.now(timezone.utc) - timedelta(seconds=age_seconds)
+    return {
+        "order_id": order_id,
+        "ticker": ticker,
+        "created_time": created.isoformat().replace("+00:00", "Z"),
+        "fill_count_fp": filled,
+        "remaining_count_fp": remaining,
+    }
 
 
-def _reset(state: dict) -> None:
-    mm._resting_quotes.clear()
-    mm._resting_quotes.update(state)
-
-
-def test_sweep_is_noop_when_every_ticker_is_still_a_candidate():
-    _reset({"T1": {"yes": _leg("a"), "no": _leg("b")}})
-    assert mm._sweep_orphaned_quotes({"T1"}, is_paper=False) == 0
-    assert "T1" in mm._resting_quotes, "a live candidate must not be swept"
-
-
-def test_paper_mode_clears_state_without_touching_kalshi(monkeypatch):
-    called = []
-    monkeypatch.setattr(mm, "_resting_quotes", {}, raising=False)
-    _reset({"T1": {"yes": _leg("a"), "no": None},
-            "T2": {"yes": None, "no": _leg("b")}})
-    mm._sweep_orphaned_quotes(set(), is_paper=True)
-    assert mm._resting_quotes == {}, "paper mode should drop all tracked quotes"
-    assert not called
-
-
-def test_orphan_is_cancelled_and_dropped(monkeypatch):
-    cancelled: list[str] = []
+@pytest.fixture
+def kalshi(monkeypatch):
+    """Stub Kalshi's resting-order list and cancel endpoint."""
     import execution.kalshi_executor as ke
-    monkeypatch.setattr(ke, "get_order_status", lambda oid: {"fill_count_fp": 0})
-    monkeypatch.setattr(ke, "cancel_quote", lambda oid: cancelled.append(oid) or True)
+    state = {"orders": [], "cancelled": [], "cancel_ok": True}
+    monkeypatch.setattr(ke, "list_resting_orders", lambda: state["orders"])
 
-    _reset({
-        "LIVE": {"yes": _leg("keep"), "no": None},
-        "GONE": {"yes": _leg("o1"), "no": _leg("o2")},
-    })
-    mm._sweep_orphaned_quotes({"LIVE"}, is_paper=False)
+    def _cancel(oid):
+        if state["cancel_ok"]:
+            state["cancelled"].append(oid)
+        return state["cancel_ok"]
 
-    assert sorted(cancelled) == ["o1", "o2"], "both legs of the orphan must be cancelled"
-    assert "GONE" not in mm._resting_quotes
-    assert "LIVE" in mm._resting_quotes, "the still-quoted ticker must survive"
-
-
-def test_partially_filled_orphan_logs_critical_and_still_cancels(monkeypatch, caplog):
-    """A fill on an orphan cannot be turned into a position row (no candidate), so it
-    must be surfaced loudly rather than silently dropped -- and the remainder cancelled."""
-    cancelled: list[str] = []
-    import execution.kalshi_executor as ke
-    monkeypatch.setattr(ke, "get_order_status", lambda oid: {"fill_count_fp": 4.0})
-    monkeypatch.setattr(ke, "cancel_quote", lambda oid: cancelled.append(oid) or True)
+    monkeypatch.setattr(ke, "cancel_quote", _cancel)
     monkeypatch.setattr(mm.db, "position_exists_for_order_id", lambda oid: False)
+    mm._resting_quotes.clear()
+    return state
 
-    _reset({"GONE": {"yes": _leg("part", price=0.42, count=9.0), "no": None}})
+
+def test_cancels_old_order_on_a_ticker_no_longer_quoted(kalshi):
+    kalshi["orders"] = [_order("o1", "GONE", age_seconds=86400)]
+    assert mm.sweep_orphaned_quotes(active_tickers=set(), is_paper=False) == 1
+    assert kalshi["cancelled"] == ["o1"]
+
+
+def test_never_touches_a_ticker_still_being_quoted(kalshi):
+    kalshi["orders"] = [_order("o1", "LIVE", age_seconds=86400)]
+    assert mm.sweep_orphaned_quotes({"LIVE"}, is_paper=False) == 0
+    assert kalshi["cancelled"] == []
+
+
+def test_age_gate_protects_in_flight_directional_orders(kalshi):
+    """The directional path rests GTC orders for up to 900s while polling them. A
+    sweep must not cancel those out from under it, so only orders older than the
+    threshold are eligible."""
+    kalshi["orders"] = [
+        _order("fresh", "SOMETICKER", age_seconds=120),    # a live GTC mid order
+        _order("old", "SOMETICKER", age_seconds=7200),     # genuinely abandoned
+    ]
+    assert mm.sweep_orphaned_quotes(set(), is_paper=False) == 1
+    assert kalshi["cancelled"] == ["old"]
+
+
+def test_duplicate_orders_on_same_ticker_and_side_are_all_cancelled(kalshi):
+    """The real orphan set contained PAIRS of 9-contract orders on one ticker+side.
+    A dict keyed {ticker: {yes, no}} keeps only the last of those, so the earlier
+    implementation left one live. Working from Kalshi's order list fixes it."""
+    kalshi["orders"] = [
+        _order("dup1", "CINNYC", age_seconds=86400),
+        _order("dup2", "CINNYC", age_seconds=86400),
+    ]
+    assert mm.sweep_orphaned_quotes(set(), is_paper=False) == 2
+    assert sorted(kalshi["cancelled"]) == ["dup1", "dup2"]
+
+
+def test_works_with_no_candidates_at_all(kalshi):
+    """The blind spot being closed: an orphan is BY DEFINITION not a candidate, so an
+    empty candidate list must not disable the sweep."""
+    kalshi["orders"] = [_order("o1", "T1", age_seconds=86400)]
+    assert mm.sweep_orphaned_quotes(active_tickers=set(), is_paper=False) == 1
+
+
+def test_partially_filled_orphan_alerts_at_critical_and_still_cancels(kalshi, caplog):
+    kalshi["orders"] = [_order("part", "RSLDAL", age_seconds=86400, filled=8.0)]
     with caplog.at_level("CRITICAL"):
-        mm._sweep_orphaned_quotes(set(), is_paper=False)
-
+        mm.sweep_orphaned_quotes(set(), is_paper=False)
     assert "ORPHAN FILL" in caplog.text
-    assert "part" in caplog.text, "the order_id must be in the alert to reconcile by hand"
-    assert cancelled == ["part"], "unfilled remainder must still be cancelled"
-    assert mm._resting_quotes == {}
+    assert "part" in caplog.text, "order_id must be in the alert to reconcile by hand"
+    assert kalshi["cancelled"] == ["part"]
 
 
-def test_already_recorded_fill_does_not_re_alert(monkeypatch, caplog):
-    """A fill already backfilled into positions must not raise a second alarm."""
-    import execution.kalshi_executor as ke
-    monkeypatch.setattr(ke, "get_order_status", lambda oid: {"fill_count_fp": 9.0})
-    monkeypatch.setattr(ke, "cancel_quote", lambda oid: True)
+def test_already_recorded_fill_does_not_re_alert(kalshi, caplog, monkeypatch):
     monkeypatch.setattr(mm.db, "position_exists_for_order_id", lambda oid: True)
-
-    _reset({"GONE": {"yes": _leg("known", count=9.0), "no": None}})
+    kalshi["orders"] = [_order("known", "T1", age_seconds=86400, filled=9.0)]
     with caplog.at_level("CRITICAL"):
-        mm._sweep_orphaned_quotes(set(), is_paper=False)
-
+        mm.sweep_orphaned_quotes(set(), is_paper=False)
     assert "ORPHAN FILL" not in caplog.text
+
+
+def test_failed_cancel_is_logged_as_error_not_silently_swallowed(kalshi, caplog):
+    """A cancel that fails leaves a live order that can still fill -- the exact
+    condition that created the untracked position, so it must be loud."""
+    kalshi["cancel_ok"] = False
+    kalshi["orders"] = [_order("stuck", "T1", age_seconds=86400)]
+    with caplog.at_level("ERROR"):
+        assert mm.sweep_orphaned_quotes(set(), is_paper=False) == 0
+    assert "FAILED to cancel" in caplog.text
+
+
+def test_paper_mode_never_touches_live_orders(kalshi):
+    kalshi["orders"] = [_order("o1", "T1", age_seconds=86400)]
+    assert mm.sweep_orphaned_quotes(set(), is_paper=True) == 0
+    assert kalshi["cancelled"] == []
+
+
+def test_listing_failure_is_survivable(monkeypatch):
+    """A Kalshi outage must not take down the tick loop."""
+    import execution.kalshi_executor as ke
+    monkeypatch.setattr(ke, "list_resting_orders",
+                        lambda: (_ for _ in ()).throw(RuntimeError("api down")))
+    assert mm.sweep_orphaned_quotes(set(), is_paper=False) == 0

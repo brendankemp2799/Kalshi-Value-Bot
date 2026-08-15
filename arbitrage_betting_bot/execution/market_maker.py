@@ -22,8 +22,10 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 
 import sys
@@ -486,64 +488,122 @@ def run_mm_tick(
             if leg
         )
 
-    filled_count += _sweep_orphaned_quotes(seen_tickers, is_paper)
     return filled_count
 
 
-def _sweep_orphaned_quotes(seen_tickers: set[str], is_paper: bool) -> int:
+def sweep_orphaned_quotes(active_tickers: set[str], is_paper: bool,
+                          min_age_seconds: float = 3600.0) -> int:
     """
-    Cancel resting quotes on tickers that are no longer in mm_candidates.
+    Cancel resting orders on Kalshi that nothing is managing any more.
 
-    The per-candidate loop above only ever revisits tickers present in the CURRENT
-    tick's candidate list, so once a ticker drops out (game started, spread narrowed,
-    it fell off the scan) anything still resting on it becomes invisible forever:
-    never fill-checked, never cancelled, still live on Kalshi.
+    THE PROBLEM
+    -----------
+    run_mm_tick()'s per-candidate loop only revisits tickers present in the CURRENT
+    tick's candidate list. Once a ticker drops out (game started, spread narrowed, it
+    fell off the scan) anything still resting on it becomes invisible: never
+    fill-checked, never cancelled, still live on Kalshi and still able to fill.
 
-    This was documented as a known, accepted gap in _sync_resting_quotes_from_kalshi()
-    ("narrower and rarer than the restart gap... out of scope unless asked for"). It
-    then happened: on 2026-08-13 an audit found 9 resting orders across 5 tickers, the
-    oldest 3 days old, none of them present in the positions table at all — and one
-    (KXMLSGAME-26AUG19RSLDAL-RSL) had partially filled into a real position that was
-    invisible to bankroll accounting, the stop-loss and correlation blocking.
+    Documented as an accepted gap in _sync_resting_quotes_from_kalshi(), then it
+    happened. On 2026-08-13 an audit found 9 resting orders across 5 tickers, oldest 3
+    days. One of them, KXMLSGAME-26AUG19RSLDAL-RSL, kept filling while unobserved: it
+    grew from 1 contract to 8 ($4.80 of real money) over two days, while the positions
+    table held 11 rows for that market all saying status='failed', stake $0.00. That
+    exposure was invisible to the risk caps, the stop-loss and correlation blocking.
 
-    Deliberately does NOT try to record a fill it finds here. _record_fill() needs the
-    full candidate (odds_event + kalshi_market) to build a position row, and by
-    definition an orphaned ticker no longer has one. Fabricating a row from partial
-    data would be worse than the gap. Instead: cancel unconditionally (which stops any
-    FURTHER orphan fills, the actual bleeding), and log a fill we cannot record at
-    CRITICAL so execution/reconciliation.py's mismatch check and a human both see it.
+    WHY THIS READS FROM KALSHI, NOT FROM _resting_quotes
+    ----------------------------------------------------
+    The first version of this swept the in-memory _resting_quotes dict, which has two
+    fatal weaknesses for this job:
+      - it is keyed {ticker: {yes: leg, no: leg}}, so two orders on the SAME ticker and
+        side collapse to one and the other survives the sweep (the real orphan set
+        contained exactly such duplicate pairs);
+      - it only reflects what this process placed or recovered at startup.
+    Kalshi's own resting-order list is authoritative for "what is actually live", so
+    that is what gets swept.
+
+    WHY THE AGE GATE
+    ----------------
+    Sweeping every non-candidate ticker would also cancel the DIRECTIONAL strategy's
+    in-flight GTC orders, which legitimately rest while place_order() polls them.
+    Rather than depend on loop-ordering to keep those apart, only orders older than
+    min_age_seconds are touched. The directional path's longest timeout is
+    LIMIT_ORDER_TIMEOUT_DEFAULT_SECONDS (900s) and MM requotes every
+    MM_INTERVAL_SECONDS (30s), so a resting order more than an hour old is by
+    construction unmanaged by either.
+
+    Fills found here are NOT written to positions: _record_fill() needs the full
+    candidate (odds_event + kalshi_market) to build a row and an orphan has none by
+    definition. Fabricating one from partial data would be worse than the gap. They are
+    logged at CRITICAL so reconciliation and a human both see them; the cancel is what
+    stops the bleeding.
+
+    Returns the number of orders cancelled.
     """
     if is_paper:
-        _resting_quotes.clear()
         return 0
 
-    from execution.kalshi_executor import cancel_quote, get_order_status
+    from execution.kalshi_executor import cancel_quote, list_resting_orders
 
-    orphans = [t for t in _resting_quotes if t not in seen_tickers]
-    if not orphans:
+    try:
+        orders = list_resting_orders()
+    except Exception as e:
+        logger.warning("MM sweep: could not list resting orders: %s", e)
         return 0
 
-    for ticker in orphans:
-        legs = _resting_quotes.pop(ticker, None) or {}
-        for side, leg in (("yes", legs.get("yes")), ("no", legs.get("no"))):
-            if not leg:
-                continue
-            order_id = leg["order_id"]
-            status = get_order_status(order_id)
-            filled = float(status.get("fill_count_fp", 0) or 0) if status else 0.0
-            if filled > 0 and not db.position_exists_for_order_id(order_id):
-                logger.critical(
-                    "MM ORPHAN FILL — %s leg on %s filled %g contract(s) @ %.4f "
-                    "(order_id=%s) but the ticker is no longer an MM candidate, so no "
-                    "position row can be built. Real untracked exposure: reconcile by "
-                    "hand. Cancelling any remainder now.",
-                    side.upper(), ticker, filled, leg["price"], order_id,
-                )
-            if filled < leg["count"]:
-                cancel_quote(order_id)
+    now = datetime.now(timezone.utc)
+    cancelled, swept_tickers = 0, set()
 
-    logger.warning(
-        "MM: swept %d orphaned ticker(s) no longer in candidates: %s",
-        len(orphans), sorted(orphans),
-    )
-    return 0
+    for o in orders:
+        ticker = o.get("ticker")
+        order_id = o.get("order_id")
+        if not ticker or not order_id or ticker in active_tickers:
+            continue
+
+        created = o.get("created_time")
+        if not created:
+            continue
+        try:
+            age = (now - _parse_ts(created)).total_seconds()
+        except Exception:
+            continue
+        if age < min_age_seconds:
+            continue
+
+        filled = float(o.get("fill_count_fp", 0) or 0)
+        if filled > 0 and not db.position_exists_for_order_id(order_id):
+            logger.critical(
+                "MM ORPHAN FILL — %s filled %g contract(s) on an order resting since "
+                "%s (order_id=%s) that no longer has an MM candidate, so no position "
+                "row can be built. REAL UNTRACKED EXPOSURE — reconcile by hand. "
+                "Cancelling the remainder now.",
+                ticker, filled, created[:19], order_id,
+            )
+        if cancel_quote(order_id):
+            cancelled += 1
+            swept_tickers.add(ticker)
+        else:
+            logger.error(
+                "MM sweep: FAILED to cancel orphaned order %s on %s — it is still "
+                "live and can still fill.", order_id, ticker,
+            )
+
+    # Drop any in-memory tracking for tickers we just cancelled out from under.
+    for t in swept_tickers:
+        _resting_quotes.pop(t, None)
+
+    if cancelled:
+        logger.warning(
+            "MM: swept %d orphaned resting order(s) older than %.0fs across %d "
+            "ticker(s): %s", cancelled, min_age_seconds, len(swept_tickers),
+            sorted(swept_tickers),
+        )
+    return cancelled
+
+
+def _parse_ts(s: str) -> datetime:
+    """Kalshi timestamps carry a variable number of fractional-second digits."""
+    s = s.replace("Z", "+00:00")
+    m = re.match(r"^(.*?)(\.\d+)?([+-]\d{2}:\d{2})$", s)
+    if m and m.group(2):
+        s = f"{m.group(1)}.{(m.group(2)[1:] + '000000')[:6]}{m.group(3)}"
+    return datetime.fromisoformat(s)
