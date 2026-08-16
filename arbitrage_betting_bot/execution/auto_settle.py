@@ -99,11 +99,26 @@ def auto_settle_positions(
             continue
 
         if manage_open_positions:
-            try:
-                if _check_trailing_stop(pos, market, is_paper):
-                    continue  # position just closed early — don't also run natural settlement below
-            except Exception as e:
-                logger.warning("Trailing stop check failed for position #%d: %s", pos["id"], e)
+            # BOTH switches are checked here, independently and explicitly. This
+            # line has now been the site of the same class of bug twice, in
+            # opposite directions:
+            #   - originally manage_open_positions was itself
+            #     config.ENABLE_TRAILING_STOP, so turning the trailing stop off
+            #     (2026-08-09) silently took the stop-loss down with it, leaving
+            #     the live bot with NO risk management at all (fixed in 5bc403e);
+            #   - that fix decoupled them but removed the only place
+            #     ENABLE_TRAILING_STOP was ever read, so the trailing stop then ran
+            #     for 7 days while its switch said false. Measured cost of that
+            #     window: -$4.99 across 12 positions (8 cut winners short for
+            #     $8.44, 4 avoided losses worth $3.45).
+            # evaluate_trailing_stop() does not check the flag itself, so this is
+            # the only guard. Keep both conditions here, and keep them separate.
+            if config.ENABLE_TRAILING_STOP:
+                try:
+                    if _check_trailing_stop(pos, market, is_paper):
+                        continue  # position just closed early — don't also run natural settlement below
+                except Exception as e:
+                    logger.warning("Trailing stop check failed for position #%d: %s", pos["id"], e)
 
             if config.ENABLE_STOP_LOSS:
                 try:
