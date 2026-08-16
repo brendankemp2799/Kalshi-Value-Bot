@@ -186,6 +186,23 @@ def init_db() -> None:
                 action          TEXT NOT NULL,  -- placed | kept | rejected | cancelled
                 reason          TEXT NOT NULL
             );
+
+            -- One row PER DAY of market-making activity, incremented on every tick.
+            -- mm_decision_log deliberately holds only the latest tick, which answers
+            -- "what is MM doing right now" but cannot answer "has MM quoted at all
+            -- this week" -- the question that actually decides whether the strategy
+            -- is viable. A per-tick history would be ~2,880 rows/day for that; a
+            -- daily rollup is one, and is all the weekly review needs.
+            CREATE TABLE IF NOT EXISTS mm_daily_stats (
+                day           TEXT PRIMARY KEY,   -- UTC date
+                ticks         INTEGER NOT NULL DEFAULT 0,
+                candidates    INTEGER NOT NULL DEFAULT 0,
+                quoted        INTEGER NOT NULL DEFAULT 0,   -- candidate-quotes, not legs
+                legs_placed   INTEGER NOT NULL DEFAULT 0,
+                legs_kept     INTEGER NOT NULL DEFAULT 0,
+                fills         INTEGER NOT NULL DEFAULT 0,
+                reasons_json  TEXT                          -- {reason: count} for the day
+            );
         """)
     _migrate()
     logger.info("Database initialized at %s", DB_PATH)
@@ -838,6 +855,51 @@ def log_mm_decisions(tick_id: str, entries: list[dict]) -> None:
                 for e in entries
             ],
         )
+
+
+def record_mm_tick_stats(candidates: int, quoted: int, legs_placed: int,
+                          legs_kept: int, fills: int, reasons: dict) -> None:
+    """Fold one MM tick into today's rollup row. See the mm_daily_stats DDL for
+    why this is a daily aggregate rather than per-tick history."""
+    import json as _json
+    day = datetime.now(timezone.utc).date().isoformat()
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM mm_daily_stats WHERE day=?", (day,)).fetchone()
+        merged: dict[str, int] = {}
+        if row is not None:
+            try:
+                merged = _json.loads(row["reasons_json"] or "{}")
+            except (ValueError, TypeError):
+                merged = {}
+        for k, v in (reasons or {}).items():
+            merged[k] = merged.get(k, 0) + int(v)
+
+        if row is None:
+            conn.execute(
+                "INSERT INTO mm_daily_stats (day, ticks, candidates, quoted, "
+                "legs_placed, legs_kept, fills, reasons_json) VALUES (?,?,?,?,?,?,?,?)",
+                (day, 1, candidates, quoted, legs_placed, legs_kept, fills,
+                 _json.dumps(merged)),
+            )
+        else:
+            conn.execute(
+                "UPDATE mm_daily_stats SET ticks=ticks+1, candidates=candidates+?, "
+                "quoted=quoted+?, legs_placed=legs_placed+?, legs_kept=legs_kept+?, "
+                "fills=fills+?, reasons_json=? WHERE day=?",
+                (candidates, quoted, legs_placed, legs_kept, fills,
+                 _json.dumps(merged), day),
+            )
+
+
+def get_mm_daily_stats(days: int = 7) -> list[sqlite3.Row]:
+    """Most recent `days` rollup rows, newest first. [] if MM has never ticked."""
+    with get_connection() as conn:
+        try:
+            return conn.execute(
+                "SELECT * FROM mm_daily_stats ORDER BY day DESC LIMIT ?", (days,)
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
 
 
 def get_mm_pairing(is_paper: bool = False) -> list[dict]:

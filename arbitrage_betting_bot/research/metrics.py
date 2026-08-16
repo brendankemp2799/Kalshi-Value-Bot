@@ -246,6 +246,83 @@ def fee_and_fill_stats(positions: list[dict]) -> dict:
 
 # ── Top-level report ─────────────────────────────────────────────────────────────
 
+def mm_health(days: int = 7, is_paper: bool = False) -> dict:
+    """
+    The three questions that decide whether market making is worth keeping, in the
+    order they have to be answered — each one is only meaningful if the previous
+    one passed.
+
+      1. Does it ever QUOTE?  If the market universe has no trading activity,
+         nothing downstream matters. Measured from mm_daily_stats.
+      2. Does a quote ever FILL?  Quoting into a book nobody crosses earns nothing.
+      3. Do fills come in PAIRS?  This is the real test. MM only profits when BOTH
+         legs fill: a matched YES+NO pair costs under $1 and pays exactly $1, so
+         the outcome is irrelevant. A leg that fills alone is not market making at
+         all -- it is an accidental directional bet. As of 2026-08-15 the bot had
+         completed ONE matched pair in its entire life and was holding $6.39 of
+         unpaired exposure.
+
+    Returns a dict with a `verdict` key that maps directly onto an action.
+    """
+    from storage import db as _db   # path already bootstrapped at module import
+
+    rows = _db.get_mm_daily_stats(days=days)
+    ticks = sum(r["ticks"] for r in rows)
+    quoted = sum(r["quoted"] for r in rows)
+    fills = sum(r["fills"] for r in rows)
+
+    reasons: dict[str, int] = {}
+    for r in rows:
+        try:
+            for k, v in json.loads(r["reasons_json"] or "{}").items():
+                reasons[k] = reasons.get(k, 0) + int(v)
+        except (ValueError, TypeError):
+            continue
+    top = sorted(reasons.items(), key=lambda kv: -kv[1])[:5]
+    total_reasons = sum(reasons.values()) or 1
+
+    pairing = _db.get_mm_pairing(is_paper=is_paper)
+    naked = [p for p in pairing if p["unpaired"] > 0]
+    paired_now = sum(p["paired"] for p in pairing)
+    naked_dollars = round(sum(p["unpaired_dollars"] for p in naked), 2)
+
+    dominant = top[0] if top else ("", 0)
+    dominant_share = dominant[1] / total_reasons
+
+    if ticks == 0:
+        verdict = "NO DATA — market making has not ticked in this window."
+        action = "Check ENABLE_MARKET_MAKING and that the bot is running."
+    elif quoted == 0:
+        verdict = (f"NOT QUOTING — {ticks} ticks, 0 quotes. Dominant reason: "
+                   f"{dominant[0]} ({dominant_share*100:.0f}% of rejections).")
+        action = ("If this persists and the reason is insufficient_volume, there are "
+                  "no counterparties in MM's universe. Set ENABLE_MARKET_MAKING=false.")
+    elif fills == 0:
+        verdict = f"QUOTING BUT NOT FILLING — {quoted} quotes, 0 fills in {days}d."
+        action = "Quotes may be priced too far inside. Worth investigating."
+    elif paired_now == 0 and naked_dollars > 0:
+        verdict = (f"FILLING BUT NEVER PAIRING — ${naked_dollars} naked across "
+                   f"{len(naked)} ticker(s), 0 matched pairs.")
+        action = ("These are accidental directional bets, not spread capture. "
+                  "Turn off, or investigate why only one side fills.")
+    else:
+        verdict = f"WORKING — {paired_now:.0f} matched pair(s) open, ${naked_dollars} naked."
+        action = "Keep running; tune from here."
+
+    return {
+        "window_days": days,
+        "ticks": ticks,
+        "quoted": quoted,
+        "fills_recorded": fills,
+        "top_rejection_reasons": [{"reason": k, "count": v} for k, v in top],
+        "matched_pairs_open": paired_now,
+        "naked_exposure_dollars": naked_dollars,
+        "naked_positions": naked,
+        "verdict": verdict,
+        "action": action,
+    }
+
+
 def summary_report(is_paper: bool = False) -> dict:
     positions = load_positions(is_paper=is_paper)
     settled = [p for p in positions if p.get("pnl") is not None]
@@ -273,6 +350,7 @@ def summary_report(is_paper: bool = False) -> dict:
         "edge_calibration": edge_calibration(positions),
         "fees_and_fills": fee_and_fill_stats(positions),
         "scanned_candidates": scanned_candidates_summary(),
+        "market_making": mm_health(is_paper=is_paper),
         "sample_size_warning": (
             f"n_settled={n} — most statistics above are low-confidence below ~n=30. "
             "Treat single-digit-n breakdowns as anecdotes, not findings."
@@ -291,6 +369,7 @@ def check_thresholds() -> Path | None:
     reviews it — see README)."""
     FINDINGS_DIR.mkdir(parents=True, exist_ok=True)
     current = summary_report(is_paper=False)
+    _write_mm_status(current.get("market_making") or {})
 
     previous = None
     if SNAPSHOT_PATH.exists():
@@ -325,6 +404,59 @@ def check_thresholds() -> Path | None:
         + "\n```\n"
     )
     return trigger_path
+
+
+MM_STATUS_PATH = FINDINGS_DIR / "MM_STATUS.md"
+
+
+def _write_mm_status(h: dict) -> None:
+    """Overwrite findings/MM_STATUS.md with a plain-English answer to 'is market
+    making worth keeping'. Rewritten in full every run (not appended) so the file
+    is always the CURRENT answer rather than a log to scroll through -- the daily
+    check exists to be read in ten seconds."""
+    if not h:
+        return
+    reasons = h.get("top_rejection_reasons") or []
+    total = sum(r["count"] for r in reasons) or 1
+    naked = h.get("naked_positions") or []
+
+    lines = [
+        f"# Market making status — {date.today().isoformat()}",
+        "",
+        f"## {h.get('verdict', 'unknown')}",
+        "",
+        f"**What to do:** {h.get('action', '')}",
+        "",
+        f"Window: last {h.get('window_days')} days.",
+        "",
+        "| question | answer |",
+        "|---|---|",
+        f"| 1. Did it ever quote? | **{h.get('quoted', 0)}** quotes across "
+        f"{h.get('ticks', 0)} ticks |",
+        f"| 2. Did any quote fill? | **{h.get('fills_recorded', 0)}** fills |",
+        f"| 3. Did fills PAIR? | **{h.get('matched_pairs_open', 0)}** matched pairs open, "
+        f"**${h.get('naked_exposure_dollars', 0)}** naked |",
+        "",
+    ]
+    if reasons:
+        lines += ["## Why it didn't quote", "",
+                  "| reason | count | share |", "|---|---|---|"]
+        lines += [f"| {r['reason']} | {r['count']} | {r['count']/total*100:.0f}% |"
+                  for r in reasons]
+        lines.append("")
+    if naked:
+        lines += [
+            "## Naked (unpaired) exposure",
+            "",
+            "A matched YES+NO pair costs under $1 and pays exactly $1, so the outcome",
+            "doesn't matter. A leg that fills alone is an accidental directional bet.",
+            "",
+            "| ticker | unpaired | side | $ |", "|---|---|---|---|",
+        ]
+        lines += [f"| {p['ticker']} | {p['unpaired']:.0f} | {p['naked_side'].upper()} "
+                  f"| ${p['unpaired_dollars']:.2f} |" for p in naked]
+        lines.append("")
+    MM_STATUS_PATH.write_text("\n".join(lines))
 
 
 def _save_snapshot(report: dict) -> None:

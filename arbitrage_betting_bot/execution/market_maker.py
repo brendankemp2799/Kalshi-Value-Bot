@@ -778,6 +778,18 @@ def run_mm_tick(
             # Visibility must never be able to take down trading.
             logger.warning("MM: could not persist decision log: %s", e)
 
+        # Fold into the daily rollup. mm_decision_log holds only THIS tick, which
+        # answers "what is MM doing now" but not "has MM quoted at all this week"
+        # — the question that actually decides whether the strategy is viable.
+        try:
+            db.record_mm_tick_stats(
+                candidates=len(decisions), quoted=quoted,
+                legs_placed=placed_legs, legs_kept=kept_legs, fills=filled_count,
+                reasons=dict(reasons),
+            )
+        except Exception as e:
+            logger.warning("MM: could not record tick stats: %s", e)
+
     return filled_count
 
 
