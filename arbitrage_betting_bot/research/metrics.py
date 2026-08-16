@@ -169,7 +169,14 @@ def breakdown_by(positions: list[dict], key: str) -> list[dict]:
 
 
 def load_scanned_candidates() -> list[dict]:
-    """Every row in book_probability_log -- not just settled bets, every candidate
+    """DANGER: loads the ENTIRE book_probability_log into memory -- 98,644 rows and
+    ~678 MB as of 2026-08-15, which is what OOM-killed the 200 MB daily cron job.
+    That table is never pruned by design, so this only gets worse. No caller remains;
+    scanned_candidates_summary() aggregates in SQL instead. Kept for ad-hoc analysis
+    where you genuinely need the rows -- run it outside the memory-capped cron, and
+    prefer a WHERE clause.
+
+    Every row in book_probability_log -- not just settled bets, every candidate
     the bot ever scored a Kalshi price against a sportsbook consensus for, passed or
     placed. Rows predating the 2026-08-11 schema widening have edge/status/reason
     etc. as None; callers should filter on those explicitly rather than assume
@@ -186,28 +193,45 @@ def scanned_candidates_summary() -> dict:
     evaluated, not just the ones that became bets) -- useful for questions about
     where the edge/quality-filter thresholds should sit, not for realized P&L (most
     rows never became a bet, so they have no pnl/stake to report)."""
-    rows = load_scanned_candidates()
-    n_total = len(rows)
-    widened = [r for r in rows if r.get("edge") is not None]
-    n_widened = len(widened)
-
-    by_status: dict = {}
-    for r in widened:
-        key = r.get("status") or "value"  # placed candidates have status=NULL, reason=NULL
-        by_status.setdefault(key, []).append(r)
-    status_breakdown = [
-        {"status": status, "n": len(group),
-         "avg_edge_pct": round(sum(r["edge"] for r in group) / len(group) * 100, 2)}
-        for status, group in sorted(by_status.items(), key=lambda kv: -len(kv[1]))
-    ]
-
+    # Aggregated in SQL, NOT by loading rows. book_probability_log is the one
+    # unbounded table in this database -- it is never pruned by design (see its DDL)
+    # and had grown to 98,644 rows by 2026-08-15. load_scanned_candidates() builds a
+    # dict per row, which took this function's peak RSS to 678 MB against the cron
+    # job's 200 MB cap: the daily check had been silently OOM-killed for days
+    # ("Killed" twice in threshold_check.log), leaving the bot with no automated
+    # monitoring at all, since the weekly LLM pass is also disabled. Every figure
+    # below is a COUNT or an AVG, so none of it ever needed the rows in memory.
     near_miss_lo, near_miss_hi = 0.0, 0.015  # below today's MIN_EDGE=1% floor with margin
-    rejected = [r for r in widened if r.get("position_id") is None]
-    near_miss = [r for r in rejected
-                 if r.get("edge") is not None and near_miss_lo <= r["edge"] < near_miss_hi]
+    with get_connection() as conn:
+        def _scalar(sql: str, args: tuple = ()) -> int:
+            return conn.execute(sql, args).fetchone()[0] or 0
 
-    placed = [r for r in widened if r.get("position_id") is not None]
-    with_outcome = [r for r in widened if r.get("actual_outcome") is not None]
+        n_total = _scalar("SELECT COUNT(*) FROM book_probability_log")
+        n_widened = _scalar(
+            "SELECT COUNT(*) FROM book_probability_log WHERE edge IS NOT NULL")
+
+        # Placed candidates carry status=NULL, so they fold into "value".
+        status_rows = conn.execute(
+            "SELECT COALESCE(status, 'value') AS s, COUNT(*) AS n, AVG(edge) AS avg_edge "
+            "FROM book_probability_log WHERE edge IS NOT NULL "
+            "GROUP BY s ORDER BY n DESC"
+        ).fetchall()
+        status_breakdown = [
+            {"status": r["s"], "n": r["n"],
+             "avg_edge_pct": round((r["avg_edge"] or 0.0) * 100, 2)}
+            for r in status_rows
+        ]
+
+        n_near_miss = _scalar(
+            "SELECT COUNT(*) FROM book_probability_log WHERE edge IS NOT NULL "
+            "AND position_id IS NULL AND edge >= ? AND edge < ?",
+            (near_miss_lo, near_miss_hi))
+        n_placed = _scalar(
+            "SELECT COUNT(*) FROM book_probability_log "
+            "WHERE edge IS NOT NULL AND position_id IS NOT NULL")
+        n_with_outcome = _scalar(
+            "SELECT COUNT(*) FROM book_probability_log "
+            "WHERE edge IS NOT NULL AND actual_outcome IS NOT NULL")
 
     return {
         "n_total_rows": n_total,
@@ -219,9 +243,9 @@ def scanned_candidates_summary() -> dict:
             "All rows have the widened schema."
         ),
         "by_status": status_breakdown,
-        "n_rejected_near_miss_sub_1.5pct_edge": len(near_miss),
-        "n_placed_linked_to_position": len(placed),
-        "n_with_backfilled_outcome": len(with_outcome),
+        "n_rejected_near_miss_sub_1.5pct_edge": n_near_miss,
+        "n_placed_linked_to_position": n_placed,
+        "n_with_backfilled_outcome": n_with_outcome,
         "sample_size_warning": (
             f"n_widened_schema={n_widened} — this dataset only started accumulating "
             "widened rows on 2026-08-11; treat early breakdowns as a first look, not "
