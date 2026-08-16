@@ -68,18 +68,53 @@ _ORDERS_URL   = f"{_BASE_URL}/portfolio/events/orders"   # POST + DELETE
 _STATUS_URL   = f"{_BASE_URL}/portfolio/orders"          # GET (old path still works)
 
 
-def _get_order_status(order_id: str) -> dict | None:
-    """Fetch current order status. Returns order dict or None on error."""
-    try:
-        from data.kalshi_auth import auth_headers, session
-        url = f"{_STATUS_URL}/{order_id}"
-        headers = auth_headers("GET", url)
-        resp = session().get(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-        return resp.json().get("order", {})
-    except Exception as e:
-        logger.warning("Could not fetch order status for %s: %s", order_id, e)
-        return None
+# Backoff schedule for reading an order back immediately after placing it. See
+# _get_order_status(retries=...) — deliberately short; the whole point is to
+# outlast a propagation lag of well under a second, not to survive an outage.
+_STATUS_RETRY_BACKOFF = (0.25, 0.75, 1.5)
+
+
+def _get_order_status(order_id: str, retries: int = 0) -> dict | None:
+    """
+    Fetch current order status. Returns the order dict, or None on error.
+
+    retries: extra attempts (with _STATUS_RETRY_BACKOFF sleeps) before giving up.
+    Defaults to 0 so the polling loops, which call this every few seconds anyway
+    and would only slow themselves down, keep their existing behaviour.
+
+    Why retries exist at all: Kalshi does not make an order queryable at this
+    endpoint the instant the POST that created it returns. Reading the fee back
+    immediately after an at-placement fill therefore races that propagation and
+    404s — measured at 26 occurrences in 24h on 2026-08-15, roughly 8% of taker
+    fills. The failure was silent and one-directional: _fee_breakdown() returned
+    (0, 0), so the position recorded entry_fee_paid=$0.00 for a fill that really
+    did pay a taker fee, understating costs and overstating P&L. Confirmed to be
+    a race and not a bad identifier: all 12 most recent stored order_ids were
+    queryable when retried later, including the exact id that had just 404'd.
+
+    Only ever retries a GET, never the order POST — an automatic retry on a
+    placement could double-place a real trade (see data/kalshi_auth.py's session()
+    for the same reasoning applied to the HTTPAdapter).
+    """
+    from data.kalshi_auth import auth_headers, session
+
+    url = f"{_STATUS_URL}/{order_id}"
+    last_err: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            resp = session().get(url, headers=auth_headers("GET", url), timeout=10)
+            resp.raise_for_status()
+            return resp.json().get("order", {})
+        except Exception as e:
+            last_err = e
+            if attempt < retries:
+                time.sleep(_STATUS_RETRY_BACKOFF[min(attempt, len(_STATUS_RETRY_BACKOFF) - 1)])
+
+    logger.warning(
+        "Could not fetch order status for %s after %d attempt(s): %s",
+        order_id, retries + 1, last_err,
+    )
+    return None
 
 
 def _actual_fee_dollars(order_id: str) -> float:
@@ -94,9 +129,20 @@ def _actual_fee_dollars(order_id: str) -> float:
 
 
 def _fee_breakdown(order_id: str) -> tuple[float, float]:
-    """(maker_fee, taker_fee) in dollars, straight from Kalshi's own order record."""
-    status = _get_order_status(order_id)
+    """(maker_fee, taker_fee) in dollars, straight from Kalshi's own order record.
+
+    Retries, because this is the one caller that reads an order back immediately
+    after it was created and so races Kalshi making it queryable. Failing here
+    silently records a $0.00 fee on a fill that really paid one — an error that
+    only ever flatters P&L, which is the worst direction for it to be wrong in.
+    """
+    status = _get_order_status(order_id, retries=len(_STATUS_RETRY_BACKOFF))
     if not status:
+        logger.error(
+            "FEE UNKNOWN for order %s — Kalshi never returned its record, so this "
+            "fill is being recorded with a $0.00 fee it may not have had. Real cost "
+            "is understated by whatever was actually charged.", order_id,
+        )
         return 0.0, 0.0
     return (float(status.get("maker_fees_dollars", 0) or 0),
             float(status.get("taker_fees_dollars", 0) or 0))
