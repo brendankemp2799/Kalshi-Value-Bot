@@ -812,10 +812,23 @@ def mm_decisions():
 
     quoted = sum(1 for e in entries if e["action"] in ("placed", "kept"))
     summary = sorted(counts.items(), key=lambda kv: -kv[1])
+
+    # Paired vs unpaired open MM fills. A matched pair is near-riskless; a leg
+    # that filled alone is naked directional risk the bot never chose to take.
+    try:
+        pairing = db.get_mm_pairing(is_paper=IS_PAPER)
+    except Exception:
+        pairing = []
+    naked = [p for p in pairing if p["unpaired"] > 0]
+    naked_total = round(sum(p["unpaired_dollars"] for p in naked), 2)
+    paired_total = sum(p["paired"] for p in pairing)
+
     return render_template_string(
         MM_TEMPLATE, entries=entries, decided_at=decided_at,
         total=len(entries), quoted=quoted, summary=summary,
         enabled=config.ENABLE_MARKET_MAKING,
+        pairing=pairing, naked=naked, naked_total=naked_total,
+        paired_total=paired_total,
     )
 
 
@@ -2099,6 +2112,32 @@ MM_TEMPLATE = """<!DOCTYPE html>
     <div class="card"><div class="n" style="color:var(--green)">{{ quoted }}</div><div class="l">Quoted</div></div>
     <div class="card"><div class="n" style="color:var(--muted)">{{ total - quoted }}</div><div class="l">Not quoted</div></div>
   </div>
+
+  {% if pairing %}
+  <div class="why">
+    <h2>Fill pairing — is this actually market making?</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+      A matched YES+NO pair costs under $1 and pays exactly $1, so the outcome does not
+      matter. A leg that fills alone is a naked directional position, not spread capture.</p>
+    <div class="cards" style="margin-bottom:0;">
+      <div class="card"><div class="n" style="color:var(--green)">{{ '%.0f'|format(paired_total) }}</div>
+        <div class="l">Matched pairs</div></div>
+      <div class="card"><div class="n" style="color:{{ 'var(--red)' if naked_total > 0 else 'var(--muted)' }}">
+        ${{ '%.2f'|format(naked_total) }}</div><div class="l">Naked exposure</div></div>
+    </div>
+    {% if naked %}
+    <ul style="margin-top:10px;">
+      {% for p in naked %}
+      <li><span class="cnt">{{ '%.0f'|format(p.unpaired) }}</span><span class="txt">
+        <strong style="color:var(--red)">{{ p.naked_side|upper }}</strong>
+        unpaired on <strong style="color:var(--text)">{{ p.ticker }}</strong>
+        — ${{ '%.2f'|format(p.unpaired_dollars) }} directional
+        ({{ '%.0f'|format(p.yes_contracts) }} yes / {{ '%.0f'|format(p.no_contracts) }} no)</span></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  {% endif %}
 
   {% if summary %}
   <div class="why">

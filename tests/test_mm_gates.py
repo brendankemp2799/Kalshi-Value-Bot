@@ -25,7 +25,7 @@ def _cand(**over) -> dict:
     base = {
         "consensus_prob": 0.50,
         "kalshi_spread": 0.10,
-        "kalshi_volume": 5000.0,
+        "kalshi_volume_24h": 5000.0,
         "bookmaker_count": 5,
         "consensus_std": 0.01,
         "yes_bid": 0.45,
@@ -46,7 +46,7 @@ def test_baseline_candidate_quotes():
 def test_never_traded_market_is_rejected():
     """The 78% case: a wide spread with zero volume is nobody being there, not a
     fat spread on offer. A quote there cannot fill however it is priced."""
-    a = mm.evaluate_mm_candidate(_cand(kalshi_volume=0.0))
+    a = mm.evaluate_mm_candidate(_cand(kalshi_volume_24h=0.0))
     assert a.kind == mm.MMActionKind.NONE
     assert a.reason == "insufficient_volume"
 
@@ -56,7 +56,7 @@ def test_volume_gate_is_skipped_when_volume_is_absent():
     A missing key must skip the gate, not reject -- otherwise the backtest
     reports zero opportunities instead of failing loudly."""
     c = _cand()
-    del c["kalshi_volume"]
+    del c["kalshi_volume_24h"]
     assert mm.evaluate_mm_candidate(c).kind == mm.MMActionKind.QUOTE
 
 
@@ -195,7 +195,7 @@ def test_clip_respects_absolute_dollar_cap_at_large_bankroll():
     ({"consensus_prob": None}, "no_consensus"),
     ({"consensus_prob": 0.95, "yes_bid": 0.93, "yes_ask": 0.99}, "outside_fair_value_band"),
     ({"kalshi_spread": 0.02}, "spread_too_narrow"),
-    ({"kalshi_volume": 3.0}, "insufficient_volume"),
+    ({"kalshi_volume_24h": 3.0}, "insufficient_volume"),
     ({"bookmaker_count": 1}, "too_few_books"),
     ({"consensus_std": 0.5}, "high_disagreement"),
     ({"consensus_prob": 0.80, "yes_bid": 0.45, "yes_ask": 0.55}, "consensus_outside_spread"),
@@ -207,3 +207,47 @@ def test_every_rejection_carries_a_specific_reason(over, expected):
     a = mm.evaluate_mm_candidate(_cand(**over))
     assert a.kind == mm.MMActionKind.NONE
     assert a.reason == expected
+
+
+# ── kickoff stop (2026-08-15) ─────────────────────────────────────────────────
+
+def test_quoting_stops_before_kickoff():
+    """A resting quote does not expire when the game starts, and once the event
+    leaves mm_candidates run_mm_tick never sees that ticker again — so the last
+    chance to cancel is while there is still time on the clock."""
+    a = mm.evaluate_mm_candidate(_cand(seconds_to_kickoff=60))
+    assert a.kind == mm.MMActionKind.NONE
+    assert a.reason == "too_close_to_kickoff"
+
+
+def test_already_started_game_is_rejected():
+    a = mm.evaluate_mm_candidate(_cand(seconds_to_kickoff=-3600))
+    assert a.reason == "too_close_to_kickoff"
+
+
+def test_far_from_kickoff_still_quotes():
+    a = mm.evaluate_mm_candidate(_cand(seconds_to_kickoff=86400))
+    assert a.kind == mm.MMActionKind.QUOTE
+
+
+def test_kickoff_margin_covers_the_observed_tick_stall():
+    """MM ticks are ~30s normally but measured gaps of 2.4 and 19 minutes occur
+    while run_scan() blocks the loop. A margin under that can be slept straight
+    through, leaving a live quote in an in-play market."""
+    assert config.MM_STOP_QUOTING_BEFORE_KICKOFF_SECONDS >= 19 * 60
+
+
+def test_kickoff_gate_fires_even_for_an_otherwise_perfect_market():
+    """It is a hard risk stop, so it must beat every other gate — including on a
+    market with deep volume, tight books and confident consensus."""
+    a = mm.evaluate_mm_candidate(_cand(seconds_to_kickoff=10, kalshi_volume_24h=999999,
+                                       bookmaker_count=9, consensus_std=0.001))
+    assert a.reason == "too_close_to_kickoff"
+
+
+def test_unknown_kickoff_leaves_the_gate_open():
+    """Returning None must not silently halt all market making — the orphan
+    sweeper is the backstop for anything that slips through."""
+    c = _cand()
+    assert "seconds_to_kickoff" not in c
+    assert mm.evaluate_mm_candidate(c).kind == mm.MMActionKind.QUOTE

@@ -191,6 +191,31 @@ def _resting_notional() -> float:
     return total
 
 
+def _seconds_to_kickoff(candidate: dict) -> float | None:
+    """Seconds until this market's game starts, or None if it can't be determined.
+
+    Uses the Odds API's commence_time rather than KalshiMarket.game_time: Kalshi's
+    close_time is a settlement deadline (~2 weeks out), and game_time reconstructs
+    kickoff by splicing the event_ticker's date onto close_time's hour — good enough
+    for display, but this value gates a real risk stop and deserves the sportsbook's
+    actual scheduled start.
+
+    Returning None (rather than 0) when it's unknown deliberately leaves the gate
+    OPEN. An unparseable timestamp should not silently halt all market making; the
+    orphan sweeper remains the backstop for anything that slips through.
+    """
+    event = candidate.get("matched_event")
+    commence = getattr(getattr(event, "odds_event", None), "commence_time", None)
+    if commence is None:
+        return None
+    try:
+        if commence.tzinfo is None:
+            commence = commence.replace(tzinfo=timezone.utc)
+        return (commence - datetime.now(timezone.utc)).total_seconds()
+    except Exception:
+        return None
+
+
 def _net_inventory_contracts(ticker: str, is_paper: bool) -> float:
     """Net YES-equivalent contracts already held on this ticker from prior MM fills
     (positive = net long YES, negative = net long NO). Used to skew the reservation
@@ -254,11 +279,23 @@ def evaluate_mm_candidate(candidate: dict, net_inventory_contracts: float = 0.0,
     if spread < config.MM_MIN_SPREAD_TO_QUOTE:
         return MMAction(kind=MMActionKind.NONE, reason="spread_too_narrow")
 
-    # Liquidity. On Kalshi sports a wide spread usually means nobody is there at
-    # all, rather than that a fat spread is on offer: of 230 live wide-spread
-    # markets surveyed 2026-08-14, 179 (78%) had never traded. A quote in a market
-    # with no counterparty flow cannot fill no matter how well it is priced.
-    volume = candidate.get("kalshi_volume")
+    # Kickoff. A resting quote does not expire when the game starts, and once the
+    # event leaves mm_candidates this function is never called for it again — so
+    # the LAST chance to cancel is while there is still time on the clock. See
+    # config.MM_STOP_QUOTING_BEFORE_KICKOFF_SECONDS for the full incident shape.
+    # Checked before the liquidity gates because it is a hard risk stop: it must
+    # fire even for a market that looks perfectly healthy on every other measure.
+    secs_to_kickoff = candidate.get("seconds_to_kickoff")
+    if (secs_to_kickoff is not None
+            and secs_to_kickoff < config.MM_STOP_QUOTING_BEFORE_KICKOFF_SECONDS):
+        return MMAction(kind=MMActionKind.NONE, reason="too_close_to_kickoff")
+
+    # Liquidity, measured as recent FLOW (24h traded contracts), not as a lifetime
+    # stock. On Kalshi sports a wide spread usually means nobody is there at all
+    # rather than that a fat spread is on offer: of 230 live wide-spread markets
+    # surveyed 2026-08-14, 179 (78%) had never traded. A quote in a market with no
+    # counterparty flow cannot fill no matter how well it is priced.
+    volume = candidate.get("kalshi_volume_24h")
     if volume is not None and volume < config.MM_MIN_VOLUME:
         return MMAction(kind=MMActionKind.NONE, reason="insufficient_volume")
 
@@ -520,14 +557,17 @@ def run_mm_tick(
         seen_tickers.add(ticker)
 
         # Overlay the LIVE book on the cached candidate. kalshi_spread was already
-        # refreshed here; volume and the raw bid/ask are new, and feed the
-        # liquidity gate, the centering gate and the crossing guard respectively.
+        # refreshed here; volume, the raw bid/ask and time-to-kickoff are new, and
+        # feed the liquidity gate, the centering gate, the crossing guard and the
+        # kickoff stop respectively.
         candidate = {
             **candidate,
             "kalshi_spread": live_km.spread,
             "kalshi_volume": live_km.volume,
+            "kalshi_volume_24h": live_km.volume_24h,
             "yes_bid": live_km.yes_bid,
             "yes_ask": live_km.yes_ask,
+            "seconds_to_kickoff": _seconds_to_kickoff(candidate),
         }
 
         # ── Phase A: resolve whatever was resting from the previous tick ───────
@@ -703,6 +743,26 @@ def run_mm_tick(
                            and new_legs["no"] and new_legs["no"] is surviving.get("no"))
                 else "placed",
                 "ok", action, count)
+
+    # Naked-exposure check. A matched pair is near-riskless; a leg that filled
+    # alone is a directional position the bot never decided to take. This is the
+    # single most important number about whether MM is actually working, and
+    # nothing reported it until now — the 8 unpaired RSLDAL contracts sat
+    # unnoticed for two days. Logged every tick that finds any, at WARNING, so it
+    # survives production log levels.
+    try:
+        pairing = [p for p in db.get_mm_pairing(is_paper) if p["unpaired"] > 0]
+        if pairing:
+            total = sum(p["unpaired_dollars"] for p in pairing)
+            logger.warning(
+                "MM UNPAIRED EXPOSURE: $%.2f across %d ticker(s) — these legs filled "
+                "on one side only and are naked directional risk, not spread capture: "
+                "%s", total, len(pairing),
+                ", ".join(f"{p['ticker']} {p['unpaired']:.0f}x {p['naked_side'].upper()} "
+                          f"(${p['unpaired_dollars']:.2f})" for p in pairing[:5]),
+            )
+    except Exception as e:
+        logger.debug("MM pairing check failed: %s", e)
 
     if decisions:
         quoted = sum(1 for d in decisions if d["action"] in ("placed", "kept"))

@@ -26,11 +26,12 @@ from data.kalshi_client import KalshiMarket
 from data.odds_fetcher import OddsEvent
 
 
-def _market(ticker="T1", bid=0.45, ask=0.55, volume=5000.0) -> KalshiMarket:
+def _market(ticker="T1", bid=0.45, ask=0.55, volume=5000.0,
+            volume_24h=5000.0) -> KalshiMarket:
     return KalshiMarket(
         ticker=ticker, title="A at B Winner?", yes_team="A", no_team="B",
         yes_price=(bid + ask) / 2, no_price=1 - (bid + ask) / 2,
-        yes_bid=bid, yes_ask=ask, volume=volume,
+        yes_bid=bid, yes_ask=ask, volume=volume, volume_24h=volume_24h,
         close_time="2026-09-01T00:00:00Z", category="Sports",
         event_ticker="KXTEST-26AUG20AB", bet_type="h2h",
     )
@@ -177,7 +178,7 @@ def test_every_candidate_produces_a_decision_row(rig):
     """Including the rejected ones -- that is the whole point. Before this a tick
     that rejected 59 of 60 candidates recorded nothing."""
     good = _market(ticker="GOOD")
-    dead = _market(ticker="DEAD", volume=0.0)              # never traded
+    dead = _market(ticker="DEAD", volume=0.0, volume_24h=0.0)   # never traded
     wrong = _market(ticker="WRONG")                        # consensus off-book
     cands = [_candidate(good), _candidate(dead),
              _candidate(wrong, consensus=0.80)]

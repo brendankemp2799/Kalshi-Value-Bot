@@ -127,9 +127,13 @@ class KalshiMarket:
     no_price: float     # 0.0 – 1.0
     yes_bid: float      # raw bid price (for spread calculation)
     yes_ask: float      # raw ask price (for spread calculation)
-    volume: float
+    volume: float       # max(lifetime volume, open interest) -- a stock, never decays
     close_time: str
     category: str
+    # Contracts traded in the last 24h -- recent FLOW, as opposed to `volume` above
+    # which is a lifetime-to-date stock that never decays. Defaulted so callers that
+    # construct KalshiMarket by hand (tests, backtests) don't have to supply it.
+    volume_24h: float = field(default=0.0)
     event_ticker: str = field(default="")
     # Only "h2h", "totals" and "spread" are ever produced — see _SERIES_TO_BET_TYPE,
     # which is the sole writer of this field. BTTS was removed in cf173c7 (2026-04-07)
@@ -556,6 +560,26 @@ class KalshiClient:
                 float(oi) if oi is not None else 0.0,
             )
 
+            # Recent flow, kept SEPARATE from `volume` above deliberately.
+            #
+            # `volume` is max(lifetime volume, open interest) — two lifetime-to-date
+            # stocks that never decay. A market that traded 5,000 contracts three
+            # weeks ago and nothing since scores identically to one trading right
+            # now, and a market with large open interest but no trades at all scores
+            # high while being completely inert. For a MAKER that distinction is the
+            # whole game: a fill requires a counterparty to CROSS, so what matters is
+            # trade arrival, not accumulated history or resting size.
+            #
+            # Measured 2026-08-15 over 125 live wide-spread markets: 74 of them had
+            # two-sided depth >= 20 contracts while having never traded at all (one
+            # had 6,419 contracts resting against zero lifetime volume). Sizing a
+            # liquidity gate off depth or open interest would have admitted every one
+            # of those.
+            v24 = raw.get("volume_24h_fp")
+            if v24 is None:
+                v24 = raw.get("volume_24h")
+            volume_24h = float(v24) if v24 is not None else 0.0
+
             km = KalshiMarket(
                 ticker=raw.get("ticker", ""),
                 title=title_raw,
@@ -566,6 +590,7 @@ class KalshiClient:
                 yes_bid=round(raw_yes_bid, 4),
                 yes_ask=round(raw_yes_ask, 4),
                 volume=volume,
+                volume_24h=volume_24h,
                 close_time=raw.get("close_time", ""),
                 category=raw.get("category", "") or "",
                 event_ticker=event_ticker,

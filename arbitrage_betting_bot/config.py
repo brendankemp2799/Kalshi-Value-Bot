@@ -194,7 +194,43 @@ MM_STALE_WIDEN_MAX_MULTIPLIER: float = 1.5   # half-spread multiplier at max sta
 # threshold: >=0 -> 198, >=1 -> 38, >=50 -> 20, >=100 -> 18, >=1000 -> 12), so
 # nearly all of the benefit comes from excluding never-traded markets at all;
 # 100 sits just past the handful-of-trades noise floor.
+#
+# Gated on KalshiMarket.volume_24h (recent FLOW), NOT .volume. `volume` is
+# max(lifetime volume, open interest) -- two lifetime-to-date stocks that never
+# decay, so a market that traded 5,000 contracts three weeks ago and nothing
+# since scored identically to one trading right now. A maker only gets filled
+# when a counterparty CROSSES, so trade arrival is the quantity that matters;
+# accumulated history and resting size are not.
+#
+# Depth was considered and rejected as the metric: of 125 live wide-spread
+# markets on 2026-08-15, 74 had two-sided depth >= 20 contracts while having
+# never traded at all (one showed 6,419 contracts resting against zero lifetime
+# volume). Depth is the supply of liquidity -- our competition -- not our
+# counterparty.
 MM_MIN_VOLUME: float = float(os.getenv("MM_MIN_VOLUME", "100"))
+
+# Stop quoting this many seconds BEFORE kickoff, and cancel anything resting.
+#
+# Nothing used to do this. The bot only SCANS pre-game (odds_fetcher discards
+# events whose commence_time has passed), but a resting MM quote does not expire
+# at kickoff -- the Kalshi market keeps trading through the game. The sequence
+# was: quote rests -> game starts -> the event drops out of mm_candidates ->
+# run_mm_tick stops seeing that ticker entirely, so it is never fill-checked or
+# cancelled -> only sweep_orphaned_quotes eventually kills it, and only once the
+# order is over an hour old. In between we sat on a two-sided quote priced off a
+# sportsbook consensus captured before kickoff, in a market now absorbing
+# play-by-play information. That is the single most toxic state this bot can be
+# in, and it was unguarded.
+#
+# Standing down BEFORE kickoff (rather than at it) matters because the ticker is
+# still an MM candidate at that point, so run_mm_tick can still see it and cancel
+# it. Once the game starts it is gone from the candidate list and unmanageable.
+# The margin covers the observed MM tick stall: ticks are ~30s normally but
+# measured gaps of 2.4 and 19 minutes occur while run_scan() blocks the loop on
+# resting GTC orders, so a margin under ~20 min can be slept through.
+MM_STOP_QUOTING_BEFORE_KICKOFF_SECONDS: int = int(
+    os.getenv("MM_STOP_QUOTING_BEFORE_KICKOFF_SECONDS", "1200")   # 20 minutes
+)
 
 # Fair-value confidence. _maybe_mm_candidate() only forwards markets the
 # DIRECTIONAL strategy already accepted on book count and disagreement -- but

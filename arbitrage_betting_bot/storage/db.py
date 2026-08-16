@@ -840,6 +840,55 @@ def log_mm_decisions(tick_id: str, entries: list[dict]) -> None:
         )
 
 
+def get_mm_pairing(is_paper: bool = False) -> list[dict]:
+    """
+    Per-ticker paired vs UNPAIRED contract counts across open market-making fills.
+
+    Market making is only near-riskless when both legs fill: a matched pair (1 YES
+    + 1 NO) costs under $1 and pays exactly $1, so the outcome doesn't matter. A
+    leg that fills alone is not market making at all — it is a naked directional
+    position wearing a market-making label, exposed to the full $1 swing.
+
+    This is not hypothetical. KXMLSGAME-26AUG19RSLDAL-RSL (reconciled 2026-08-15
+    from Kalshi's fill history) took 9 NO fills against 1 YES fill: ONE matched
+    pair worth +$0.04, and EIGHT naked contracts worth $3.84 of directional risk
+    on a market the bot never intended to have an opinion about.
+
+    Returns one dict per ticker with yes/no contract counts, matched pairs, the
+    unpaired remainder, its dollar value, and which side is naked.
+    """
+    rows = get_open_positions(is_paper=is_paper)
+    by_ticker: dict[str, dict] = {}
+    for pos in rows:
+        if pos["strategy"] != "market_making":
+            continue
+        t = pos["market_ticker"]
+        price = pos["market_price"] or 0.0
+        contracts = (pos["stake"] / price) if price else 0.0
+        slot = by_ticker.setdefault(t, {"ticker": t, "yes": 0.0, "no": 0.0,
+                                        "yes_cost": 0.0, "no_cost": 0.0})
+        slot[pos["side"]] = slot.get(pos["side"], 0.0) + contracts
+        slot[f"{pos['side']}_cost"] += pos["stake"] or 0.0
+
+    out = []
+    for t, s in by_ticker.items():
+        paired = min(s["yes"], s["no"])
+        unpaired = abs(s["yes"] - s["no"])
+        naked_side = "yes" if s["yes"] > s["no"] else ("no" if s["no"] > s["yes"] else "")
+        # Value the naked remainder at that side's average fill price.
+        avg = 0.0
+        if naked_side == "yes" and s["yes"]:
+            avg = s["yes_cost"] / s["yes"]
+        elif naked_side == "no" and s["no"]:
+            avg = s["no_cost"] / s["no"]
+        out.append({
+            "ticker": t, "yes_contracts": s["yes"], "no_contracts": s["no"],
+            "paired": paired, "unpaired": unpaired, "naked_side": naked_side,
+            "unpaired_dollars": round(unpaired * avg, 2),
+        })
+    return sorted(out, key=lambda r: -r["unpaired_dollars"])
+
+
 def get_last_mm_tick() -> list[sqlite3.Row]:
     """Every candidate from the most recent MM tick — quoted ones first, then the
     rejections. Returns [] if MM has never run (the dashboard may query before
