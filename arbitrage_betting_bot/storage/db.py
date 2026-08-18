@@ -257,6 +257,20 @@ def _migrate() -> None:
             # substitute: that is the post-fill fee classification, not the pre-trade
             # sizing assumption.
             ("maker_only", "ALTER TABLE positions ADD COLUMN maker_only INTEGER"),
+            # Stop-loss confirmation counter: consecutive checks the price has sat
+            # at/below the stop level. Reset to 0 the moment it recovers. Persisted on
+            # the row (not in memory) for the same reason peak_price is -- the bot
+            # restarts often, and risk state that resets on restart is risk state you
+            # cannot reason about.
+            ("stop_breach_count",
+             "ALTER TABLE positions ADD COLUMN stop_breach_count INTEGER NOT NULL DEFAULT 0"),
+            # Realised exit fill, and the stop level that fired. Until 2026-08-17 the
+            # exit price existed nowhere: it had to be backed out of P&L as
+            # entry*(pnl+stake)/stake, and doing that conflated the totals ramp with
+            # slippage and produced a 15c estimate where the truth was ~3c. Storing
+            # both makes exit slippage (exit_price - trigger_price) a direct read.
+            ("exit_price",    "ALTER TABLE positions ADD COLUMN exit_price REAL"),
+            ("trigger_price", "ALTER TABLE positions ADD COLUMN trigger_price REAL"),
         ]:
             if col not in existing:
                 conn.execute(ddl)
@@ -536,11 +550,25 @@ def set_peak_price(position_id: int, peak_price: float) -> None:
         )
 
 
+def set_stop_breach_count(position_id: int, count: int) -> None:
+    """
+    Record how many consecutive checks this position has sat at/below its stop level.
+    Counterpart to set_peak_price() for the stop-loss's confirmation counter; see
+    execution/risk_manager.py::evaluate_stop_loss().
+    """
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE positions SET stop_breach_count = ? WHERE id = ?",
+            (int(count or 0), position_id),
+        )
+
+
 def close_position_early(
     position_id: int,
     exit_price: float,
     reason: str = "trailing_stop",
     exit_fee: float = 0.0,
+    trigger_price: float | None = None,
 ) -> float:
     """
     Close a position via our own trade (not a natural Kalshi settlement) — e.g. a
@@ -568,10 +596,12 @@ def close_position_early(
         conn.execute(
             """
             UPDATE positions
-            SET status = 'closed', pnl = ?, settled_at = ?, close_reason = ?
+            SET status = 'closed', pnl = ?, settled_at = ?, close_reason = ?,
+                exit_price = ?, trigger_price = ?
             WHERE id = ?
             """,
-            (pnl, datetime.utcnow().isoformat(), reason, position_id),
+            (pnl, datetime.utcnow().isoformat(), reason, exit_price, trigger_price,
+             position_id),
         )
         return pnl
 

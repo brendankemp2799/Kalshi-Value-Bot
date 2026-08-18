@@ -28,24 +28,28 @@ entry) and decide whether to close it. They're symmetric and independent:
   trailing stop (and so had no risk management applied at all) were the dominant
   source of losses.
 
-      stop:  entry_price - _dynamic_stop_loss_move(pos)
+      stop:  entry_price - _stop_loss_move(pos)      [confirmed over N checks]
 
-  For non-totals bet types this is just the flat config.STOP_LOSS_MOVE. For totals
-  specifically, it's time-ramped the same way the trailing-stop arm move is — see
-  _dynamic_stop_loss_move() below — added 2026-08-13 after a real incident (position
-  #315, Baltimore/Minnesota Under 8.5) where a thin, ~24c-wide quote spike right at
-  the end of the 1st inning triggered the flat 0.20 stop on what was, in hindsight, a
-  tiny and misleading early-game sample; the game finished well over the total. A
-  totals market's price early in a game reflects far less of the full-game signal it's
-  meant to predict than a moneyline market does at the same point, so it's widened
-  (config.STOP_LOSS_MOVE_TOTALS_EARLY) near kickoff and narrows back to the flat
-  config.STOP_LOSS_MOVE by the sport's expected game duration.
+  The threshold is per bet type (config.STOP_LOSS_MOVE_BY_BET_TYPE), not flat, and
+  not time-ramped. Measured 2026-08-17: of positions that fell 20c below entry, 10.7%
+  of totals still won vs 31.8% of h2h. Since stopping beats holding exactly when the
+  exit proceeds exceed the hold-win-probability, that single fact makes a 20c stop
+  strongly correct on totals and wrong on h2h. See _stop_loss_move() and the config
+  block for the full derivation.
+
+  A trigger must also PERSIST for config.STOP_LOSS_CONFIRM_CHECKS consecutive checks
+  before the position is cut (tracked in positions.stop_breach_count, the same
+  persist-risk-state-on-the-row pattern peak_price already uses for the trailing
+  stop). This replaced the old totals-only time ramp: both exist to stop a thin
+  one-tick quote spike from closing a good position (position #315), but the ramp paid
+  for that with a wider stop across the whole early game, while a confirmation counter
+  pays ~30s of extra exposure and nothing else.
 
 The two never conflict — the trailing stop only ever triggers above entry price, the
 stop-loss only ever triggers below it.
 
 See config.TRAILING_STOP_*/config.ENABLE_TRAILING_STOP and
-config.STOP_LOSS_MOVE/config.STOP_LOSS_MOVE_TOTALS_EARLY/config.ENABLE_STOP_LOSS for
+config.STOP_LOSS_MOVE/config.STOP_LOSS_MOVE_BY_BET_TYPE/config.ENABLE_STOP_LOSS for
 the parameters and master on/off switches. Only ever call
 execute_trailing_stop()/execute_stop_loss() from the main scan loop (main.py) — never
 from the dashboard — since they can place real orders.
@@ -68,14 +72,19 @@ logger = logging.getLogger(__name__)
 class ActionKind(str, Enum):
     NONE = "none"
     UPDATE_PEAK = "update_peak"
+    UPDATE_BREACH = "update_breach"   # stop level breached, not yet confirmed
     TRIGGER_CLOSE = "trigger_close"
 
 
 @dataclass
 class Action:
     kind: ActionKind
-    peak_price: float | None = None   # set for UPDATE_PEAK
-    exit_price: float | None = None   # set for TRIGGER_CLOSE
+    peak_price: float | None = None    # set for UPDATE_PEAK
+    exit_price: float | None = None    # set for TRIGGER_CLOSE
+    breach_count: int | None = None    # set for UPDATE_BREACH
+    trigger_price: float | None = None  # set for TRIGGER_CLOSE: the level that fired,
+                                        # kept alongside the realised fill so slippage
+                                        # is measured rather than inferred
 
 
 def _achievable_exit_price(side: str, market: dict) -> float | None:
@@ -83,25 +92,36 @@ def _achievable_exit_price(side: str, market: dict) -> float | None:
     Price we could actually exit at right now, same convention as market_price:
     YES position -> yes_bid_dollars ; NO position -> 1 - yes_ask_dollars.
     Returns None if the market has no live quote on that side.
+
+    An EMPTY book quotes 0 (or, for a NO position, a yes_ask of 1) — that means "no
+    one is bidding", not "the price is zero". Returning it as a real price made every
+    stop threshold trigger at once, at an exit price of 0.00, on a position that by
+    definition could not have been sold anyway. It has never happened in production
+    (no live position has quoted below 2c) but it did silently invalidate the first
+    run of the stop-loss backtest, which is exactly how it would present live.
     """
     try:
         if side == "yes":
             bid = market.get("yes_bid_dollars")
-            return float(bid) if bid not in (None, "") else None
+            price = float(bid) if bid not in (None, "") else None
         else:
             ask = market.get("yes_ask_dollars")
-            return (1.0 - float(ask)) if ask not in (None, "") else None
+            price = (1.0 - float(ask)) if ask not in (None, "") else None
     except (TypeError, ValueError):
         return None
+
+    if price is None or price <= 0.0:
+        return None
+    return price
 
 
 def _elapsed_fraction(pos) -> float:
     """
     Fraction of the sport's expected game duration elapsed since commence_time,
     clamped to [0, 1] (pre-game and overtime/extra-innings both clamp rather than
-    extrapolate). Shared by every time-ramped threshold in this module (trailing-
-    stop arm move, totals stop-loss move) so they all treat "how far into the game
-    are we" the same way.
+    extrapolate). Used only by _dynamic_arm_move() now — the totals stop-loss ramp
+    that also called it was removed on 2026-08-17 in favour of a per-bet-type
+    threshold plus a confirmation counter (see _stop_loss_move).
 
     Falls back to 0.0 (i.e. "just started" — the safer, more tolerant end for every
     current caller) if `commence_time` is missing or unparseable, same fallback
@@ -141,30 +161,29 @@ def _dynamic_arm_move(pos) -> float:
     return early - elapsed_fraction * (early - late)
 
 
-def _dynamic_stop_loss_move(pos) -> float:
+def _stop_loss_move(pos) -> float:
     """
-    Stop-loss threshold, widened early in a game for totals markets specifically —
-    all other bet types keep the flat config.STOP_LOSS_MOVE. Added 2026-08-13 after
-    a real incident (position #315, Baltimore/Minnesota Under 8.5): a thin, ~24c-wide
-    quote spike right at the end of the 1st inning triggered the flat 0.20 stop; the
-    game went on to finish well over the total (12 runs). A totals market's price
-    early in a game reflects a very small sample (often one inning/quarter) relative
-    to the full-game outcome it's meant to predict, so it's structurally noisier than
-    a moneyline market at the same point in time — same reasoning as
-    _dynamic_arm_move's ramp, applied to the stop-loss's totals case specifically
-    rather than to every bet type, since that's the only case this incident (and the
-    reasoning behind it) actually covers. Linear ramp between
-    config.STOP_LOSS_MOVE_TOTALS_EARLY and config.STOP_LOSS_MOVE (reused as the
-    "late" bound, unchanged from its existing flat value).
+    Adverse move that triggers a cut, per bet type. Not time-dependent (unlike
+    _dynamic_arm_move above, and unlike the totals ramp this replaced on 2026-08-17).
+
+    WHY THIS IS PER BET TYPE. Stopping out realises `s` per contract with certainty;
+    holding is worth `p`, the probability the position still wins from here. So
+    stopping beats holding exactly when `s > p` — the threshold question is really an
+    empirical one about how often a position recovers from a given adverse move.
+    Measured across every settled position's real candlestick path (n=92):
+
+        drop    totals: s      p      s-p        h2h: s      p      s-p
+        0.10            0.335  0.286  +0.050          0.284  0.367  -0.082
+        0.20            0.230  0.107  +0.123          0.220  0.318  -0.099
+        0.30            0.134  0.040  +0.094          0.154  0.143  +0.011
+
+    Totals says STOP at every threshold tested (a plateau, i.e. a real effect rather
+    than a fitted point); h2h says HOLD at every threshold but one knife-edge. Same
+    base win rate (44.9% vs 47.4%), opposite behaviour after a move — see the config
+    block for the accumulation-vs-mean-reversion mechanism.
     """
     bet_type = pos["bet_type"] if "bet_type" in pos.keys() else None
-    if bet_type != "totals":
-        return config.STOP_LOSS_MOVE
-
-    elapsed_fraction = _elapsed_fraction(pos)
-    early = config.STOP_LOSS_MOVE_TOTALS_EARLY
-    late = config.STOP_LOSS_MOVE
-    return early - elapsed_fraction * (early - late)
+    return config.STOP_LOSS_MOVE_BY_BET_TYPE.get(bet_type, config.STOP_LOSS_MOVE)
 
 
 def evaluate_trailing_stop(pos, market: dict) -> Action:
@@ -199,25 +218,43 @@ def evaluate_trailing_stop(pos, market: dict) -> Action:
 def evaluate_stop_loss(pos, market: dict) -> Action:
     """
     Pure decision function — no side effects, no I/O. `pos` is a positions row
-    (sqlite3.Row) with at least: side, market_price, bet_type, commence_time, sport.
-    Unlike evaluate_trailing_stop(), this is stateless: no peak tracking, just a
-    fixed offset from entry — except for totals markets early in a game, where the
-    offset itself is time-ramped; see _dynamic_stop_loss_move().
+    (sqlite3.Row) with at least: side, market_price, bet_type, stop_breach_count.
+
+    Carries one piece of state, positions.stop_breach_count: the number of CONSECUTIVE
+    checks the price has sat at/below the stop level. The position is only cut once
+    that reaches config.STOP_LOSS_CONFIRM_CHECKS; any check back above the level
+    resets it to 0. A single bad print therefore cannot close a position, which is what
+    makes the tight totals stop safe (see the module docstring and position #315).
+
+    Returning UPDATE_BREACH rather than mutating `pos` keeps this pure and testable,
+    exactly like UPDATE_PEAK in evaluate_trailing_stop().
     """
     side = (pos["side"] or "yes").lower()
     entry_price = pos["market_price"]
+    breaches = (pos["stop_breach_count"] or 0) if "stop_breach_count" in pos.keys() else 0
 
     achievable = _achievable_exit_price(side, market)
     if achievable is None:
+        # No quote is not evidence of recovery, so don't reset the counter — but don't
+        # advance it either. A stop we cannot execute is not a stop.
         return Action(kind=ActionKind.NONE)
 
     _EPS = 1e-9
 
-    stop_level = entry_price - _dynamic_stop_loss_move(pos)
-    if achievable <= stop_level + _EPS:
-        return Action(kind=ActionKind.TRIGGER_CLOSE, exit_price=achievable)
+    stop_level = entry_price - _stop_loss_move(pos)
+    if achievable > stop_level + _EPS:
+        if breaches:
+            return Action(kind=ActionKind.UPDATE_BREACH, breach_count=0)
+        return Action(kind=ActionKind.NONE)
 
-    return Action(kind=ActionKind.NONE)
+    confirmed = breaches + 1
+    if confirmed >= max(1, config.STOP_LOSS_CONFIRM_CHECKS):
+        return Action(
+            kind=ActionKind.TRIGGER_CLOSE,
+            exit_price=achievable,
+            trigger_price=stop_level,
+        )
+    return Action(kind=ActionKind.UPDATE_BREACH, breach_count=confirmed)
 
 
 def _fetch_live_contract_count(ticker: str) -> float | None:
@@ -237,7 +274,8 @@ def _fetch_live_contract_count(ticker: str) -> float | None:
         return None
 
 
-def _execute_close(pos, exit_price: float, is_paper: bool, reason: str) -> bool:
+def _execute_close(pos, exit_price: float, is_paper: bool, reason: str,
+                   trigger_price: float | None = None) -> bool:
     """
     Shared TRIGGER_CLOSE execution, used by both execute_trailing_stop() and
     execute_stop_loss() — fetch live contract count, close via IOC, record P&L under
@@ -256,7 +294,8 @@ def _execute_close(pos, exit_price: float, is_paper: bool, reason: str) -> bool:
     ticker = pos["market_ticker"]
 
     if is_paper:
-        pnl = close_position_early(pos_id, exit_price, reason=reason)
+        pnl = close_position_early(pos_id, exit_price, reason=reason,
+                                   trigger_price=trigger_price)
         logger.info(
             "[PAPER] %s triggered: position #%d closed @ %.4f  P&L=$%.2f",
             reason, pos_id, exit_price, pnl,
@@ -294,7 +333,11 @@ def _execute_close(pos, exit_price: float, is_paper: bool, reason: str) -> bool:
         )
         return False
 
-    pnl = close_position_early(pos_id, fill_price, reason=reason, exit_fee=exit_fee)
+    # fill_price is what Kalshi actually gave us; trigger_price is the level that
+    # fired. Storing BOTH is the point -- slippage has had to be backed out of P&L
+    # until now, and that inference was wrong by 12c the first time it was tried.
+    pnl = close_position_early(pos_id, fill_price, reason=reason, exit_fee=exit_fee,
+                               trigger_price=trigger_price)
     logger.info(
         "[LIVE] %s triggered: position #%d closed %g contracts @ %.4f  "
         "P&L=$%.2f  (order_id=%s, exit_fee=$%.4f)",
@@ -317,15 +360,26 @@ def execute_trailing_stop(pos, action: Action, is_paper: bool) -> bool:
         set_peak_price(pos["id"], action.peak_price)
         return False
 
-    return _execute_close(pos, action.exit_price, is_paper, reason="trailing_stop")
+    return _execute_close(pos, action.exit_price, is_paper, reason="trailing_stop",
+                          trigger_price=action.trigger_price)
 
 
 def execute_stop_loss(pos, action: Action, is_paper: bool) -> bool:
     """
-    Apply the decision from evaluate_stop_loss(): close the position if triggered.
-    Returns True only when the position was actually closed this call.
+    Apply the decision from evaluate_stop_loss(): advance/reset the breach counter, or
+    close the position once the breach is confirmed. Returns True only when the
+    position was actually closed this call.
     """
+    from storage.db import set_stop_breach_count
+
     if action.kind == ActionKind.NONE:
         return False
 
-    return _execute_close(pos, action.exit_price, is_paper, reason="stop_loss")
+    if action.kind == ActionKind.UPDATE_BREACH:
+        set_stop_breach_count(pos["id"], action.breach_count)
+        return False
+
+    return _execute_close(
+        pos, action.exit_price, is_paper, reason="stop_loss",
+        trigger_price=action.trigger_price,
+    )

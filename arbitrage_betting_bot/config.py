@@ -122,19 +122,45 @@ POSITION_MONITOR_INTERVAL_SECONDS: int = int(os.getenv("POSITION_MONITOR_INTERVA
 # not in a single tick, so a polling check has time to catch them.
 # Master switch — defaults off. Validate in paper mode before enabling live.
 ENABLE_STOP_LOSS: bool = os.getenv("ENABLE_STOP_LOSS", "false").lower() == "true"
-STOP_LOSS_MOVE: float = 0.20   # adverse move (price units) from entry that triggers a cut
-# Totals-only, time-ramped widening of the stop above — added 2026-08-13 after a real
-# incident (position #315, Baltimore/Minnesota Under 8.5): a thin, ~24c-wide quote
-# spike right at the end of the 1st inning triggered the flat 0.20 stop; the game went
-# on to finish well over the total (12 runs). A totals market's price early in a game
-# reflects a much smaller sample (often one inning/quarter) of the full-game outcome
-# it's meant to predict than a moneyline market does at the same point, making it
-# structurally noisier early on — see execution/risk_manager.py::_dynamic_stop_loss_move()
-# for the ramp (ramps down to the flat STOP_LOSS_MOVE above by the sport's expected
-# game duration, config.SPORT_EXPECTED_DURATION_MINUTES, same mechanism the trailing
-# stop's arm move already uses). Not applied to h2h/spread — this incident and the
-# reasoning behind it are specific to totals.
-STOP_LOSS_MOVE_TOTALS_EARLY: float = 0.35
+# The threshold is PER BET TYPE, because the two books behave nothing alike after an
+# adverse move. Measured 2026-08-17 (research/experiments/2026-08-17-stop-loss-by-bet-
+# type.md) by replaying every settled position's real 1-minute candlestick path:
+#
+#   of positions that fell 20c below entry, how many still WON?
+#     totals   3/28 = 10.7%   (base rate 44.9%)
+#     h2h      7/22 = 31.8%   (base rate 47.4%)
+#
+# Stopping is correct iff the exit proceeds exceed the win probability of holding
+# (s > p; see _stop_loss_move()). At a 20c drop that is +0.123 for totals and -0.099
+# for h2h — i.e. the SAME threshold is strongly right on one book and wrong on the
+# other. There is a mechanism: a totals market resolves by accumulation (runs/goals
+# only ever get added, the clock runs one way), so once it is 20c underwater the
+# innings needed to rescue it have physically been spent. An h2h market has no such
+# ratchet — a 20c move means a lead changed hands, and leads change hands again.
+STOP_LOSS_MOVE: float = 0.30   # h2h/spread, and the default for any unlisted bet type
+STOP_LOSS_MOVE_BY_BET_TYPE: dict[str, float] = {
+    "totals": 0.20,
+}
+# 0.30 for h2h is also the MINIMUM-REGRET choice, not just the best point estimate:
+# across thresholds the h2h s-p margin runs -0.082 (0.10), -0.099 (0.20), -0.041
+# (0.25), +0.011 (0.30), -0.053 (0.35). 0.30 is where s ~= p, so it is the threshold
+# least sensitive to the recovery rate being mis-measured — which matters, because
+# that rate rests on n=22.
+#
+# Replaced STOP_LOSS_MOVE_TOTALS_EARLY (a 0.35 -> 0.20 time ramp, 2026-08-12 .. 08-17).
+# The ramp was added after position #315 (Baltimore/Minnesota Under 8.5), where a thin
+# ~24c-wide quote spike at the end of the 1st inning triggered the flat 0.20 stop on a
+# game that finished well over. That incident was real, but the ramp was the wrong fix
+# for it: it widened the stop for the ENTIRE early game to defend against a
+# single-tick quote artifact, and measured out at -5.4pp of equal-weighted ROI on
+# totals (P(ramp better) = 9%). STOP_LOSS_CONFIRM_CHECKS below defends against the
+# artifact directly instead, letting totals keep the tight stop the data supports.
+#
+# Number of CONSECUTIVE checks the price must sit at/below the stop level before the
+# position is cut. At POSITION_MONITOR_INTERVAL_SECONDS=30 this costs at most ~30s of
+# extra adverse exposure; in exchange, no single bad quote can close a position. This
+# is what makes the tight totals stop safe — #315 was one spike, not a trend.
+STOP_LOSS_CONFIRM_CHECKS: int = 2
 
 # ── Market Making (passive two-sided quoting) ───────────────────────────────────
 # Unified with the directional strategy, not a separate bot: for any matched market
