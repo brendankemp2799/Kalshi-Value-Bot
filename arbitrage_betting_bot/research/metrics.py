@@ -25,6 +25,7 @@ import json
 import math
 import os
 import sys
+from collections import Counter
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -375,6 +376,7 @@ def summary_report(is_paper: bool = False) -> dict:
         "fees_and_fills": fee_and_fill_stats(positions),
         "scanned_candidates": scanned_candidates_summary(),
         "market_making": mm_health(is_paper=is_paper),
+        "ambiguous_matches": ambiguous_match_report(),
         "sample_size_warning": (
             f"n_settled={n} — most statistics above are low-confidence below ~n=30. "
             "Treat single-digit-n breakdowns as anecdotes, not findings."
@@ -394,6 +396,7 @@ def check_thresholds() -> Path | None:
     FINDINGS_DIR.mkdir(parents=True, exist_ok=True)
     current = summary_report(is_paper=False)
     _write_mm_status(current.get("market_making") or {})
+    _write_ambiguous_status(current.get("ambiguous_matches") or {})
 
     previous = None
     if SNAPSHOT_PATH.exists():
@@ -430,7 +433,99 @@ def check_thresholds() -> Path | None:
     return trigger_path
 
 
+def ambiguous_match_report() -> dict:
+    """
+    Markets the bot refused to bet because it could not tell which team they cover.
+
+    Each of these is a LOST OPPORTUNITY the matcher should eventually handle, not a
+    solved problem — the refusal only prevents the bad outcome (position #930 bought
+    the opposite team), it doesn't recover the good one. Surfaced in the daily check
+    so they get fixed rather than silently accumulating.
+    """
+    from storage.db import get_ambiguous_matches
+
+    try:
+        rows = [dict(r) for r in get_ambiguous_matches()]
+    except Exception:  # table may predate the migration on an older DB copy
+        return {}
+
+    if not rows:
+        return {"open_count": 0, "total_occurrences": 0, "cases": []}
+
+    rows.sort(key=lambda r: -(r.get("occurrences") or 0))
+    return {
+        "open_count": len(rows),
+        "total_occurrences": sum(r.get("occurrences") or 0 for r in rows),
+        "by_context": Counter(r.get("context") for r in rows),
+        "cases": [
+            {
+                "id": r["id"],
+                "kalshi_name": r["kalshi_name"],
+                "matchup": f"{r['away_team']} @ {r['home_team']}",
+                "ticker": r["kalshi_ticker"],
+                "context": r["context"],
+                "sport": r.get("sport"),
+                "scores": [r.get("home_score"), r.get("away_score")],
+                "occurrences": r.get("occurrences"),
+                "first_seen": r.get("first_seen"),
+                "last_seen": r.get("last_seen"),
+            }
+            for r in rows[:25]
+        ],
+    }
+
+
 MM_STATUS_PATH = FINDINGS_DIR / "MM_STATUS.md"
+AMBIGUOUS_STATUS_PATH = FINDINGS_DIR / "AMBIGUOUS_MATCHES.md"
+
+
+def _write_ambiguous_status(a: dict) -> None:
+    """Overwrite findings/AMBIGUOUS_MATCHES.md with the open backlog. Rewritten in
+    full each run, same convention as MM_STATUS.md: the file is the CURRENT list of
+    things to fix, not a log to scroll."""
+    if not a:
+        return
+    lines = [
+        "# Ambiguous team matches (bets we refused)",
+        "",
+        f"_Updated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC_",
+        "",
+    ]
+    if not a.get("open_count"):
+        lines += [
+            "**None outstanding.** No market has been skipped for an unresolvable "
+            "team name.",
+            "",
+            "This is the good state, but it is not proof the matcher is correct — it "
+            "only means nothing has TIED. A wrong-but-unambiguous match would not "
+            "appear here.",
+        ]
+        AMBIGUOUS_STATUS_PATH.write_text("\n".join(lines))
+        return
+
+    lines += [
+        f"**{a['open_count']} unresolved**, hit {a['total_occurrences']} times total.",
+        "",
+        "Each row is a market we could have priced but refused, because the Kalshi "
+        "team name matched both clubs equally (or neither). Fixing one usually means "
+        "teaching the matcher an alias — e.g. `WS -> White Sox`.",
+        "",
+        "| Kalshi name | matchup | scores (H/A) | hits | last seen | ticker |",
+        "|---|---|---|---:|---|---|",
+    ]
+    for c in a.get("cases", []):
+        h, aw = c.get("scores") or [None, None]
+        sc = f"{h:g}/{aw:g}" if h is not None and aw is not None else "—"
+        lines.append(
+            f"| `{c['kalshi_name']}` | {c['matchup']} | {sc} | {c['occurrences']} | "
+            f"{(c.get('last_seen') or '')[:16]} | `{c['ticker']}` |"
+        )
+    lines += [
+        "",
+        "Mark one handled with `db.resolve_ambiguous_match(<id>)` once the matcher "
+        "resolves it.",
+    ]
+    AMBIGUOUS_STATUS_PATH.write_text("\n".join(lines))
 
 
 def _write_mm_status(h: dict) -> None:

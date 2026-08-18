@@ -271,6 +271,18 @@ def match_events(
                     "which team the YES side covers",
                     km.ticker, km.yes_team, event.home_team, event.away_team, home_score,
                 )
+                from storage.db import log_ambiguous_match
+                log_ambiguous_match(
+                    context="h2h_yes_team",
+                    kalshi_ticker=km.ticker,
+                    kalshi_name=km.yes_team or "",
+                    home_team=event.home_team,
+                    away_team=event.away_team,
+                    sport=event.sport_key,
+                    bet_type="h2h",
+                    home_score=home_score,
+                    away_score=away_score,
+                )
                 continue
 
             if home_score >= threshold and home_score >= away_score:

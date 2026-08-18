@@ -187,6 +187,36 @@ def init_db() -> None:
                 reason          TEXT NOT NULL
             );
 
+            -- Markets skipped because we could not tell WHICH TEAM they refer to.
+            -- Added 2026-08-18 after position #930: "Chicago WS" scored identically
+            -- against both Chicago Cubs and Chicago White Sox, the tie-break silently
+            -- picked home, and the bot bought the opposite team (see
+            -- core/value_detector.py::_sb_team_match). We now refuse those matches --
+            -- but a refusal is a LOST OPPORTUNITY, not a fix, so each one is recorded
+            -- here to be resolved later (usually by teaching the matcher an alias).
+            --
+            -- Deduplicated on (context, kalshi_ticker, kalshi_name) with a counter,
+            -- because the same fixture is rescanned every cycle: a single ambiguous
+            -- game would otherwise write ~100 identical rows a day. first_seen/
+            -- last_seen/occurrences give the same information in one row.
+            CREATE TABLE IF NOT EXISTS ambiguous_match_log (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                context       TEXT NOT NULL,   -- spread_covering_team | h2h_yes_team
+                kalshi_ticker TEXT NOT NULL,
+                kalshi_name   TEXT NOT NULL,   -- the name we could not resolve
+                sport         TEXT,
+                bet_type      TEXT,
+                home_team     TEXT NOT NULL,
+                away_team     TEXT NOT NULL,
+                home_score    REAL,            -- what each side scored, so a fix can
+                away_score    REAL,            -- be checked against the real numbers
+                first_seen    TEXT NOT NULL,
+                last_seen     TEXT NOT NULL,
+                occurrences   INTEGER NOT NULL DEFAULT 1,
+                resolved      INTEGER NOT NULL DEFAULT 0,  -- set once the matcher handles it
+                UNIQUE(context, kalshi_ticker, kalshi_name)
+            );
+
             -- One row PER DAY of market-making activity, incremented on every tick.
             -- mm_decision_log deliberately holds only the latest tick, which answers
             -- "what is MM doing right now" but cannot answer "has MM quoted at all
@@ -858,6 +888,73 @@ _MM_DECISION_COLUMNS = (
     "consensus_std", "yes_quote", "no_quote", "net_per_pair", "clip_dollars",
     "contracts", "action", "reason",
 )
+
+
+def log_ambiguous_match(
+    context: str,
+    kalshi_ticker: str,
+    kalshi_name: str,
+    home_team: str,
+    away_team: str,
+    sport: str | None = None,
+    bet_type: str | None = None,
+    home_score: float | None = None,
+    away_score: float | None = None,
+) -> None:
+    """
+    Record a market we refused to bet because we could not tell which team it covers.
+
+    Upserts on (context, kalshi_ticker, kalshi_name): the first sighting inserts, every
+    later one bumps last_seen and occurrences. The same fixture is rescanned every
+    cycle, so without that a single ambiguous game writes ~100 rows a day and the
+    table stops being readable.
+
+    Never raises. This is diagnostics on a live trading path -- a logging failure must
+    not take down a scan. See the ambiguous_match_log DDL for why these are tracked.
+    """
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        with get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO ambiguous_match_log
+                    (context, kalshi_ticker, kalshi_name, sport, bet_type,
+                     home_team, away_team, home_score, away_score,
+                     first_seen, last_seen, occurrences)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                ON CONFLICT(context, kalshi_ticker, kalshi_name) DO UPDATE SET
+                    last_seen   = excluded.last_seen,
+                    occurrences = occurrences + 1,
+                    home_score  = COALESCE(excluded.home_score, home_score),
+                    away_score  = COALESCE(excluded.away_score, away_score)
+                """,
+                (context, kalshi_ticker, kalshi_name, sport, bet_type,
+                 home_team, away_team, home_score, away_score, now, now),
+            )
+    except Exception as e:  # pragma: no cover - diagnostics must never break a scan
+        logger.warning("Could not log ambiguous match for %s: %s", kalshi_ticker, e)
+
+
+def get_ambiguous_matches(include_resolved: bool = False,
+                          days: int | None = None) -> list[sqlite3.Row]:
+    """Ambiguous team matches still awaiting a matcher fix, most recent first."""
+    sql = ("SELECT * FROM ambiguous_match_log "
+           "WHERE (? OR resolved = 0)")
+    params: list = [1 if include_resolved else 0]
+    if days is not None:
+        sql += " AND last_seen >= ?"
+        params.append(
+            (datetime.now(timezone.utc) - timedelta(days=days)).isoformat())
+    sql += " ORDER BY last_seen DESC"
+    with get_connection() as conn:
+        return conn.execute(sql, params).fetchall()
+
+
+def resolve_ambiguous_match(match_id: int) -> None:
+    """Mark one logged ambiguity as handled, so it drops out of the open list."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE ambiguous_match_log SET resolved = 1 WHERE id = ?", (match_id,))
 
 
 def log_mm_decisions(tick_id: str, entries: list[dict]) -> None:

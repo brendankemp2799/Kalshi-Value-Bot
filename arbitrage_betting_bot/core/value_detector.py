@@ -703,6 +703,25 @@ def _sb_team_match(kalshi_name: str, home: str, away: str) -> str | None:
     produced the third-largest position ever placed. Returning None and skipping the
     market is always cheaper than guessing.
     """
+    home_score, away_score = _sb_team_scores(kalshi_name, home, away)
+
+    # No signal at all -- the Kalshi name resembles neither side.
+    if home_score == 0 and away_score == 0:
+        return None
+    # Tied -- genuinely cannot tell which club this market covers.
+    if home_score == away_score:
+        return None
+    return home if home_score > away_score else away
+
+
+def _sb_team_scores(kalshi_name: str, home: str, away: str) -> tuple[int, int]:
+    """
+    (home_score, away_score) for a Kalshi team name against both sportsbook names.
+
+    Split out from _sb_team_match so a rejection can be LOGGED with the numbers that
+    caused it — "both scored 25" is what makes an ambiguity fixable later, whereas
+    "ambiguous" alone just says it happened. See storage/db.py::log_ambiguous_match.
+    """
     def _score(sb: str) -> int:
         kl = kalshi_name.lower()
         sl = sb.lower()
@@ -715,15 +734,7 @@ def _sb_team_match(kalshi_name: str, home: str, away: str) -> str | None:
         s_words = {w for w in sl.split() if len(w) > 1}
         return len(k_words & s_words) * 25
 
-    home_score, away_score = _score(home), _score(away)
-
-    # No signal at all -- the Kalshi name resembles neither side.
-    if home_score == 0 and away_score == 0:
-        return None
-    # Tied -- genuinely cannot tell which club this market covers.
-    if home_score == away_score:
-        return None
-    return home if home_score > away_score else away
+    return _score(home), _score(away)
 
 
 def _detect_spread(me, event, km, min_edge, opportunities, scan_log, mm_candidates=None):
@@ -751,6 +762,21 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log, mm_candidat
         logger.warning("Ambiguous spread team for %s — %s", km.ticker, reason)
         _log(scan_log, me, km.yes_team or "Spread", None, None, 0, 0.0, None,
              "ambiguous_team", reason, "yes")
+        # Durable record: a refusal is a lost opportunity, not a fix. Tracked so the
+        # matcher can be taught these names later -- see storage/db.py.
+        from storage.db import log_ambiguous_match
+        hs, as_ = _sb_team_scores(km.yes_team or "", event.home_team, event.away_team)
+        log_ambiguous_match(
+            context="spread_covering_team",
+            kalshi_ticker=km.ticker,
+            kalshi_name=km.yes_team or "",
+            home_team=event.home_team,
+            away_team=event.away_team,
+            sport=event.sport_key,
+            bet_type="spread",
+            home_score=hs,
+            away_score=as_,
+        )
         return
 
     label = f"{covering_team} {km.threshold:+.1f}"
