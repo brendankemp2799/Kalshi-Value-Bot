@@ -261,6 +261,18 @@ def match_events(
             home_score = _team_score(event.home_team, km.yes_team)
             away_score = _team_score(event.away_team, km.yes_team)
 
+            # Both sides fit equally well: we cannot tell which team the YES side
+            # covers, and picking one silently (the `>=` below favours home) is how
+            # a same-city matchup ends up bet on the wrong club. Same failure as
+            # value_detector._sb_team_match(); skip rather than guess.
+            if home_score == away_score and home_score >= threshold:
+                logger.warning(
+                    "Skip %s — '%s' matches %s and %s equally (%.1f); cannot tell "
+                    "which team the YES side covers",
+                    km.ticker, km.yes_team, event.home_team, event.away_team, home_score,
+                )
+                continue
+
             if home_score >= threshold and home_score >= away_score:
                 if km.no_team:
                     cross = _team_score(event.away_team, km.no_team)

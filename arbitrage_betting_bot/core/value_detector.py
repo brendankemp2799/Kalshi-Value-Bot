@@ -678,11 +678,30 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidat
 
 # ── Spread ────────────────────────────────────────────────────────────────────
 
-def _sb_team_match(kalshi_name: str, home: str, away: str) -> str:
+def _sb_team_match(kalshi_name: str, home: str, away: str) -> str | None:
     """
-    Return the sportsbook team name (home or away) that best matches the
-    Kalshi covering-team name. Kalshi names are often abbreviated or shortened
-    (e.g. "Minnesota" vs "Minnesota Twins"), so we use word-overlap scoring.
+    Return the sportsbook team name (home or away) that best matches the Kalshi
+    covering-team name, or None when the answer is AMBIGUOUS.
+
+    Kalshi names are often abbreviated or shortened ("Minnesota" vs "Minnesota
+    Twins"), so this uses word-overlap scoring. The critical case is when both
+    sportsbook names score the SAME -- which happens whenever the two clubs share a
+    city and Kalshi abbreviates the part that distinguishes them:
+
+        kalshi "Chicago WS" vs home "Chicago Cubs"      -> {chicago} -> 25
+        kalshi "Chicago WS" vs away "Chicago White Sox" -> {chicago} -> 25
+
+    ("WS" matches neither "white" nor "sox" as a whole word.) This used to resolve
+    with `home if score(home) >= score(away) else away`, i.e. a silent coin-flip that
+    always picked HOME. On 2026-08-18 that bought 19 contracts of "Chicago WS wins by
+    over 1.5 runs" while believing it was "Chicago Cubs -1.5" -- the opposite team.
+
+    The damage is not just a mislabelled bet. The returned name is what
+    consensus_stats() looks up, so a wrong answer prices ONE team's cover
+    probability against the OTHER team's market price. That produced a fake 12.2%
+    edge, and Kelly sizes hardest on the largest edges, so the bad match also
+    produced the third-largest position ever placed. Returning None and skipping the
+    market is always cheaper than guessing.
     """
     def _score(sb: str) -> int:
         kl = kalshi_name.lower()
@@ -696,7 +715,15 @@ def _sb_team_match(kalshi_name: str, home: str, away: str) -> str:
         s_words = {w for w in sl.split() if len(w) > 1}
         return len(k_words & s_words) * 25
 
-    return home if _score(home) >= _score(away) else away
+    home_score, away_score = _score(home), _score(away)
+
+    # No signal at all -- the Kalshi name resembles neither side.
+    if home_score == 0 and away_score == 0:
+        return None
+    # Tied -- genuinely cannot tell which club this market covers.
+    if home_score == away_score:
+        return None
+    return home if home_score > away_score else away
 
 
 def _detect_spread(me, event, km, min_edge, opportunities, scan_log, mm_candidates=None):
@@ -714,6 +741,17 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log, mm_candidat
     # Resolve Kalshi team name (may be shortened) to the sportsbook's canonical name
     # so that consensus_stats can match it via exact string comparison.
     covering_team = _sb_team_match(km.yes_team, event.home_team, event.away_team)
+    if covering_team is None:
+        # Ambiguous -- typically a same-city matchup where Kalshi abbreviates the
+        # distinguishing part of the name ("Chicago WS" against Cubs vs White Sox).
+        # Guessing here prices one team's consensus against the other team's market,
+        # which manufactures a large fake edge; skip instead. See _sb_team_match().
+        reason = (f"Cannot tell which team '{km.yes_team}' covers "
+                  f"({event.away_team} @ {event.home_team})")
+        logger.warning("Ambiguous spread team for %s — %s", km.ticker, reason)
+        _log(scan_log, me, km.yes_team or "Spread", None, None, 0, 0.0, None,
+             "ambiguous_team", reason, "yes")
+        return
 
     label = f"{covering_team} {km.threshold:+.1f}"
     consensus, book_count, std_dev = consensus_stats(
