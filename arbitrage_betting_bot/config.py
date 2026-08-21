@@ -581,9 +581,15 @@ def quality_filters(bet_type: str, is_draw: bool = False) -> dict:
 # maps to it -- otherwise wiring up the BTTS series later would silently do nothing.
 # Note the soccer TIE market is bet_type "h2h" (it is distinguished by
 # kalshi_outcome == "tie", not by bet_type), so "draw" is deliberately NOT a value here.
+# "spread" removed from the default on 2026-08-21, alongside dropping `spreads` from
+# SPORT_MARKETS. The two must move together: without spread ODDS there is nothing to
+# build a consensus from, so every matched spread market logged `no_consensus` -- 82
+# per scan, ~2,600 rows/day of pure noise into book_probability_log, the table that
+# OOM-killed the daily cron once already. Gating here skips them before they are
+# evaluated at all. Re-enable BOTH to bring spreads back.
 ENABLED_BET_TYPES: set[str] = {
     t.strip().lower()
-    for t in os.getenv("ENABLED_BET_TYPES", "h2h,totals,spread,btts").split(",")
+    for t in os.getenv("ENABLED_BET_TYPES", "h2h,totals,btts").split(",")
     if t.strip()
 }
 
