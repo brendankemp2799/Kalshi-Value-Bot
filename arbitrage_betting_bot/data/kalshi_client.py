@@ -54,10 +54,23 @@ _SPORT_TO_SERIES: dict[str, list[str]] = {
     "soccer_uefa_champs_league": ["KXUCLGAME", "KXUCLTOTAL"],
     # Added 2026-08-21; every ticker verified live against Kalshi before wiring.
     "americanfootball_nfl":      ["KXNFLGAME", "KXNFLTOTAL"],
-    "soccer_spain_la_liga":      ["KXLALIGAGAME", "KXLALIGATOTAL"],
-    "soccer_italy_serie_a":      ["KXSERIEAGAME", "KXSERIEATOTAL"],
-    "soccer_france_ligue_one":   ["KXLIGUE1GAME", "KXLIGUE1TOTAL"],
+    "soccer_spain_la_liga":      ["KXLALIGAGAME", "KXLALIGATOTAL", "KXLALIGABTTS"],
+    "soccer_italy_serie_a":      ["KXSERIEAGAME", "KXSERIEATOTAL", "KXSERIEABTTS"],
+    "soccer_france_ligue_one":   ["KXLIGUE1GAME", "KXLIGUE1TOTAL", "KXLIGUE1BTTS"],
 }
+# Props added 2026-08-21, chosen by MEASURED tradability against our own
+# max_kalshi_spread=0.05 plus a volume floor -- not by what exists:
+#
+#   KXEPLBTTS      9/11 tradable (82%)     KXMLBRFI      22/44 (50%)
+#   KXLALIGABTTS  10/15 (67%)              KXMLSBTTS      7/15 (47%)
+#   KXSERIEABTTS   7/11 (64%)              KXLIGUE1BTTS   4/10 (40%)
+#
+# Every first-half variant was measured at 0-5% tradable (KXEPL1HTOTAL 0/24,
+# KXSERIEA1HTOTAL 0/24, KXMLS1HBTTS 0/13, KXEPL1HSCORE 0/112) and is deliberately
+# excluded -- Kalshi lists them but nobody trades them.
+_SPORT_TO_SERIES["baseball_mlb"].append("KXMLBRFI")
+_SPORT_TO_SERIES["soccer_usa_mls"].append("KXMLSBTTS")
+_SPORT_TO_SERIES["soccer_epl"].append("KXEPLBTTS")
 
 # Soccer H2H series have 3 outcomes (home/away/draw), so we keep each team's
 # market separately instead of deduplicating to one per event.
@@ -78,6 +91,21 @@ _SERIES_TO_BET_TYPE: dict[str, str] = {
     "KXLIGUE1TOTAL":  "totals",
     # SPREAD entries removed alongside the series above -- see _SPORT_TO_SERIES.
     # The parsing/detection code still handles bet_type "spread" if it returns.
+    "KXEPLBTTS":      "btts",
+    "KXMLSBTTS":      "btts",
+    "KXLALIGABTTS":   "btts",
+    "KXSERIEABTTS":   "btts",
+    "KXLIGUE1BTTS":   "btts",
+    "KXMLBRFI":       "rfi",     # "a run scores in the 1st inning" -- binary yes/no
+}
+
+# Series whose MARKET title carries no team names, so the matcher cannot work from it.
+# A BTTS market is titled "Both Teams To Score"; only its EVENT is titled "Crystal
+# Palace vs Manchester City: BTTS". For these we substitute the event title, fetched
+# separately (Kalshi endpoints are free/unmetered). KXMLBRFI does NOT need this -- its
+# market title is already "Atlanta vs Milwaukee First Inning Run?".
+_SERIES_NEEDS_EVENT_TITLE: set[str] = {
+    "KXEPLBTTS", "KXMLSBTTS", "KXLALIGABTTS", "KXSERIEABTTS", "KXLIGUE1BTTS",
 }
 
 
@@ -374,6 +402,37 @@ class KalshiClient:
                 pass
         return None
 
+    def _fetch_series_event_titles(self, series_ticker: str) -> dict[str, str]:
+        """
+        event_ticker -> event title, for series whose MARKET titles omit the teams.
+
+        A BTTS market is titled "Both Teams To Score" for every fixture; the teams only
+        appear on its event ("Crystal Palace vs Manchester City: BTTS"). Without this
+        the matcher has nothing to match on. Kalshi endpoints are free and unmetered,
+        so this costs nothing but a round trip. Returns {} on failure -- callers then
+        fall back to the market title, which simply fails to match, rather than
+        crashing the scan.
+        """
+        out: dict[str, str] = {}
+        cursor = None
+        try:
+            while True:
+                params: dict = {"series_ticker": series_ticker, "status": "open",
+                                "limit": 200}
+                if cursor:
+                    params["cursor"] = cursor
+                data = self._get("/events", params)
+                for e in data.get("events", []):
+                    t = e.get("title") or ""
+                    if t:
+                        out[e.get("event_ticker", "")] = t
+                cursor = data.get("cursor")
+                if not cursor:
+                    break
+        except Exception as e:
+            logger.warning("Could not fetch event titles for %s: %s", series_ticker, e)
+        return out
+
     def _fetch_series_markets(self, series_ticker: str) -> list[dict]:
         """
         Fetch all open markets for one Kalshi series (paginated).
@@ -475,7 +534,15 @@ class KalshiClient:
                     continue
                 seen_series.add(series)
                 raw = self._fetch_series_markets(series)
+                # Series whose market titles omit the teams need their EVENT title
+                # substituted, or the matcher has nothing to work with.
+                ev_titles = (self._fetch_series_event_titles(series)
+                             if series in _SERIES_NEEDS_EVENT_TITLE else {})
                 for r in raw:
+                    if ev_titles:
+                        t = ev_titles.get(r.get("event_ticker", ""))
+                        if t:
+                            r = {**r, "title": t}
                     raw_all.append((series, r))
                 logger.debug("Series %s: %d raw markets", series, len(raw))
 

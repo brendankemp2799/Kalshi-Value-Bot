@@ -32,6 +32,8 @@ class Outcome(str, Enum):
     UNDER   = "under"   # YES side of an explicit "Under" Kalshi market
     NO_OVER = "no_over" # NO side of an "Over" Kalshi market (= buying Under)
     COVER   = "cover"
+    BTTS    = "btts"     # both teams to score (soccer)
+    RFI     = "rfi"      # a run scores in the 1st inning (MLB)
 
 
 @dataclass
@@ -77,6 +79,19 @@ _SERIES_SLUG: dict[str, str] = {
     "KXNBASPREAD":  "nba-spread",
     "KXMLBSPREAD":  "mlb-spread",
     "KXNHLSPREAD":  "nhl-spread",
+    "KXLALIGAGAME": "la-liga-game",
+    "KXSERIEAGAME": "serie-a-game",
+    "KXLIGUE1GAME": "ligue-1-game",
+    "KXLALIGATOTAL": "la-liga-total",
+    "KXSERIEATOTAL": "serie-a-total",
+    "KXLIGUE1TOTAL": "ligue-1-total",
+    "KXNFLTOTAL":   "nfl-total",
+    "KXMLBRFI":     "mlb-first-inning-run",
+    "KXEPLBTTS":    "epl-btts",
+    "KXMLSBTTS":    "mls-btts",
+    "KXLALIGABTTS": "la-liga-btts",
+    "KXSERIEABTTS": "serie-a-btts",
+    "KXLIGUE1BTTS": "ligue-1-btts",
 }
 
 
@@ -327,7 +342,9 @@ def detect_value(
                      km.ticker, km.spread, km.volume)
 
         # ── Route by bet type ─────────────────────────────────────────────────
-        if km.bet_type == "totals":
+        if km.bet_type in ("btts", "rfi"):
+            _detect_binary_prop(me, event, km, min_edge, opportunities, scan_log, mm_candidates)
+        elif km.bet_type == "totals":
             _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidates)
         elif km.bet_type == "spread":
             _detect_spread(me, event, km, min_edge, opportunities, scan_log, mm_candidates)
@@ -542,6 +559,89 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log, mm_candida
          edge, status, reason, kalshi_side, maker_only=maker_only)
     logger.debug("VALUE DRAW: %s vs %s — edge %.1f%% net (maker_only=%s)",
                 event.home_team, event.away_team, edge*100, maker_only)
+
+
+# ── Binary props (BTTS, first-inning run) ─────────────────────────────────────
+
+# Kalshi bet_type -> (Odds API market key, outcome name, line, label, Outcome enum).
+# Both of these are plain two-outcome markets on both sides, which is why one function
+# serves them: no line ladder, no team resolution, no 3-way de-vig.
+#
+#   BTTS  Kalshi YES "Both Teams To Score"  <-> Odds API btts outcome "Yes"
+#   RFI   Kalshi YES "a run scores in the   <-> Odds API totals_1st_1_innings
+#         1st inning"                            outcome "Over" at line 0.5
+_BINARY_PROPS: dict[str, tuple[str, str, float | None, str, "Outcome"]] = {
+    "btts": ("btts", "Yes", None, "Both Teams To Score", None),
+    "rfi":  ("totals_1st_1_innings", "Over", 0.5, "First Inning Run", None),
+}
+
+
+def _detect_binary_prop(me, event, km, min_edge, opportunities, scan_log,
+                        mm_candidates=None):
+    """Price a two-outcome prop: Kalshi's YES against the sportsbook's matching side.
+
+    No team disambiguation is involved -- these markets are about the GAME, not about
+    which club does something -- so the #930 wrong-team failure mode cannot arise here.
+    """
+    spec = _BINARY_PROPS.get(km.bet_type)
+    if spec is None:
+        return
+    market_key, outcome_name, point, label, _ = spec
+    outcome_enum = Outcome.BTTS if km.bet_type == "btts" else Outcome.RFI
+    kalshi_side = "yes"
+
+    consensus, book_count, std_dev = consensus_stats(
+        event.bookmakers, outcome_name, market_key=market_key, point=point)
+    if consensus is None:
+        _log(scan_log, me, label, None, None, 0, 0.0, None,
+             "no_consensus", f"No sportsbook {market_key} data", kalshi_side)
+        return
+
+    qcheck = _quality_check(km, book_count, std_dev, km.bet_type)
+    if qcheck:
+        status, reason = qcheck
+        _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
+             status, reason, kalshi_side)
+        return
+
+    wide_reason = _spread_too_wide(km, km.bet_type)
+    kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
+    result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
+    if result is None:
+        best_edge = consensus - kalshi_price
+        eff_min = _effective_min_edge(kalshi_price, min_edge)
+        if wide_reason:
+            status, reason = "spread_too_wide", wide_reason
+        else:
+            status = "no_edge"
+            reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
+        _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
+             best_edge, status, reason, kalshi_side)
+        if wide_reason:
+            _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
+                                std_dev, status, reason)
+        return
+
+    edge, maker_only = result
+    allow, status, reason = _resolve_wide_spread(maker_only, wide_reason)
+    if not allow:
+        _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
+             edge, status, reason, kalshi_side, maker_only=maker_only)
+        _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
+                            std_dev, "spread_too_wide", reason)
+        return
+
+    opportunities.append(ValueOpportunity(
+        matched_event=me, outcome=outcome_enum, team_name=label,
+        consensus_prob=consensus, market_price=kalshi_price, edge=edge,
+        market_url=_kalshi_url(km.ticker, km.event_ticker),
+        bookmaker_count=book_count, consensus_std=std_dev,
+        maker_only=maker_only,
+    ))
+    _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
+         edge, status, reason, kalshi_side, maker_only=maker_only)
+    logger.debug("VALUE %s: %s vs %s — edge %.1f%%",
+                 label, event.home_team, event.away_team, edge * 100)
 
 
 # ── Totals ────────────────────────────────────────────────────────────────────

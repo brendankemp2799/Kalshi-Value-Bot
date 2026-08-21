@@ -478,6 +478,29 @@ MAX_TIME_TO_EVENT_HOURS: int = int(os.getenv("MAX_TIME_TO_EVENT_HOURS", "48"))
 # time-to-event because fill rate and ROI both concentrate near the game.
 ENABLE_ALTERNATE_LINES: bool = os.getenv("ENABLE_ALTERNATE_LINES", "true").lower() == "true"
 # (max_hours_out, refresh_every_hours) -- first match wins, so keep ascending.
+# Prop markets fetched PER EVENT, per sport. Like alternate_totals these are
+# "additional markets": the bulk /odds endpoint 422s on them, so each bills 1 credit
+# per game per market. They are therefore fetched ONLY for games where Kalshi lists a
+# matching market, which we know for free before spending anything.
+#
+# Chosen by measured tradability against max_kalshi_spread=0.05 plus a volume floor:
+#   btts                  KXEPLBTTS 82%, KXLALIGABTTS 67%, KXSERIEABTTS 64%,
+#                         KXMLSBTTS 47%, KXLIGUE1BTTS 40%
+#   totals_1st_1_innings  KXMLBRFI 50%   (Over 0.5 == "a run scores in the 1st")
+#
+# Everything first-half measured 0-5% tradable and is excluded. Player props are
+# excluded too: Kalshi has no per-game player series, only season-long ones quoted
+# 0.00/0.99.
+PROP_MARKETS: dict[str, str] = {
+    "baseball_mlb":            "totals_1st_1_innings",
+    "soccer_usa_mls":          "btts",
+    "soccer_epl":              "btts",
+    "soccer_spain_la_liga":    "btts",
+    "soccer_italy_serie_a":    "btts",
+    "soccer_france_ligue_one": "btts",
+}
+ENABLE_PROP_MARKETS: bool = os.getenv("ENABLE_PROP_MARKETS", "true").lower() == "true"
+
 ALTERNATE_LINE_REFRESH_TIERS: list[tuple[int, int]] = [
     (12, 1),    # inside 12h: hourly
     (24, 3),    # 12-24h: every 3h
@@ -546,6 +569,11 @@ QUALITY_FILTERS: dict[str, dict] = {
     "totals": dict(_DEFAULT_QUALITY_FILTER),
     "spread": dict(_DEFAULT_QUALITY_FILTER),
     "draw":   dict(_DEFAULT_QUALITY_FILTER),  # soccer 3-way TIE market
+    # Props (2026-08-21). Same thresholds as everything else for now -- a prop is not
+    # inherently lower quality, it is just thinner, and thinness is already caught by
+    # max_kalshi_spread. Split these out if props start behaving differently.
+    "btts":   dict(_DEFAULT_QUALITY_FILTER),
+    "rfi":    dict(_DEFAULT_QUALITY_FILTER),
 }
 
 
@@ -613,7 +641,7 @@ def quality_filters(bet_type: str, is_draw: bool = False) -> dict:
 # evaluated at all. Re-enable BOTH to bring spreads back.
 ENABLED_BET_TYPES: set[str] = {
     t.strip().lower()
-    for t in os.getenv("ENABLED_BET_TYPES", "h2h,totals,btts").split(",")
+    for t in os.getenv("ENABLED_BET_TYPES", "h2h,totals,btts,rfi").split(",")
     if t.strip()
 }
 

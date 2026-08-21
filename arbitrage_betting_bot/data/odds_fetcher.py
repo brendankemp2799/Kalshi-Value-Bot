@@ -370,6 +370,47 @@ class OddsAPIClient:
             return True
         return (now - last).total_seconds() >= every * 3600
 
+    def enrich_with_props(self, events: list[OddsEvent],
+                          event_ids: set[str] | None = None) -> int:
+        """
+        Attach prop markets (config.PROP_MARKETS) to `events`, in place. Returns
+        credits spent.
+
+        Same per-event billing as alternates -- the bulk endpoint 422s on these -- so
+        `event_ids` should be restricted to games where Kalshi actually lists the
+        matching market. Kalshi is free to inspect, so we know that before spending
+        anything.
+
+        Reuses the alternates refresh cadence: a prop line and a totals ladder go stale
+        at the same rate, and tracking two schedules for one event would double the
+        bookkeeping for no benefit.
+        """
+        if not getattr(config, "ENABLE_PROP_MARKETS", False):
+            return 0
+        now = datetime.now(timezone.utc)
+        spent = 0
+        for ev in events:
+            if event_ids is not None and ev.event_id not in event_ids:
+                continue
+            market = config.PROP_MARKETS.get(ev.sport_key)
+            if not market:
+                continue
+            key = f"prop:{ev.event_id}"
+            if not self._alternates_due(key, ev.commence_time, now):
+                continue
+            if spent:
+                time.sleep(0.15)
+            extra = self.fetch_event_alternates(ev.sport_key, ev.event_id, markets=market)
+            _ALT_FETCHED_AT[key] = now
+            # An empty response costs nothing (verified: Pinnacle-without-the-market
+            # returns cost=0), so count only calls that returned data.
+            if extra:
+                spent += 1
+                ev.bookmakers = self._merge_bookmakers(ev.bookmakers, extra)
+        if spent:
+            logger.info("Fetched prop markets for %d event(s) (~%d credits)", spent, spent)
+        return spent
+
     def enrich_with_alternates(self, events: list[OddsEvent],
                                event_ids: set[str] | None = None) -> int:
         """

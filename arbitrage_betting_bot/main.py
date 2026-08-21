@@ -250,6 +250,14 @@ def run_scan(
             }
             if totals_event_ids:
                 odds_client.enrich_with_alternates(odds_events, totals_event_ids)
+            # Props bill per game too, so only fetch for games where Kalshi actually
+            # lists the matching market -- known for free from the Kalshi side.
+            prop_event_ids = {
+                me.odds_event.event_id for me in matched
+                if getattr(me.kalshi_market, "bet_type", None) in ("btts", "rfi")
+            }
+            if prop_event_ids and config.ENABLE_PROP_MARKETS:
+                odds_client.enrich_with_props(odds_events, prop_event_ids)
         except Exception as e:
             # Enrichment is an upgrade, not a dependency: on failure the scan
             # continues on featured lines exactly as before.
