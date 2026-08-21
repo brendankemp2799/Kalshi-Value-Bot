@@ -322,9 +322,26 @@ MM_MAX_CONCURRENT_QUOTES: int = int(os.getenv("MM_MAX_CONCURRENT_QUOTES", "4"))
 # Variable-frequency polling: each sport is fetched at a rate based on its
 # nearest upcoming game. Sports with no game within 1 hour use the default
 # 45-minute interval; sports near game time are fetched more often.
+# The near-game tiers were RETIRED on 2026-08-20 (both set to the default) after
+# measuring what they ever produced. Time-to-event at placement, every bet the bot has
+# made:
+#
+#     bets placed  0-30 min before kickoff :   0
+#     bets placed 30-60 min before kickoff :   0
+#     bets placed      >60 min before      : 156   (99.4%)
+#     median time-to-event: 26.4 hours     mean: 67 hours
+#
+# Zero bets, ever, from either accelerated tier -- while they accounted for ~61% of all
+# scan cycles and therefore most of the Odds API bill. They fired because SOME game in
+# the universe was about to start, not because anything was left to do: we decide on a
+# game roughly a day before it begins.
+#
+# This does NOT slow risk management. Open positions are monitored on
+# POSITION_MONITOR_INTERVAL_SECONDS (30s), a separate loop that never touches the Odds
+# API. Restore by setting the env vars if the strategy ever becomes time-sensitive.
 POLL_INTERVAL_DEFAULT_SECONDS: int   = int(os.getenv("POLL_INTERVAL_DEFAULT_SECONDS",  "2700"))  # 45 min — baseline
-POLL_INTERVAL_PRE_GAME_SECONDS: int  = int(os.getenv("POLL_INTERVAL_PRE_GAME_SECONDS",  "600"))  # 10 min — within 1 h
-POLL_INTERVAL_NEAR_GAME_SECONDS: int = int(os.getenv("POLL_INTERVAL_NEAR_GAME_SECONDS", "120"))  # 2 min  — within 30 min
+POLL_INTERVAL_PRE_GAME_SECONDS: int  = int(os.getenv("POLL_INTERVAL_PRE_GAME_SECONDS", "2700"))  # retired (was 10 min)
+POLL_INTERVAL_NEAR_GAME_SECONDS: int = int(os.getenv("POLL_INTERVAL_NEAR_GAME_SECONDS", "2700"))  # retired (was 2 min)
 PRE_GAME_THRESHOLD_HOURS: int        = int(os.getenv("PRE_GAME_THRESHOLD_HOURS",    "1"))
 NEAR_GAME_THRESHOLD_MINUTES: int     = int(os.getenv("NEAR_GAME_THRESHOLD_MINUTES", "30"))
 # Back-compat alias (used by --once path and any external tooling)
@@ -365,15 +382,71 @@ ODDS_API_REGIONS: str = "us,eu"
 ODDS_API_MARKETS: str = "h2h"          # default fallback
 ODDS_API_ODDS_FORMAT: str = "american"
 
+# ── Credit control (measured 2026-08-20) ───────────────────────────────────────
+# The Odds API bills  cost = (number of markets) x (number of units), where units is
+# the region count OR, if `bookmakers` is sent instead of `regions`, ceil(books/10).
+# Measured directly against the live API:
+#
+#     regions=us,eu   markets=h2h,totals,spreads   -> 6 credits   (31 books)
+#     bookmakers=10   markets=h2h,totals,spreads   -> 3 credits   (10 books)
+#     bookmakers=1    markets=h2h,totals,spreads   -> 3 credits   ( 1 book)
+#     bookmakers=11   markets=h2h                  -> 2 credits   <- step at 10
+#
+# So 1 book and 10 books cost the SAME. Naming <=10 books halves every request while
+# keeping Pinnacle (which lives in the `eu` region, so `regions=us` alone loses it).
+# Sending this list makes ODDS_API_REGIONS unused for the bulk odds call.
+#
+# Chosen for LINE COVERAGE, not sharpness -- those are different properties and
+# coverage is what pays here. A totals bet needs a book quoting Kalshi's exact
+# strike; the sharpest book is useless if it has no price at that number. Ranked by
+# how many of our real candidates each book could price (see the 2026-08-20 credit
+# analysis), with Pinnacle kept because the 10th slot is free.
+ODDS_API_BOOKMAKERS: str = os.getenv("ODDS_API_BOOKMAKERS", ",".join([
+    "pinnacle", "nordicbet", "pmu_fr", "fanduel", "onexbet",
+    "sport888", "betrivers", "betsson", "williamhill", "unibet_se",
+]))
+
+# Never look at a game starting more than this far out. Measured 2026-08-20 across
+# every order the bot has placed: orders >48h from kickoff filled 57/751 = 7.6% of
+# the time, versus 45.8% in the 3-12h window. That tail is the bulk of our order
+# traffic and almost none of it converts. It also caps per-event alternate-line cost,
+# which bills per game in the window.
+MAX_TIME_TO_EVENT_HOURS: int = int(os.getenv("MAX_TIME_TO_EVENT_HOURS", "48"))
+
+# Fetch each game's FULL totals ladder (alternate_totals) instead of relying on
+# whichever single line each book happens to feature.
+#
+# The bulk /odds endpoint returns exactly ONE totals line per book -- that book's
+# featured line -- and books disagree about what it is (for one MLB game: 18 books at
+# 9.0, 4 at 9.5). Kalshi lists its own strikes, so matching was luck: 20 of 29 totals
+# candidates we would have bet had NO book quoting Kalshi's number, even with 31
+# books. alternate_totals returns the whole ladder (MLB 4.5-15.5, EPL 0.5-8.5).
+#
+# It is only served by the PER-EVENT endpoint (the bulk endpoint 422s), so it bills
+# 1 credit per game per refresh with <=10 bookmakers. Refresh cadence is tiered by
+# time-to-event because fill rate and ROI both concentrate near the game.
+ENABLE_ALTERNATE_LINES: bool = os.getenv("ENABLE_ALTERNATE_LINES", "true").lower() == "true"
+# (max_hours_out, refresh_every_hours) -- first match wins, so keep ascending.
+ALTERNATE_LINE_REFRESH_TIERS: list[tuple[int, int]] = [
+    (12, 1),    # inside 12h: hourly
+    (24, 3),    # 12-24h: every 3h
+    (48, 6),    # 24-48h: every 6h
+]
+
 # Which Odds API market types to fetch per sport.
 # Multiple types can be comma-separated (one API call per sport).
+# `spreads` removed 2026-08-20. It cost a full third of every bulk request (cost is
+# markets x units) and produced 9 bets at -29.8% ROI (-$4.93) -- our worst bet type by
+# a wide margin, the one the #930 wrong-team bug landed on, and the only one with no
+# stop-loss evidence behind its threshold. Re-add by putting "spreads" back here; the
+# matcher and detector still handle it.
 SPORT_MARKETS: dict[str, str] = {
-    "basketball_nba":              "h2h,totals,spreads",
-    "baseball_mlb":                "h2h,totals,spreads",
-    "icehockey_nhl":               "h2h,totals,spreads",
-    "soccer_usa_mls":              "h2h,totals,spreads",
-    "soccer_epl":                  "h2h,totals,spreads",
-    "soccer_uefa_champs_league":   "h2h,totals,spreads",
+    "basketball_nba":              "h2h,totals",
+    "baseball_mlb":                "h2h,totals",
+    "icehockey_nhl":               "h2h,totals",
+    "soccer_usa_mls":              "h2h,totals",
+    "soccer_epl":                  "h2h,totals",
+    "soccer_uefa_champs_league":   "h2h,totals",
     # BTTS excluded — not available in us region from Odds API
     # alternate_totals/alternate_spreads cover all the non-main lines that
     # Kalshi lists (e.g. 7.5, 9.5, 10.5 in addition to the main 8.5 line)

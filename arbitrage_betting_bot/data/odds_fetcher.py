@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, date, timezone
+from datetime import datetime, date, timedelta, timezone
 
 import requests
 
@@ -18,6 +18,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 
 logger = logging.getLogger(__name__)
+
+# When each event's alternate-line ladder was last bought. Alternates bill per game
+# per refresh, so this is what stops a 45-minute scan loop from re-buying the same
+# ladder every cycle. In memory by design -- a restart re-fetches (a few credits),
+# which is the safe direction, since a stale ladder would misprice silently.
+_ALT_FETCHED_AT: dict[str, datetime] = {}
 
 # Active months for each sport (inclusive).
 # Months outside this range return zero events from The Odds API — querying
@@ -88,6 +94,39 @@ class OddsAPIClient:
                 pass  # never crash a fetch due to credit tracking
         return resp.json()
 
+    @staticmethod
+    def _scope_params() -> dict:
+        """
+        Whichever of `bookmakers` / `regions` we are billing against.
+
+        Cost is (markets x units). `regions` charges 1 unit per region; `bookmakers`
+        charges 1 unit per 10 books. Naming <=10 books is therefore half the price of
+        regions=us,eu AND keeps Pinnacle, which regions=us alone would lose. See the
+        ODDS_API_BOOKMAKERS block in config.py for the measurements.
+        """
+        books = (config.ODDS_API_BOOKMAKERS or "").strip()
+        if books:
+            return {"bookmakers": books}
+        return {"regions": config.ODDS_API_REGIONS}
+
+    @staticmethod
+    def _window_params() -> dict:
+        """Ask the API for only the games we would actually bet.
+
+        Doesn't change the price of a bulk call (cost ignores event count) but keeps
+        payloads small, and matters directly for the per-event alternate fetches,
+        which DO bill per game.
+        """
+        hours = getattr(config, "MAX_TIME_TO_EVENT_HOURS", 0)
+        if not hours:
+            return {}
+        now = datetime.now(timezone.utc)
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        return {
+            "commenceTimeFrom": now.strftime(fmt),
+            "commenceTimeTo": (now + timedelta(hours=hours)).strftime(fmt),
+        }
+
     def _fetch_raw(self, sport: str, markets: str) -> list[dict]:
         """
         Single Odds API request. Returns raw event list or [] on error.
@@ -98,7 +137,8 @@ class OddsAPIClient:
             return self._get(
                 f"/sports/{sport}/odds",
                 {
-                    "regions": config.ODDS_API_REGIONS,
+                    **self._scope_params(),
+                    **self._window_params(),
                     "markets": markets,
                     "oddsFormat": config.ODDS_API_ODDS_FORMAT,
                 },
@@ -174,8 +214,10 @@ class OddsAPIClient:
                 )
 
         now = datetime.now(timezone.utc)
+        _MAX_TTE_HOURS = getattr(config, "MAX_TIME_TO_EVENT_HOURS", 0)
         events: list[OddsEvent] = []
         skipped_live = 0
+        skipped_far = 0
 
         for raw in raw_main:
             try:
@@ -188,6 +230,14 @@ class OddsAPIClient:
                         "Skipping in-progress/past event: %s vs %s (%s)",
                         raw.get("home_team"), raw.get("away_team"), commence,
                     )
+                    continue
+
+                # Enforce the horizon locally too. commenceTimeTo already asks the API
+                # to filter, but this is the guarantee: it holds for cached responses,
+                # for callers that bypass _window_params, and if the parameter is ever
+                # silently ignored. Orders placed >48h out filled 7.6% of the time.
+                if _MAX_TTE_HOURS and commence > now + timedelta(hours=_MAX_TTE_HOURS):
+                    skipped_far += 1
                     continue
 
                 # Merge alternate markets into each bookmaker's market list
@@ -218,14 +268,135 @@ class OddsAPIClient:
             except (KeyError, ValueError) as e:
                 logger.warning("Skipping malformed event: %s", e)
 
-        if skipped_live:
+        if skipped_live or skipped_far:
             logger.info(
-                "Fetched %d upcoming events for %s (%d in-progress/past skipped)",
-                len(events), sport, skipped_live,
+                "Fetched %d events for %s (%d in-progress/past, %d beyond %dh skipped)",
+                len(events), sport, skipped_live, skipped_far, _MAX_TTE_HOURS,
             )
         else:
             logger.info("Fetched %d events for %s", len(events), sport)
         return events
+
+    def fetch_event_alternates(self, sport: str, event_id: str,
+                               markets: str = "alternate_totals") -> list[dict]:
+        """
+        The full line ladder for ONE game, from the per-event endpoint.
+
+        This is the only way to get alternate lines: the bulk /odds endpoint returns
+        422 for alternate_* markets (measured 2026-08-20), and its standard `totals`
+        market returns just one featured line per book. Books disagree about what that
+        featured line is -- for one MLB game, 18 books showed 9.0 and 4 showed 9.5 --
+        so whether any of them happened to match Kalshi's strike was luck. It usually
+        wasn't: 20 of 29 totals candidates we would have bet had NO book quoting
+        Kalshi's number, even across 31 books.
+
+        Costs 1 credit per call with <=10 bookmakers (markets x units = 1 x 1).
+        Returns the raw bookmakers list, or [] on error -- a failed enrichment must
+        degrade to "no alternates for this game", never break the scan.
+        """
+        try:
+            resp = self._get(
+                f"/sports/{sport}/events/{event_id}/odds",
+                {
+                    **self._scope_params(),
+                    "markets": markets,
+                    "oddsFormat": config.ODDS_API_ODDS_FORMAT,
+                },
+            )
+            return (resp or {}).get("bookmakers", []) or []
+        except requests.HTTPError as e:
+            status = e.response.status_code if e.response is not None else "?"
+            # 422 = this sport/market combination carries no alternates; normal, not a fault.
+            log = logger.debug if status == 422 else logger.warning
+            log("Alternates HTTP %s for %s/%s", status, sport, event_id)
+            return []
+        except requests.RequestException as e:
+            logger.warning("Alternates request failed for %s/%s: %s", sport, event_id, e)
+            return []
+
+    @staticmethod
+    def _merge_bookmakers(base: list[dict], extra: list[dict]) -> list[dict]:
+        """
+        Fold per-event alternate markets into an event's existing bookmaker list.
+
+        Alternates keep their own market key (`alternate_totals`), which
+        core.odds_converter.consensus_stats() already searches alongside `totals` --
+        so nothing downstream needs to change. A book present only in the alternates
+        response is appended rather than dropped.
+        """
+        by_key = {b.get("key", b.get("title", "")): dict(b) for b in base}
+        for b in extra:
+            k = b.get("key", b.get("title", ""))
+            if k in by_key:
+                merged = dict(by_key[k])
+                merged["markets"] = list(merged.get("markets", [])) + list(b.get("markets", []))
+                by_key[k] = merged
+            else:
+                by_key[k] = dict(b)
+        return list(by_key.values())
+
+    @staticmethod
+    def _alternates_due(event_id: str, commence: datetime,
+                        now: datetime | None = None) -> bool:
+        """
+        Is this game's ladder stale enough to re-buy?
+
+        Alternates bill PER GAME PER REFRESH, so cadence is the cost dial. It is tiered
+        by time-to-event because that is where value concentrates: orders placed 3-12h
+        out filled 45.8% of the time and returned +34.7%, versus 7.6% fill and a
+        losing return beyond 48h. So pay for fresh ladders near the game and let
+        distant ones go stale.
+
+        Cache is in memory: a restart re-fetches, which costs a handful of credits and
+        is the safe direction (stale ladders would silently misprice).
+        """
+        now = now or datetime.now(timezone.utc)
+        hours_out = (commence - now).total_seconds() / 3600.0
+        if hours_out < 0:
+            return False
+        every = None
+        for max_h, refresh_h in config.ALTERNATE_LINE_REFRESH_TIERS:
+            if hours_out <= max_h:
+                every = refresh_h
+                break
+        if every is None:
+            return False           # beyond the last tier -> outside our window
+        last = _ALT_FETCHED_AT.get(event_id)
+        if last is None:
+            return True
+        return (now - last).total_seconds() >= every * 3600
+
+    def enrich_with_alternates(self, events: list[OddsEvent],
+                               event_ids: set[str] | None = None) -> int:
+        """
+        Attach full line ladders to `events`, in place. Returns credits spent
+        (1 per event fetched).
+
+        `event_ids` restricts the spend to games worth paying for -- normally the ones
+        Kalshi actually lists a totals market for. Without it every event in the window
+        is fetched, which is correct but wasteful.
+        """
+        if not getattr(config, "ENABLE_ALTERNATE_LINES", False):
+            return 0
+
+        now = datetime.now(timezone.utc)
+        spent = 0
+        for ev in events:
+            if event_ids is not None and ev.event_id not in event_ids:
+                continue
+            if not self._alternates_due(ev.event_id, ev.commence_time, now):
+                continue
+            if spent:
+                time.sleep(0.15)   # be polite; this is N calls, not one
+            extra = self.fetch_event_alternates(ev.sport_key, ev.event_id)
+            _ALT_FETCHED_AT[ev.event_id] = now
+            spent += 1
+            if extra:
+                ev.bookmakers = self._merge_bookmakers(ev.bookmakers, extra)
+        if spent:
+            logger.info("Fetched alternate lines for %d event(s) (~%d credits)",
+                        spent, spent)
+        return spent
 
     def fetch_all_sports(self) -> list[OddsEvent]:
         """Fetch odds for every sport in config.SPORTS that is currently in season."""

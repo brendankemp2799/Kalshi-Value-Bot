@@ -230,6 +230,31 @@ def run_scan(
         _log_api_credits(logger)
         return
 
+    # 2b. Buy the full totals ladder for matched games only.
+    #
+    # The bulk fetch above gives ONE totals line per book -- whichever that book
+    # features -- and books disagree about which one that is. Kalshi picks its own
+    # strikes, so matching them was luck: 20 of 29 totals candidates we would have bet
+    # had no book quoting Kalshi's number at all. alternate_totals returns the whole
+    # ladder, but only from the per-event endpoint, at 1 credit per game.
+    #
+    # Restricted to events that MATCHED a Kalshi totals market: paying for a ladder on
+    # a game Kalshi doesn't price is pure waste. Runs after matching for exactly that
+    # reason, and re-matching afterwards is unnecessary -- enrichment mutates the
+    # events in place and only adds market data, so existing matches stay valid.
+    if config.ENABLE_ALTERNATE_LINES:
+        try:
+            totals_event_ids = {
+                me.odds_event.event_id for me in matched
+                if getattr(me.kalshi_market, "bet_type", None) == "totals"
+            }
+            if totals_event_ids:
+                odds_client.enrich_with_alternates(odds_events, totals_event_ids)
+        except Exception as e:
+            # Enrichment is an upgrade, not a dependency: on failure the scan
+            # continues on featured lines exactly as before.
+            logger.warning("Alternate-line enrichment failed: %s", e)
+
     # 3. Detect value (hard filters already applied inside detect_value)
     scan_id = datetime.utcnow().isoformat()
     scan_log: list[dict] = []
