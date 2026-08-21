@@ -18,7 +18,19 @@ KALSHI_PRIVATE_KEY_PATH: str = os.getenv("KALSHI_PRIVATE_KEY_PATH", "")
 BANKROLL: float = float(os.getenv("BANKROLL", "1000"))
 
 # ── Risk Management ───────────────────────────────────────────────────────────
-KELLY_FRACTION: float = 0.25          # Use quarter-Kelly to reduce variance
+# 0.225, not 0.25, since 2026-08-21 -- this is a NO-OP on realised stake size, not a
+# risk reduction. kelly_calculator applies uncertainty_factor = max(0.5, 1 -
+# std/0.05*0.5), which shrinks the fraction when books disagree. With Pinnacle alone
+# (see ODDS_API_BOOKMAKERS) consensus_std is identically 0, so that discount can never
+# fire and every bet would silently size at the full fraction.
+#
+# Measured across 164 real bets, the discount actually applied averaged 0.898
+# (median 0.936, p10 0.811). Leaving KELLY_FRACTION at 0.25 would therefore have
+# raised mean stake by 11.3% as a side effect of a data-source change -- an
+# unintended risk increase. 0.25 * 0.898 = 0.2246, rounded to 0.225.
+#
+# Restore to 0.25 if a multi-book panel returns, or the discount will be applied twice.
+KELLY_FRACTION: float = 0.225
 # How far buying ONE whole contract may overshoot the Kelly target before the bet is
 # skipped. Contracts are indivisible, so at a small bankroll a +EV Kelly result is
 # often smaller than a single contract; the question is how much over-betting that
@@ -265,7 +277,7 @@ MM_STOP_QUOTING_BEFORE_KICKOFF_SECONDS: int = int(
 # market with a 0.10 std passes it. Resting a two-sided quote centered on that
 # consensus is strictly worse than taking one side of it, because both legs are
 # wrong at once. These apply unconditionally.
-MM_MIN_BOOKMAKERS: int = int(os.getenv("MM_MIN_BOOKMAKERS", "3"))
+MM_MIN_BOOKMAKERS: int = int(os.getenv("MM_MIN_BOOKMAKERS", "1"))  # see ODDS_API_BOOKMAKERS: single-book panel since 2026-08-21
 MM_MAX_CONSENSUS_STD: float = float(os.getenv("MM_MAX_CONSENSUS_STD", "0.04"))
 
 # Centering. MM's premise is "the market is roughly right and I'm paid to wait";
@@ -401,10 +413,29 @@ ODDS_API_ODDS_FORMAT: str = "american"
 # strike; the sharpest book is useless if it has no price at that number. Ranked by
 # how many of our real candidates each book could price (see the 2026-08-20 credit
 # analysis), with Pinnacle kept because the 10th slot is free.
-ODDS_API_BOOKMAKERS: str = os.getenv("ODDS_API_BOOKMAKERS", ",".join([
-    "pinnacle", "nordicbet", "pmu_fr", "fanduel", "onexbet",
-    "sport888", "betrivers", "betsson", "williamhill", "unibet_se",
-]))
+# PINNACLE ONLY as of 2026-08-21. Measured, per game, against the strikes Kalshi
+# actually lists:
+#
+#   Kalshi strikes per game : median 2 (main line +/- 0.5-1.0)
+#   Pinnacle prices them    : 17/17 = 100%   (its ladder spans main +/- ~1.5)
+#   full 10-book panel      : 17/17 = 100%
+#   Brier, n=526            : pinnacle 0.24548  vs  10-book blend 0.24541  (t=+0.37)
+#
+# Identical coverage, statistically identical accuracy. An earlier analysis claimed
+# Pinnacle covered only 40% -- that was wrong: it pooled strikes across every game in
+# a sport and tested them against ONE game's ladder, so the misses were other games'
+# totals, not unpriced strikes.
+#
+# A useful side effect: Pinnacle does not quote games nobody trades. It was absent for
+# 12% of historical candidates, and those markets had a MEDIAN Kalshi volume of 132
+# against 8,636 where it was present -- a 65x difference, with a quarter of them at <=1
+# contract of lifetime volume. The 8 bets we placed in them returned -37.5% against
+# -2.6% elsewhere. Requiring Pinnacle therefore acts as the liquidity floor that
+# min_kalshi_volume (still 0.0) never provided.
+#
+# Cost is unchanged: billing is per block of 10 books, so 1 book and 10 books are both
+# 1 unit. This buys simplicity and noise reduction, not credits.
+ODDS_API_BOOKMAKERS: str = os.getenv("ODDS_API_BOOKMAKERS", "pinnacle")
 
 # Never look at a game starting more than this far out. Measured 2026-08-20 across
 # every order the bot has placed: orders >48h from kickoff filled 57/751 = 7.6% of
@@ -475,7 +506,12 @@ DEVIG_METHOD: str = os.getenv("DEVIG_METHOD", "shin")
 # threshold change. Once the calibration dashboard has enough settled bets to
 # show which tiers are over/under-performing, tune them independently here.
 _DEFAULT_QUALITY_FILTER: dict = {
-    "min_bookmaker_count": 2,
+    # 1, not 2, since 2026-08-21: we fetch Pinnacle alone (see ODDS_API_BOOKMAKERS),
+    # so every candidate has exactly one book and a floor of 2 would reject all of
+    # them. The corroboration this used to provide is now supplied by Pinnacle's own
+    # absence -- it does not quote untraded markets, which is what the floor was
+    # really protecting against. Restore to 2 if a multi-book panel ever returns.
+    "min_bookmaker_count": 1,
     "max_kalshi_spread": 0.05,
     "min_kalshi_volume": 0.0,
     "high_uncertainty_std": 0.04,

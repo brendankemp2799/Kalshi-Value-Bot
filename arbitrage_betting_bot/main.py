@@ -279,6 +279,12 @@ def run_scan(
           books     (15%) — consensus reliability; 8+ books = 1.0
           agreement (15%) — low std dev across books; 0 std = 1.0, ≥5% std = 0
         """
+        # NOTE (2026-08-21): with the single-book panel (config.ODDS_API_BOOKMAKERS)
+        # book_norm is always 0.125 and agree_norm always 1.0, so 30% of this score is
+        # a constant. RANKING IS UNAFFECTED -- this value is only ever used to sort
+        # (see scored.sort below), never compared against a threshold, and adding the
+        # same constant to every candidate cannot reorder them. Kept intact so the
+        # score stays meaningful if a multi-book panel returns.
         edge_norm  = min(opp.edge / 0.20, 1.0)
         kelly_norm = min(sz.full_kelly_fraction / 0.50, 1.0)
         book_norm  = min(opp.bookmaker_count / 8.0, 1.0)

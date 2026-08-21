@@ -62,12 +62,24 @@ def test_volume_gate_is_skipped_when_volume_is_absent():
 
 # ── #6 fair-value confidence ──────────────────────────────────────────────────
 
-def test_too_few_books_rejected():
-    """_maybe_mm_candidate only forwards markets the directional strategy
-    accepted, but that bar is min_bookmaker_count=2. Two books is not enough
-    confidence to center a two-sided quote on."""
-    a = mm.evaluate_mm_candidate(_cand(bookmaker_count=2))
-    assert a.reason == "too_few_books"
+def test_too_few_books_rejected(monkeypatch):
+    """The gate must fire below config.MM_MIN_BOOKMAKERS, whatever that is set to.
+
+    Pinned against an explicit threshold rather than the deployed one: on 2026-08-21
+    the panel became Pinnacle-only, so MM_MIN_BOOKMAKERS dropped 3 -> 1 and every real
+    candidate now has exactly one book. Hardcoding a count here would test the
+    configured VALUE instead of the gate, and would break again on the next change."""
+    monkeypatch.setattr(config, "MM_MIN_BOOKMAKERS", 3)
+    assert mm.evaluate_mm_candidate(_cand(bookmaker_count=2)).reason == "too_few_books"
+    assert mm.evaluate_mm_candidate(_cand(bookmaker_count=3)).reason != "too_few_books"
+
+
+def test_single_book_panel_passes_the_book_gate():
+    """The deployed reality since 2026-08-21: one book (Pinnacle) must NOT be rejected,
+    or market making stops entirely. Corroboration now comes from Pinnacle's absence on
+    untraded markets, not from a book count -- see config.ODDS_API_BOOKMAKERS."""
+    assert config.MM_MIN_BOOKMAKERS <= 1, "single-book panel would block all MM"
+    assert mm.evaluate_mm_candidate(_cand(bookmaker_count=1)).reason != "too_few_books"
 
 
 def test_high_disagreement_rejected():
@@ -196,7 +208,7 @@ def test_clip_respects_absolute_dollar_cap_at_large_bankroll():
     ({"consensus_prob": 0.95, "yes_bid": 0.93, "yes_ask": 0.99}, "outside_fair_value_band"),
     ({"kalshi_spread": 0.02}, "spread_too_narrow"),
     ({"kalshi_volume_24h": 3.0}, "insufficient_volume"),
-    ({"bookmaker_count": 1}, "too_few_books"),
+    ({"bookmaker_count": 0}, "too_few_books"),
     ({"consensus_std": 0.5}, "high_disagreement"),
     ({"consensus_prob": 0.80, "yes_bid": 0.45, "yes_ask": 0.55}, "consensus_outside_spread"),
 ])
