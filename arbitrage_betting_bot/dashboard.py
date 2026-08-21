@@ -77,6 +77,9 @@ def _short_sport(sport_key: str) -> str:
         "icehockey_nhl": "NHL",
         "soccer_usa_mls": "MLS",
         "soccer_epl": "EPL",
+        "soccer_spain_la_liga": "La Liga",
+        "soccer_italy_serie_a": "Serie A",
+        "soccer_france_ligue_one": "Ligue 1",
         "soccer_uefa_champs_league": "UCL",
     }
     return mapping.get(sport_key, sport_key.upper())

@@ -40,33 +40,44 @@ _series_cache: dict[str, tuple[float, list[dict]]] = {}
 _SERIES_CACHE_TTL = 900  # 15 minutes — discard stale cache older than this
 
 # Maps Odds API sport keys → list of Kalshi series tickers (H2H first, then non-H2H)
+# *SPREAD series are deliberately absent: `spread` was removed from
+# config.ENABLED_BET_TYPES on 2026-08-21 (9 bets, -29.8% ROI) and from SPORT_MARKETS,
+# so fetching them only produced markets the detector immediately discarded -- 84 per
+# scan, logging ~2,600 junk rows a day. Re-add here AND in both those settings
+# together, or spread markets get matched with no odds behind them.
 _SPORT_TO_SERIES: dict[str, list[str]] = {
-    "basketball_nba":            ["KXNBAGAME", "KXNBATOTAL", "KXNBASPREAD"],
-    "baseball_mlb":              ["KXMLBGAME", "KXMLBTOTAL", "KXMLBSPREAD"],
-    "icehockey_nhl":             ["KXNHLGAME", "KXNHLTOTAL", "KXNHLSPREAD"],
-    "soccer_usa_mls":            ["KXMLSGAME", "KXMLSTOTAL", "KXMLSSPREAD"],
-    "soccer_epl":                ["KXEPLGAME", "KXEPLTOTAL", "KXEPLSPREAD"],
-    "soccer_uefa_champs_league": ["KXUCLGAME", "KXUCLTOTAL", "KXUCLSPREAD"],
+    "basketball_nba":            ["KXNBAGAME", "KXNBATOTAL"],
+    "baseball_mlb":              ["KXMLBGAME", "KXMLBTOTAL"],
+    "icehockey_nhl":             ["KXNHLGAME", "KXNHLTOTAL"],
+    "soccer_usa_mls":            ["KXMLSGAME", "KXMLSTOTAL"],
+    "soccer_epl":                ["KXEPLGAME", "KXEPLTOTAL"],
+    "soccer_uefa_champs_league": ["KXUCLGAME", "KXUCLTOTAL"],
+    # Added 2026-08-21; every ticker verified live against Kalshi before wiring.
+    "americanfootball_nfl":      ["KXNFLGAME", "KXNFLTOTAL"],
+    "soccer_spain_la_liga":      ["KXLALIGAGAME", "KXLALIGATOTAL"],
+    "soccer_italy_serie_a":      ["KXSERIEAGAME", "KXSERIEATOTAL"],
+    "soccer_france_ligue_one":   ["KXLIGUE1GAME", "KXLIGUE1TOTAL"],
 }
 
 # Soccer H2H series have 3 outcomes (home/away/draw), so we keep each team's
 # market separately instead of deduplicating to one per event.
-SOCCER_GAME_SERIES: set[str] = {"KXMLSGAME", "KXEPLGAME", "KXUCLGAME"}
+SOCCER_GAME_SERIES: set[str] = {"KXMLSGAME", "KXEPLGAME", "KXUCLGAME",
+                                "KXLALIGAGAME", "KXSERIEAGAME", "KXLIGUE1GAME"}
 
 # Maps Kalshi series prefix → bet type ("h2h" is default / omitted)
 _SERIES_TO_BET_TYPE: dict[str, str] = {
-    "KXNBATOTAL":  "totals",
-    "KXMLBTOTAL":  "totals",
-    "KXNHLTOTAL":  "totals",
-    "KXEPLTOTAL":  "totals",
-    "KXUCLTOTAL":  "totals",
-    "KXMLSTOTAL":  "totals",
-    "KXNBASPREAD": "spread",
-    "KXMLBSPREAD": "spread",
-    "KXNHLSPREAD": "spread",
-    "KXMLSSPREAD": "spread",
-    "KXEPLSPREAD": "spread",
-    "KXUCLSPREAD": "spread",
+    "KXNBATOTAL":     "totals",
+    "KXMLBTOTAL":     "totals",
+    "KXNHLTOTAL":     "totals",
+    "KXEPLTOTAL":     "totals",
+    "KXUCLTOTAL":     "totals",
+    "KXMLSTOTAL":     "totals",
+    "KXNFLTOTAL":     "totals",
+    "KXLALIGATOTAL":  "totals",
+    "KXSERIEATOTAL":  "totals",
+    "KXLIGUE1TOTAL":  "totals",
+    # SPREAD entries removed alongside the series above -- see _SPORT_TO_SERIES.
+    # The parsing/detection code still handles bet_type "spread" if it returns.
 }
 
 

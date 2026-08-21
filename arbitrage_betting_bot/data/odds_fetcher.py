@@ -36,6 +36,10 @@ _SPORT_SEASONS: dict[str, list[tuple[int, int]]] = {
     "soccer_usa_mls":            [(2, 11)],  # Feb – Nov
     "soccer_epl":                [(8, 5)],   # Aug – May  (wraps Jan)
     "soccer_uefa_champs_league": [(9, 5)],   # Sep – May  (wraps Jan)
+    "americanfootball_nfl":      [(8, 2)],   # Aug (preseason) – Feb  (wraps Jan)
+    "soccer_spain_la_liga":      [(8, 5)],   # Aug – May  (wraps Jan)
+    "soccer_italy_serie_a":      [(8, 5)],   # Aug – May  (wraps Jan)
+    "soccer_france_ligue_one":   [(8, 5)],   # Aug – May  (wraps Jan)
 }
 
 

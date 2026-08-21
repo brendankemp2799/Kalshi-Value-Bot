@@ -116,6 +116,10 @@ SPORT_EXPECTED_DURATION_MINUTES: dict[str, int] = {
     "soccer_usa_mls":              120,
     "soccer_epl":                   120,
     "soccer_uefa_champs_league":    120,
+    "americanfootball_nfl":         210,   # ~3.5h including stoppages/overtime
+    "soccer_spain_la_liga":         120,
+    "soccer_italy_serie_a":         120,
+    "soccer_france_ligue_one":      120,
 }
 SPORT_EXPECTED_DURATION_DEFAULT_MINUTES: int = 150  # fallback for an unrecognized sport key
 # How often open positions are checked against Kalshi, independent of the Odds-API scan
@@ -371,6 +375,18 @@ STARTUP_REFETCH_SKIP_WINDOW_SECONDS: int = 120
 
 # ── Sports to Monitor ─────────────────────────────────────────────────────────
 # Full list: https://the-odds-api.com/sports-odds-data/sports-apis.html
+# Expanded 2026-08-21. Kalshi lists game markets for all of these and The Odds API
+# carries every one, with Pinnacle quoting h2h/totals on each -- verified per league
+# before adding, not assumed. Measured tradability of the 598 new game markets against
+# our own max_kalshi_spread=0.05 and a volume floor: ~50% pass both, versus ~61% for
+# the leagues we already trade. That roughly doubles usable inventory.
+#
+# NCAAF is deliberately EXCLUDED despite being the largest single prize (184 open
+# game events). College football has ~260 teams with genuinely colliding names --
+# Miami FL vs Miami OH, Texas vs Texas St. vs Texas Tech, dozens of "St." variants --
+# which is the same failure class as position #930 (bought "Chicago WS" believing it
+# was "Chicago Cubs") at ten times the surface area. Add it only after measuring the
+# ambiguous-match refusal rate on real fixtures.
 SPORTS: list[str] = [
     "basketball_nba",
     "baseball_mlb",
@@ -378,6 +394,10 @@ SPORTS: list[str] = [
     "soccer_usa_mls",
     "soccer_epl",
     "soccer_uefa_champs_league",
+    "americanfootball_nfl",
+    "soccer_spain_la_liga",
+    "soccer_italy_serie_a",
+    "soccer_france_ligue_one",
 ]
 
 # ── Odds API ──────────────────────────────────────────────────────────────────
@@ -478,6 +498,10 @@ SPORT_MARKETS: dict[str, str] = {
     "soccer_usa_mls":              "h2h,totals",
     "soccer_epl":                  "h2h,totals",
     "soccer_uefa_champs_league":   "h2h,totals",
+    "americanfootball_nfl":        "h2h,totals",
+    "soccer_spain_la_liga":        "h2h,totals",
+    "soccer_italy_serie_a":        "h2h,totals",
+    "soccer_france_ligue_one":     "h2h,totals",
     # BTTS excluded — not available in us region from Odds API
     # alternate_totals/alternate_spreads cover all the non-main lines that
     # Kalshi lists (e.g. 7.5, 9.5, 10.5 in addition to the main 8.5 line)
