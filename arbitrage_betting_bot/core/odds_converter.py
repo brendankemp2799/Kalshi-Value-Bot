@@ -388,10 +388,39 @@ def consensus_stats(
             if target is None:
                 continue
 
-            all_probs = [american_to_prob(o["price"]) for o in outcomes]
-            no_vig = _devig(all_probs)
-            idx = outcomes.index(target)
-            weighted_probs.append((weight, no_vig[idx]))
+            # De-vig against the outcomes that form ONE market with `target`, not
+            # against every outcome the book returned under this key.
+            #
+            # A featured `totals` market has exactly two outcomes (Over/Under at one
+            # line) so the distinction never mattered. `alternate_totals` carries the
+            # whole ladder -- ~28 outcomes across 14 lines -- and normalising across
+            # all of them treats mutually compatible bets as if they were exclusive
+            # alternatives. Measured on live data before this fix: Over 1.5 priced at
+            # -4500 (implied 0.978) came back as 0.1316, and an Over/Under pair summed
+            # to 0.65 instead of 1.0. Latent until now only because alternate markets
+            # were never actually fetched (the bulk endpoint 422s on them).
+            #
+            # Pairing is by ABSOLUTE line value, which is correct for both shapes:
+            #   totals  -> Over 8.5 / Under 8.5   (same point)
+            #   spreads -> Team A -1.5 / Team B +1.5   (negated point)
+            # H2H (point is None) keeps whole-market de-vigging, which is right: its
+            # 2- and 3-way outcomes ARE the complete exclusive set.
+            if point is not None and target.get("point") is not None:
+                tp = abs(float(target["point"]))
+                siblings = [
+                    o for o in outcomes
+                    if o.get("point") is not None
+                    and abs(abs(float(o["point"])) - tp) <= 0.01
+                ]
+            else:
+                siblings = outcomes
+
+            if target not in siblings:      # defensive; target always matches itself
+                siblings = outcomes
+
+            probs = [american_to_prob(o["price"]) for o in siblings]
+            no_vig = _devig(probs)
+            weighted_probs.append((weight, no_vig[siblings.index(target)]))
 
     if not weighted_probs:
         return None, 0, 0.0
