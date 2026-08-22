@@ -34,6 +34,7 @@ class Outcome(str, Enum):
     COVER   = "cover"
     BTTS    = "btts"     # both teams to score (soccer)
     RFI     = "rfi"      # a run scores in the 1st inning (MLB)
+    PLAYER  = "player"   # a named player clears a stat threshold
 
 
 @dataclass
@@ -342,7 +343,9 @@ def detect_value(
                      km.ticker, km.spread, km.volume)
 
         # ── Route by bet type ─────────────────────────────────────────────────
-        if km.bet_type in ("btts", "rfi"):
+        if km.bet_type == "player_prop":
+            _detect_player_prop(me, event, km, min_edge, opportunities, scan_log, mm_candidates)
+        elif km.bet_type in ("btts", "rfi"):
             _detect_binary_prop(me, event, km, min_edge, opportunities, scan_log, mm_candidates)
         elif km.bet_type == "totals":
             _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidates)
@@ -559,6 +562,90 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log, mm_candida
          edge, status, reason, kalshi_side, maker_only=maker_only)
     logger.debug("VALUE DRAW: %s vs %s — edge %.1f%% net (maker_only=%s)",
                 event.home_team, event.away_team, edge*100, maker_only)
+
+
+# ── Player props ──────────────────────────────────────────────────────────────
+
+def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
+                        mm_candidates=None):
+    """Price one player's Kalshi threshold against the sportsbook line for that player.
+
+    Kalshi lists a LADDER per player -- Jared Jones 1+, 3+, 5+, 6+, 7+, 8+ strikeouts --
+    while Pinnacle posts a single line (4.5). So at most one rung per player is
+    priceable, and the rest legitimately find no consensus. That is expected, not a
+    fault: measured 27% of tradable Kalshi player markets have a matching line.
+
+    Unlike totals there is no ladder to buy on the sportsbook side -- Pinnacle
+    populates NO *_alternate player markets (verified 2026-08-22) -- so a rung Pinnacle
+    does not quote simply cannot be priced.
+    """
+    from data.kalshi_client import PLAYER_PROP_MARKET
+
+    if not km.participant or km.threshold is None:
+        _log(scan_log, me, km.yes_team or "player prop", None, None, 0, 0.0, None,
+             "no_consensus", "Unparseable player prop", "yes")
+        return
+
+    series = (km.event_ticker or km.ticker).split("-")[0].upper()
+    market_key = PLAYER_PROP_MARKET.get(series)
+    if not market_key:
+        _log(scan_log, me, km.participant, None, None, 0, 0.0, None,
+             "no_consensus", f"No sportsbook market mapped for {series}", "yes")
+        return
+
+    label = f"{km.participant} {km.threshold + 0.5:g}+"
+    consensus, book_count, std_dev = consensus_stats(
+        event.bookmakers, "Over", market_key=market_key,
+        point=km.threshold, participant=km.participant)
+    if consensus is None:
+        _log(scan_log, me, label, None, None, 0, 0.0, None, "no_consensus",
+             f"No {market_key} line at {km.threshold} for {km.participant}", "yes")
+        return
+
+    qcheck = _quality_check(km, book_count, std_dev, "player_prop")
+    if qcheck:
+        status, reason = qcheck
+        _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
+             status, reason, "yes")
+        return
+
+    wide_reason = _spread_too_wide(km, "player_prop")
+    kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
+    result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
+    if result is None:
+        best_edge = consensus - kalshi_price
+        eff_min = _effective_min_edge(kalshi_price, min_edge)
+        if wide_reason:
+            status, reason = "spread_too_wide", wide_reason
+        else:
+            status = "no_edge"
+            reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
+        _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
+             best_edge, status, reason, "yes")
+        if wide_reason:
+            _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
+                                std_dev, status, reason)
+        return
+
+    edge, maker_only = result
+    allow, status, reason = _resolve_wide_spread(maker_only, wide_reason)
+    if not allow:
+        _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
+             edge, status, reason, "yes", maker_only=maker_only)
+        _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
+                            std_dev, "spread_too_wide", reason)
+        return
+
+    opportunities.append(ValueOpportunity(
+        matched_event=me, outcome=Outcome.PLAYER, team_name=label,
+        consensus_prob=consensus, market_price=kalshi_price, edge=edge,
+        market_url=_kalshi_url(km.ticker, km.event_ticker),
+        bookmaker_count=book_count, consensus_std=std_dev,
+        maker_only=maker_only,
+    ))
+    _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
+         edge, status, reason, "yes", maker_only=maker_only)
+    logger.debug("VALUE PLAYER: %s — edge %.1f%%", label, edge * 100)
 
 
 # ── Binary props (BTTS, first-inning run) ─────────────────────────────────────

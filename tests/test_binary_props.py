@@ -131,13 +131,16 @@ def test_both_prop_types_are_enabled_and_have_quality_tiers():
         assert bt in config.QUALITY_FILTERS
 
 
-def test_every_prop_sport_has_a_market_key():
-    from data.kalshi_client import _SERIES_TO_BET_TYPE
-    prop_sports = {s for s, m in config.PROP_MARKETS.items()}
-    assert prop_sports, "no prop sports configured"
-    for sport, market in config.PROP_MARKETS.items():
-        assert market in {v[0] for v in _BINARY_PROPS.values()}, \
-            f"{sport} fetches {market} which no detector consumes"
+def test_every_fetched_prop_market_is_consumed_by_a_detector():
+    """PROP_MARKETS drives real per-event spend. A market fetched but read by nothing
+    is pure credit waste, and the failure is silent."""
+    from data.kalshi_client import PLAYER_PROP_MARKET
+    consumed = {v[0] for v in _BINARY_PROPS.values()} | set(PLAYER_PROP_MARKET.values())
+    assert config.PROP_MARKETS, "no prop sports configured"
+    for sport, markets in config.PROP_MARKETS.items():
+        for market in [m.strip() for m in markets.split(",") if m.strip()]:
+            assert market in consumed, \
+                f"{sport} fetches {market!r} which no detector consumes"
 
 
 def test_first_half_series_are_not_wired():

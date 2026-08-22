@@ -69,6 +69,7 @@ _SPORT_TO_SERIES: dict[str, list[str]] = {
 # KXSERIEA1HTOTAL 0/24, KXMLS1HBTTS 0/13, KXEPL1HSCORE 0/112) and is deliberately
 # excluded -- Kalshi lists them but nobody trades them.
 _SPORT_TO_SERIES["baseball_mlb"].append("KXMLBRFI")
+_SPORT_TO_SERIES["baseball_mlb"] += ["KXMLBKS", "KXMLBHR", "KXMLBTB"]
 _SPORT_TO_SERIES["soccer_usa_mls"].append("KXMLSBTTS")
 _SPORT_TO_SERIES["soccer_epl"].append("KXEPLBTTS")
 
@@ -97,6 +98,20 @@ _SERIES_TO_BET_TYPE: dict[str, str] = {
     "KXSERIEABTTS":   "btts",
     "KXLIGUE1BTTS":   "btts",
     "KXMLBRFI":       "rfi",     # "a run scores in the 1st inning" -- binary yes/no
+    # Player props (2026-08-22). Only the three Pinnacle actually quotes -- measured,
+    # not assumed. It carries no batter_hits / batter_rbis / batter_hits_runs_rbis /
+    # batter_stolen_bases at all, and populates NO *_alternate player markets, so the
+    # ladder trick that rescued totals does not apply here.
+    "KXMLBKS":        "player_prop",   # pitcher strikeouts
+    "KXMLBHR":        "player_prop",   # batter home runs
+    "KXMLBTB":        "player_prop",   # batter total bases
+}
+
+# Kalshi series -> the Odds API market that prices it, for player props.
+PLAYER_PROP_MARKET: dict[str, str] = {
+    "KXMLBKS": "pitcher_strikeouts",
+    "KXMLBHR": "batter_home_runs",
+    "KXMLBTB": "batter_total_bases",
 }
 
 # Series whose MARKET title carries no team names, so the matcher cannot work from it.
@@ -106,7 +121,31 @@ _SERIES_TO_BET_TYPE: dict[str, str] = {
 # market title is already "Atlanta vs Milwaukee First Inning Run?".
 _SERIES_NEEDS_EVENT_TITLE: set[str] = {
     "KXEPLBTTS", "KXMLSBTTS", "KXLALIGABTTS", "KXSERIEABTTS", "KXLIGUE1BTTS",
+    # Player props too: the market is titled "Zach Neto: 2+ home runs?" while only the
+    # event names the teams ("Los Angeles A vs Texas: Home Runs").
+    "KXMLBKS", "KXMLBHR", "KXMLBTB",
 }
+
+# "Zach Neto: 2+"  ->  ("Zach Neto", 2).  Kalshi always words player props as an
+# at-least threshold; the sportsbook equivalent is Over (N - 0.5).
+_PLAYER_SUB = re.compile(r"^(?P<name>.+?):\s*(?P<n>\d+)\+\s*$")
+
+
+def _parse_player_prop(yes_sub_title: str) -> tuple[str, float] | None:
+    """(player, sportsbook_line) from a Kalshi player-prop subtitle, or None.
+
+    "Zach Neto: 2+" means 2 or more, which is exactly "Over 1.5" at a sportsbook.
+    Getting this off by one would price a different bet entirely, so the -0.5 lives
+    here in one place rather than at each call site.
+    """
+    m = _PLAYER_SUB.match((yes_sub_title or "").strip())
+    if not m:
+        return None
+    try:
+        n = int(m.group("n"))
+    except ValueError:
+        return None
+    return m.group("name").strip(), n - 0.5
 
 
 def _parse_threshold(title: str, bet_type: str, ticker: str = "",
@@ -180,8 +219,14 @@ class KalshiMarket:
     # a consensus against. Worth revisiting: the region has since been widened to
     # "us,eu" (de87491, 2026-07-19), so that reason may no longer hold — but adding a
     # 4th market would raise Odds API cost from 3x2=6 to 4x2=8 credits per fetch.
-    bet_type: str = field(default="h2h")       # "h2h" | "totals" | "spread"
-    threshold: float | None = field(default=None)  # line value (totals/spread only)
+    bet_type: str = field(default="h2h")       # "h2h" | "totals" | "spread" | "btts" | "rfi" | "player_prop"
+    threshold: float | None = field(default=None)  # line value (totals/spread/player_prop)
+    # Player the line belongs to, for player props only. Kalshi words these as
+    # "Zach Neto: 2+"; sportsbooks put the player in `description` and Over/Under in
+    # `name`, with SEVERAL players sharing one market -- often at the same line. The
+    # consensus lookup needs this to avoid pairing one player's Over with another's
+    # Under. See core/odds_converter.py::consensus_stats(participant=...).
+    participant: str | None = field(default=None)
 
     @property
     def spread(self) -> float:
@@ -610,12 +655,23 @@ class KalshiClient:
 
             # Parse threshold for totals/spreads
             no_subtitle = raw.get("no_sub_title", "") or ""
-            threshold = _parse_threshold(
-                title_raw, bet_type,
-                ticker=raw.get("ticker", ""),
-                yes_subtitle=yes_team,   # yes_team already holds yes_sub_title
-                no_subtitle=no_subtitle,
-            )
+            participant: str | None = None
+            if bet_type == "player_prop":
+                # "Zach Neto: 2+" -> player "Zach Neto", sportsbook line 1.5. A market
+                # whose subtitle does not parse is skipped rather than guessed at: a
+                # wrong line prices a different bet.
+                parsed = _parse_player_prop(yes_team)
+                if parsed is None:
+                    logger.debug("Skipping unparseable player prop: %s", raw.get("ticker"))
+                    continue
+                participant, threshold = parsed
+            else:
+                threshold = _parse_threshold(
+                    title_raw, bet_type,
+                    ticker=raw.get("ticker", ""),
+                    yes_subtitle=yes_team,   # yes_team already holds yes_sub_title
+                    no_subtitle=no_subtitle,
+                )
 
             # For spread markets, yes_sub_title is "Team wins by X.Y [units]" —
             # extract just the team name so it can be matched against sportsbook outcomes.
@@ -674,6 +730,7 @@ class KalshiClient:
                 event_ticker=event_ticker,
                 bet_type=bet_type,
                 threshold=threshold,
+                participant=participant,
             )
 
             if bet_type == "h2h":

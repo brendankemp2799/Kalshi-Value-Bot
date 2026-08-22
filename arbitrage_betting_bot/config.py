@@ -492,7 +492,10 @@ ENABLE_ALTERNATE_LINES: bool = os.getenv("ENABLE_ALTERNATE_LINES", "true").lower
 # excluded too: Kalshi has no per-game player series, only season-long ones quoted
 # 0.00/0.99.
 PROP_MARKETS: dict[str, str] = {
-    "baseball_mlb":            "totals_1st_1_innings",
+    # MLB fetches the first-inning total AND the three player markets Pinnacle
+    # actually quotes, in one per-event call (cost = markets x 1 unit).
+    "baseball_mlb":            "totals_1st_1_innings,pitcher_strikeouts,"
+                               "batter_home_runs,batter_total_bases",
     "soccer_usa_mls":          "btts",
     "soccer_epl":              "btts",
     "soccer_spain_la_liga":    "btts",
@@ -574,6 +577,7 @@ QUALITY_FILTERS: dict[str, dict] = {
     # max_kalshi_spread. Split these out if props start behaving differently.
     "btts":   dict(_DEFAULT_QUALITY_FILTER),
     "rfi":    dict(_DEFAULT_QUALITY_FILTER),
+    "player_prop": dict(_DEFAULT_QUALITY_FILTER),
 }
 
 
@@ -641,7 +645,7 @@ def quality_filters(bet_type: str, is_draw: bool = False) -> dict:
 # evaluated at all. Re-enable BOTH to bring spreads back.
 ENABLED_BET_TYPES: set[str] = {
     t.strip().lower()
-    for t in os.getenv("ENABLED_BET_TYPES", "h2h,totals,btts,rfi").split(",")
+    for t in os.getenv("ENABLED_BET_TYPES", "h2h,totals,btts,rfi,player_prop").split(",")
     if t.strip()
 }
 

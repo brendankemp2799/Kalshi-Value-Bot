@@ -318,6 +318,7 @@ def consensus_stats(
     outcome_name: str,
     market_key: str = "h2h",
     point: float | None = None,
+    participant: str | None = None,
 ) -> tuple[float | None, int, float]:
     """
     Compute de-vigged consensus probability plus quality metrics.
@@ -329,6 +330,11 @@ def consensus_stats(
         market_key      — Odds API market type: "h2h", "totals", "spreads", "btts"
         point           — For totals/spreads: filter to markets with this line
                           value (within ±0.26 tolerance). None = accept any line.
+        participant     — For PLAYER props: the player the line belongs to. Player
+                          markets put "Over"/"Under" in `name` and the player in
+                          `description`, and several players share one market, often
+                          at the SAME line. Without this filter the de-vig would pair
+                          one player's Over against another player's Under.
 
     Returns:
         (weighted_mean, bookmaker_count, weighted_std_dev)
@@ -358,6 +364,16 @@ def consensus_stats(
             if market.get("key") not in keys_to_check:
                 continue
             outcomes = market.get("outcomes", [])
+
+            # Player markets carry several players in ONE market, frequently at the
+            # same line. Narrow to this player before anything else, or both the
+            # target lookup and the de-vig pairing below can cross players.
+            if participant:
+                want = _norm_team(participant)
+                outcomes = [o for o in outcomes
+                            if _norm_team(o.get("description", "")) == want]
+                if not outcomes:
+                    continue
 
             # For spreads/totals: exact point match + fuzzy name match.
             # _names_match handles city-only ("Pittsburgh" → "Pittsburgh Pirates"),

@@ -254,7 +254,8 @@ def run_scan(
             # lists the matching market -- known for free from the Kalshi side.
             prop_event_ids = {
                 me.odds_event.event_id for me in matched
-                if getattr(me.kalshi_market, "bet_type", None) in ("btts", "rfi")
+                if getattr(me.kalshi_market, "bet_type", None)
+                in ("btts", "rfi", "player_prop")
             }
             if prop_event_ids and config.ENABLE_PROP_MARKETS:
                 odds_client.enrich_with_props(odds_events, prop_event_ids)

@@ -75,9 +75,10 @@ def _team_score(team: str, candidate: str) -> int:
 
 def _kalshi_game_date(event_ticker: str) -> datetime | None:
     """
-    Parse the game date from a Kalshi event_ticker.
-    e.g. "KXMLBGAME-26APR08PITNYY" → datetime(2026, 4, 8, tzinfo=UTC)
-    Returns None if parsing fails.
+    Parse the game date from a Kalshi event_ticker, at DATE granularity, in UTC.
+    e.g. "KXMLBGAME-26APR08PITNYY" -> datetime(2026, 4, 8, tzinfo=UTC)
+    Returns None if parsing fails. Used for same-DAY comparisons only; for "has this
+    game started?" use _kalshi_game_start() below, which reads the clock time too.
     """
     try:
         parts = event_ticker.split("-")
@@ -86,6 +87,45 @@ def _kalshi_game_date(event_ticker: str) -> datetime | None:
         date_seg = parts[1][:7]  # e.g. "26APR08"
         dt = datetime.strptime(date_seg, "%y%b%d")
         return dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _kalshi_game_start(event_ticker: str) -> datetime | None:
+    """
+    Actual scheduled start, when the ticker carries one.
+
+    Many Kalshi tickers embed the ET clock time after the date:
+        KXMLBKS-26AUG221915PITLAD   ->  Aug 22, 19:15 ET
+        KXMLSGAME-26AUG19PHIMIA     ->  Aug 19, time unknown
+
+    Reading only the date and treating midnight as the start was silently dropping
+    every same-day market from 12:00 UTC onward -- which for MLB (first pitch usually
+    23:00Z or later) is the entire pre-game window. It cost 1,509 player-prop markets
+    and a third of all matches in one measured scan.
+
+    Returns None when no time is encoded, so callers must fall back to date logic.
+    """
+    try:
+        parts = event_ticker.split("-")
+        if len(parts) < 2:
+            return None
+        seg = parts[1]
+        dt = datetime.strptime(seg[:7], "%y%b%d")
+        clock = seg[7:11]
+        if len(clock) != 4 or not clock.isdigit():
+            return None
+        hh, mm = int(clock[:2]), int(clock[2:])
+        if hh > 23 or mm > 59:
+            return None
+        # Kalshi encodes Eastern time (same convention as the date itself).
+        naive = dt.replace(hour=hh, minute=mm)
+        # pytz tzinfo objects must be attached with localize(); replace(tzinfo=...)
+        # silently yields LMT (-4:56 for New York), which shifted every start time by
+        # ~5 minutes and, worse, looked plausible. zoneinfo has no such requirement.
+        localize = getattr(_ET, "localize", None)
+        aware = localize(naive) if localize else naive.replace(tzinfo=_ET)
+        return aware.astimezone(timezone.utc)
     except Exception:
         return None
 
@@ -128,6 +168,13 @@ def _parse_title_teams(title: str) -> tuple[str, str] | None:
     and returns None — those are matched via event_ticker in the spread path.
     """
     clean = title
+    # Kalshi EVENT titles are uniformly "Team A vs Team B: <Market>" -- ": Total Goals",
+    # ": BTTS", ": Strikeouts", ": Home Runs", ": Total Bases", ": First Half Total".
+    # Strip whatever follows the last colon once a vs/at separator is present, so a new
+    # market type never needs its own rule here. Guarded on the separator so a title
+    # that is ONLY "Both Teams To Score" is left alone for the specific rules below.
+    clean = re.sub(r"^(.*(?:\svs\s|\sat\s|\s@\s).*):\s*[^:]+$", r"\1", clean,
+                   flags=re.IGNORECASE)
     # Strip ": Total[s] [Points/Runs/Goals/...]" suffix (NBA/NHL/soccer totals format)
     clean = re.sub(r":\s*Totals?\b.*$", "", clean, flags=re.IGNORECASE)
     # Strip over/under threshold
@@ -358,11 +405,17 @@ def match_events(
         # open until settlement (days after the game), but the Odds API drops
         # completed/in-progress events. Without a sportsbook counterpart the
         # matcher can latch onto a wrong same-city game, producing phantom edge.
-        game_dt = _kalshi_game_date(km.event_ticker)
-        if game_dt is not None and game_dt < now_utc:
-            # game_dt is date-only (midnight UTC); add 12 hours so a same-day
-            # game isn't skipped until it's clearly in the past.
-            if game_dt + timedelta(hours=12) < now_utc:
+        # Prefer the real start time when the ticker encodes one; only fall back to
+        # the date-plus-12h heuristic when it doesn't. That heuristic alone treated a
+        # 19:15 ET first pitch as having started at 12:00 UTC.
+        game_start = _kalshi_game_start(km.event_ticker)
+        if game_start is not None:
+            if game_start < now_utc:
+                logger.debug("Skip %s — started %s", km.ticker, game_start)
+                continue
+        else:
+            game_dt = _kalshi_game_date(km.event_ticker)
+            if game_dt is not None and game_dt + timedelta(hours=12) < now_utc:
                 logger.debug("Skip %s — game date %s is in the past", km.ticker, game_dt.date())
                 continue
 
