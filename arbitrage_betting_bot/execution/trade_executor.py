@@ -19,19 +19,40 @@ from core.kelly_calculator import BetSizing
 logger = logging.getLogger(__name__)
 
 
+# Outcomes whose edge is computed on the Kalshi YES side, so the bet must buy YES.
+# Enumerated explicitly rather than left to a fallthrough: on 2026-08-22 BTTS, RFI and
+# PLAYER were added as Outcome members without being listed here, dropped through to
+# the AWAY branch, and were bet on NO -- the exact opposite of the side the edge was
+# computed for. 10 positions and $13.95 went on before it was caught. Every one of
+# those props prices Kalshi's YES against the sportsbook's matching side.
+_YES_SIDE_OUTCOMES = frozenset({
+    Outcome.DRAW, Outcome.OVER, Outcome.UNDER, Outcome.COVER,
+    Outcome.BTTS, Outcome.RFI, Outcome.PLAYER,
+})
+
+
 def resolve_side(opp: ValueOpportunity) -> str:
-    """Return the Kalshi side ('yes' or 'no') to bet for this opportunity."""
+    """Return the Kalshi side ('yes' or 'no') to bet for this opportunity.
+
+    Raises on an unhandled Outcome. A new market type must not be able to silently
+    inherit a side -- that is precisely how the BTTS/RFI/PLAYER bets ended up
+    inverted, and nothing downstream noticed because a NO bet at a plausible price
+    looks entirely normal.
+    """
     me = opp.matched_event
     # NO_OVER = buying the NO (Under) side of an Over market
     if opp.outcome == Outcome.NO_OVER:
         return "no"
-    # All other non-H2H outcomes (totals YES side, spread cover, draw) buy YES
-    if opp.outcome in (Outcome.DRAW, Outcome.OVER, Outcome.UNDER, Outcome.COVER):
+    if opp.outcome in _YES_SIDE_OUTCOMES:
         return "yes"
     if opp.outcome == Outcome.HOME:
         return me.kalshi_outcome or "yes"
-    # AWAY
-    return "no" if (me.kalshi_outcome or "yes") == "yes" else "yes"
+    if opp.outcome == Outcome.AWAY:
+        return "no" if (me.kalshi_outcome or "yes") == "yes" else "yes"
+    raise ValueError(
+        f"resolve_side has no case for {opp.outcome!r} — add it to _YES_SIDE_OUTCOMES "
+        f"or handle it explicitly rather than letting it default to a side"
+    )
 
 
 def _resolve_club(label: str, home: str, away: str) -> str | None:
@@ -122,6 +143,19 @@ def verify_market_identity(opp: ValueOpportunity) -> str | None:
         if "under" in yes_label and side == "yes" and "under" not in label:
             return (f"direction mismatch: {km.ticker} YES is {km.yes_team!r} but we "
                     f"priced {opp.team_name!r}")
+
+    # ── binary props: the side must be YES, and the market must be the right one ──
+    elif opp.outcome in (Outcome.BTTS, Outcome.RFI, Outcome.PLAYER):
+        if side != "yes":
+            return (f"{opp.outcome.value} edge is computed on Kalshi's YES side but "
+                    f"this order buys {side.upper()}")
+        if opp.outcome == Outcome.BTTS and "both teams" not in (km.yes_team or "").lower():
+            return f"priced BTTS but {km.ticker} YES is {km.yes_team!r}"
+        if opp.outcome == Outcome.PLAYER:
+            who = getattr(km, "participant", None)
+            if not who or who.lower() not in (opp.team_name or "").lower():
+                return (f"player mismatch: priced {opp.team_name!r} but market is for "
+                        f"{who!r}")
 
     # ── draw/tie: the market must actually be the tie market ────────────────────
     elif opp.outcome == Outcome.DRAW:
