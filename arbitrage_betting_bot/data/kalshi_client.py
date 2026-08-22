@@ -33,6 +33,49 @@ import config
 
 logger = logging.getLogger(__name__)
 
+try:
+    from zoneinfo import ZoneInfo
+    _ET = ZoneInfo("America/New_York")
+except ImportError:
+    import pytz
+    _ET = pytz.timezone("America/New_York")
+
+
+def parse_ticker_start(event_ticker: str) -> datetime | None:
+    """
+    Scheduled start in UTC, read from the ET date+clock many Kalshi tickers encode:
+
+        KXMLBKS-26AUG221915PITLAD   ->  Aug 22, 19:15 ET  ->  Aug 22, 23:15 UTC
+        KXMLBTOTAL-26AUG222040MINSD ->  Aug 22, 20:40 ET  ->  Aug 23, 00:40 UTC
+        KXMLSGAME-26AUG19PHIMIA     ->  no clock encoded  ->  None
+
+    Note the second example: an evening ET game lands on the NEXT UTC date. Treating
+    the ticker's ET date as a UTC date puts it a full day early -- which is exactly
+    what KalshiMarket.game_time did for 22% of timed markets.
+
+    Returns None when no clock is encoded, so callers must keep their fallback.
+    """
+    try:
+        parts = event_ticker.split("-")
+        if len(parts) < 2:
+            return None
+        seg = parts[1]
+        base = datetime.strptime(seg[:7], "%y%b%d")
+        clock = seg[7:11]
+        if len(clock) != 4 or not clock.isdigit():
+            return None
+        hh, mm = int(clock[:2]), int(clock[2:])
+        if hh > 23 or mm > 59:
+            return None
+        naive = base.replace(hour=hh, minute=mm)
+        # pytz zones require localize(); replace(tzinfo=...) silently yields LMT
+        # (-4:56 for New York) -- plausible-looking and wrong.
+        localize = getattr(_ET, "localize", None)
+        aware = localize(naive) if localize else naive.replace(tzinfo=_ET)
+        return aware.astimezone(timezone.utc)
+    except Exception:
+        return None
+
 # Per-series market cache: series_ticker → (fetched_at_unix, raw_markets_list)
 # Used to serve stale data when a Kalshi API fetch fails, preventing the scan
 # from running with zero markets for that series and producing phantom edges.
@@ -239,12 +282,22 @@ class KalshiMarket:
         ISO 8601 UTC string for actual game kickoff/tip-off.
 
         Kalshi's close_time is the settlement deadline (~2 weeks after the game),
-        not the start time. The game DATE is encoded in the event_ticker:
-          KXUCLGAME-26APR14ATMBAR  →  April 14, 2026
-        The game TIME (hour:minute) is correct in close_time — only the date is off.
-        We combine the ticker date with the close_time's UTC hour:minute.
-        Falls back to close_time if parsing fails.
+        not the start time.
+
+        Preferred source is the ET date+clock encoded in the event_ticker
+        (parse_ticker_start). Only when the ticker carries no clock do we fall back to
+        combining the ticker DATE with close_time's UTC hour:minute.
+
+        That fallback is subtly wrong and must not be used when a real time exists: it
+        pins an EASTERN date onto a UTC clock, so any game after 20:00 ET -- whose UTC
+        date has already rolled forward -- comes out a full day early. Measured
+        2026-08-22: 30 of 135 timed markets (22%) were off by exactly 24 hours, and
+        this value becomes positions.commence_time, which drives the stop-loss time
+        ramp, the market-maker kickoff stand-down, and every time-to-event figure.
         """
+        start = parse_ticker_start(self.event_ticker)
+        if start is not None:
+            return start.isoformat()
         try:
             parts = self.event_ticker.split("-")
             if len(parts) < 2:

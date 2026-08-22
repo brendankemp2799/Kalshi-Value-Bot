@@ -30,7 +30,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 from data.odds_fetcher import OddsEvent
-from data.kalshi_client import KalshiMarket, _SPORT_TO_SERIES
+from data.kalshi_client import KalshiMarket, _SPORT_TO_SERIES, parse_ticker_start
 from core.odds_converter import _names_match
 
 logger = logging.getLogger(__name__)
@@ -92,42 +92,13 @@ def _kalshi_game_date(event_ticker: str) -> datetime | None:
 
 
 def _kalshi_game_start(event_ticker: str) -> datetime | None:
+    """Scheduled start from the ticker, or None when it encodes no clock.
+
+    Delegates to data.kalshi_client.parse_ticker_start so the ET/UTC handling lives in
+    exactly one place -- KalshiMarket.game_time needs the same logic, and two copies
+    would drift.
     """
-    Actual scheduled start, when the ticker carries one.
-
-    Many Kalshi tickers embed the ET clock time after the date:
-        KXMLBKS-26AUG221915PITLAD   ->  Aug 22, 19:15 ET
-        KXMLSGAME-26AUG19PHIMIA     ->  Aug 19, time unknown
-
-    Reading only the date and treating midnight as the start was silently dropping
-    every same-day market from 12:00 UTC onward -- which for MLB (first pitch usually
-    23:00Z or later) is the entire pre-game window. It cost 1,509 player-prop markets
-    and a third of all matches in one measured scan.
-
-    Returns None when no time is encoded, so callers must fall back to date logic.
-    """
-    try:
-        parts = event_ticker.split("-")
-        if len(parts) < 2:
-            return None
-        seg = parts[1]
-        dt = datetime.strptime(seg[:7], "%y%b%d")
-        clock = seg[7:11]
-        if len(clock) != 4 or not clock.isdigit():
-            return None
-        hh, mm = int(clock[:2]), int(clock[2:])
-        if hh > 23 or mm > 59:
-            return None
-        # Kalshi encodes Eastern time (same convention as the date itself).
-        naive = dt.replace(hour=hh, minute=mm)
-        # pytz tzinfo objects must be attached with localize(); replace(tzinfo=...)
-        # silently yields LMT (-4:56 for New York), which shifted every start time by
-        # ~5 minutes and, worse, looked plausible. zoneinfo has no such requirement.
-        localize = getattr(_ET, "localize", None)
-        aware = localize(naive) if localize else naive.replace(tzinfo=_ET)
-        return aware.astimezone(timezone.utc)
-    except Exception:
-        return None
+    return parse_ticker_start(event_ticker)
 
 
 try:
