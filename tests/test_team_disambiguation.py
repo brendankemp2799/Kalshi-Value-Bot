@@ -127,3 +127,25 @@ def test_detect_spread_skips_an_ambiguous_market_without_placing_anything():
     assert scan_log, "the skip must be logged, not silent"
     assert any("ambiguous_team" in str(r) for r in scan_log), \
         f"expected an ambiguous_team status, got {scan_log}"
+
+
+# ── accent folding ────────────────────────────────────────────────────────────
+#
+# Kalshi writes "Malaga"; the sportsbooks write "Málaga". _sb_team_scores compared
+# them on a bare .lower(), which shares no characters in the accented position and
+# scores 0 -- so verify_market_identity refused the order outright. Logged live twice
+# on 2026-08-23, in La Liga, one of the leagues added two days earlier.
+
+@pytest.mark.parametrize("kalshi,sb", [
+    ("Malaga", "Málaga"),
+    ("Atletico Madrid", "Atlético Madrid"),
+    ("Besiktas", "Beşiktaş"),
+    ("Deportivo La Coruna", "Deportivo La Coruña"),
+])
+def test_accented_club_names_resolve(kalshi, sb):
+    assert _sb_team_match(kalshi, home=sb, away="Getafe") == sb
+
+
+def test_accent_folding_does_not_collapse_distinct_clubs():
+    """Folding must not make two different clubs indistinguishable."""
+    assert _sb_team_match("Málaga", home="Málaga", away="Real Madrid") == "Málaga"

@@ -56,10 +56,20 @@ class MatchedEvent:
     kalshi_outcome: str   # "yes", "no", or "tie"
 
 
+# Kalshi names that no amount of fuzzy matching reaches from the sportsbook name.
+# Applied whole-token after normalization, unlike TEAM_ALIASES above which is a raw
+# substring expansion. "A's" vs "Athletics" scores 50 — below the 80 threshold — so
+# the fixture check would reject Minnesota @ Athletics as a different game.
+_KALSHI_NAME_ALIASES: dict[str, str] = {
+    "a's": "athletics",
+}
+
+
 def _normalize(name: str) -> str:
     for abbr, full in TEAM_ALIASES.items():
         name = name.replace(abbr, full)
-    return name.lower().strip()
+    name = name.lower().strip()
+    return _KALSHI_NAME_ALIASES.get(name, name)
 
 
 def _team_score(team: str, candidate: str) -> int:
@@ -71,6 +81,38 @@ def _team_score(team: str, candidate: str) -> int:
         fuzz.token_sort_ratio(t, c),
         fuzz.token_set_ratio(t, c),
     )
+
+
+def _fixture_carries(km: KalshiMarket, other_team: str, matched_label: str,
+                     threshold: int) -> bool:
+    """Does km's own Kalshi fixture also contain the sportsbook event's OTHER team?
+
+    The YES label alone cannot establish that a market belongs to the fixture we
+    priced. Kalshi truncates names to about ten characters, so "New York M" (the Mets)
+    scores 94.7 against "New York Yankees" — comfortably over the 80 threshold. On
+    2026-08-21..23 that put three real orders on Mets @ White Sox markets while pricing
+    Blue Jays @ Yankees. Confirming the opponent is what separates them: "Chicago W"
+    scores 35.7 against "Toronto Blue Jays".
+
+    Two sources, in order of reliability:
+
+      event_teams — every runner in this Kalshi event, so it names the opponent even
+        though the title no longer does. Measured 2026-08-23: present for all 296 game
+        events across all 17 configured leagues.
+      no_team — the legacy title parse ("Team1 at Team2 Winner?"). Kalshi has since
+        changed the wording to "Team1 wins", so this is empty for 100% of MLB and ~47%
+        of soccer h2h markets and cannot be relied on alone.
+
+    Returns False when neither source can answer. That is the point: this check was
+    previously written as `if km.no_team:`, so the day Kalshi changed the title format
+    it stopped running instead of stopping the trade, and nothing failed loudly.
+    """
+    candidates = [t for t in km.event_teams if t != matched_label]
+    if candidates:
+        return any(_team_score(other_team, t) >= threshold for t in candidates)
+    if km.no_team:
+        return _team_score(other_team, km.no_team) >= threshold
+    return False
 
 
 def _kalshi_game_date(event_ticker: str) -> datetime | None:
@@ -304,24 +346,20 @@ def match_events(
                 continue
 
             if home_score >= threshold and home_score >= away_score:
-                if km.no_team:
-                    cross = _team_score(event.away_team, km.no_team)
-                    if cross < threshold:
-                        logger.debug(
-                            "Skip %s — away %s doesn't match no_team %s (score %d)",
-                            km.ticker, event.away_team, km.no_team, cross,
-                        )
-                        continue
+                if not _fixture_carries(km, event.away_team, km.yes_team, threshold):
+                    logger.debug(
+                        "Skip %s — its fixture %s carries no team matching away %s",
+                        km.ticker, km.event_teams or km.no_team, event.away_team,
+                    )
+                    continue
                 event_matches.append((km, "yes", home_score))
             elif away_score >= threshold:
-                if km.no_team:
-                    cross = _team_score(event.home_team, km.no_team)
-                    if cross < threshold:
-                        logger.debug(
-                            "Skip %s — home %s doesn't match no_team %s (score %d)",
-                            km.ticker, event.home_team, km.no_team, cross,
-                        )
-                        continue
+                if not _fixture_carries(km, event.home_team, km.yes_team, threshold):
+                    logger.debug(
+                        "Skip %s — its fixture %s carries no team matching home %s",
+                        km.ticker, km.event_teams or km.no_team, event.home_team,
+                    )
+                    continue
                 event_matches.append((km, "no", away_score))
 
         first_event_ticker: str | None = None

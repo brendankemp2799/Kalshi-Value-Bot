@@ -19,7 +19,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 from core.market_matcher import MatchedEvent
-from core.odds_converter import consensus_stats
+from core.odds_converter import consensus_stats, _norm_team
 
 logger = logging.getLogger(__name__)
 
@@ -911,10 +911,16 @@ def _sb_team_scores(kalshi_name: str, home: str, away: str) -> tuple[int, int]:
     Split out from _sb_team_match so a rejection can be LOGGED with the numbers that
     caused it — "both scored 25" is what makes an ambiguity fixable later, whereas
     "ambiguous" alone just says it happened. See storage/db.py::log_ambiguous_match.
+
+    Names are folded through _norm_team, which strips accents. Kalshi writes "Malaga"
+    where the sportsbooks write "Málaga"; on a bare .lower() those share no characters
+    in the accented position and score 0, so the pre-order identity check refused the
+    bet outright. That cost real volume in exactly the leagues added on 2026-08-21 —
+    La Liga, Serie A, Ligue 1 — where accented club names are common.
     """
     def _score(sb: str) -> int:
-        kl = kalshi_name.lower()
-        sl = sb.lower()
+        kl = _norm_team(kalshi_name)
+        sl = _norm_team(sb)
         if kl == sl:
             return 100
         if kl in sl or sl in kl:

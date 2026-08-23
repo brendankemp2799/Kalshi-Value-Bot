@@ -285,6 +285,16 @@ def _parse_threshold(title: str, bet_type: str, ticker: str = "",
     return None
 
 
+def matchup_key(event_ticker: str) -> str:
+    """The date+teams part of an event ticker, shared by every market type for one game.
+
+    KXMLBGAME-26AUG231410NYMCWS and KXMLBTOTAL-26AUG231410NYMCWS both key to
+    "26AUG231410NYMCWS", so team labels learned from the h2h markets also identify the
+    fixture behind a totals, spread or prop market, which carry no team names at all.
+    """
+    return event_ticker.split("-", 1)[1] if "-" in event_ticker else ""
+
+
 @dataclass
 class KalshiMarket:
     ticker: str
@@ -317,6 +327,14 @@ class KalshiMarket:
     # consensus lookup needs this to avoid pairing one player's Over with another's
     # Under. See core/odds_converter.py::consensus_stats(participant=...).
     participant: str | None = field(default=None)
+    # Every team label Kalshi lists under this market's own fixture, drawn from the
+    # sibling markets in the same Kalshi event. Kalshi stopped naming the opponent in
+    # h2h titles ("Toronto wins", not "Toronto at New York Winner?"), which left
+    # no_team empty and cost the matcher its only proof that a market belongs to the
+    # fixture we priced. Names are truncated to ~10 characters, so a YES label on its
+    # own cannot supply that proof: "New York M" (Mets) scores 94.7 against "New York
+    # Yankees". Both teams have to be present. See market_matcher._fixture_carries().
+    event_teams: tuple[str, ...] = field(default=())
 
     @property
     def spread(self) -> float:
@@ -691,6 +709,21 @@ class KalshiClient:
                     raw_all.append((series, r))
                 logger.debug("Series %s: %d raw markets", series, len(raw))
 
+        # Which teams each fixture actually involves, learned from the *GAME series,
+        # where every runner is one team. Built before parsing because a market cannot
+        # see its own siblings: the h2h dedup below keeps one market per event and
+        # discards the very row that names the opponent.
+        matchup_teams: dict[str, set[str]] = {}
+        for _series, rm in raw_all:
+            et = rm.get("event_ticker", "") or ""
+            prefix = et.split("-")[0].upper()
+            if not et or not prefix.endswith("GAME"):
+                continue
+            label = (rm.get("yes_sub_title") or "").strip()
+            if not label or label.lower() in ("tie", "draw"):
+                continue
+            matchup_teams.setdefault(matchup_key(et), set()).add(label)
+
         # Parse and deduplicate
         by_event: dict[str, KalshiMarket] = {}   # H2H dedup key → market
         non_h2h: list[KalshiMarket] = []         # totals/spreads/btts kept individually
@@ -831,6 +864,7 @@ class KalshiClient:
                 bet_type=bet_type,
                 threshold=threshold,
                 participant=participant,
+                event_teams=tuple(sorted(matchup_teams.get(matchup_key(event_ticker), ()))),
             )
 
             if bet_type == "h2h":
