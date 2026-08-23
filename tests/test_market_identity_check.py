@@ -26,9 +26,13 @@ from execution.trade_executor import verify_market_identity
 
 
 def opp(outcome, team_name, yes_team, home, away, *, kalshi_outcome="yes",
-        threshold=None, ticker="KX-TEST", bet_type="h2h"):
+        threshold=None, ticker="KX-TEST", bet_type="h2h", event_teams=None):
+    # event_teams defaults to the fixture actually being priced, so these cases
+    # exercise the wrong-fixture gate rather than skipping past it. Pass it
+    # explicitly to model a market belonging to some other game.
     km = SimpleNamespace(ticker=ticker, yes_team=yes_team, threshold=threshold,
-                         bet_type=bet_type)
+                         bet_type=bet_type,
+                         event_teams=(home, away) if event_teams is None else event_teams)
     ev = SimpleNamespace(home_team=home, away_team=away, sport_key="baseball_mlb",
                          commence_time=datetime(2026, 8, 19, tzinfo=timezone.utc))
     me = SimpleNamespace(odds_event=ev, kalshi_market=km, kalshi_outcome=kalshi_outcome)
@@ -237,3 +241,52 @@ def test_a_correct_rfi_passes():
             ticker="KXMLBRFI-26AUG251945BALSTL", bet_type="rfi")
     o.matched_event.kalshi_market.title = "Baltimore vs St. Louis First Inning Run?"
     assert verify_market_identity(o) is None
+
+
+# ── wrong fixture ─────────────────────────────────────────────────────────────
+#
+# The check below every other check: is this even the right game? On 2026-08-21..23
+# three orders priced Blue Jays @ Yankees and executed on Mets @ White Sox markets,
+# and this function passed all three, because _resolve_club scores 25 per shared word
+# so "New York" alone carries "New York Mets" onto "New York Yankees".
+
+def test_a_market_from_another_game_is_refused():
+    o = opp(Outcome.HOME, "New York Yankees", "New York M",
+            home="New York Yankees", away="Toronto Blue Jays",
+            ticker="KXMLBGAME-26AUG231410NYMCWS-NYM",
+            event_teams=("Chicago W", "New York M"))
+    reason = verify_market_identity(o)
+    assert reason is not None, "the Mets market must not pass as a Yankees bet"
+    assert "wrong fixture" in reason
+
+
+def test_a_totals_market_from_another_game_is_refused():
+    """Totals never look at teams at all, so before this the branch had nothing
+    that could reject a wrong-game order."""
+    o = opp(Outcome.UNDER, "Under 7.5", "Over 7.5 runs scored",
+            home="New York Yankees", away="Toronto Blue Jays",
+            threshold=7.5, bet_type="totals",
+            ticker="KXMLBTOTAL-26AUG231410NYMCWS-8",
+            event_teams=("Chicago W", "New York M"))
+    assert "wrong fixture" in (verify_market_identity(o) or "")
+
+
+def test_the_same_bet_on_the_right_game_passes():
+    """The real TORNYY market: Kalshi's YES is Toronto, the AWAY team, so backing
+    Toronto buys YES (kalshi_outcome="no" means YES != home)."""
+    o = opp(Outcome.AWAY, "Toronto Blue Jays", "Toronto",
+            home="New York Yankees", away="Toronto Blue Jays",
+            kalshi_outcome="no",
+            ticker="KXMLBGAME-26AUG231335TORNYY-TOR",
+            event_teams=("New York Y", "Toronto"))
+    assert verify_market_identity(o) is None
+
+
+def test_a_crosstown_market_is_refused_for_the_other_club():
+    """Cubs vs White Sox is the same trap with a different city — and it was live
+    on the MLB board on 2026-08-23."""
+    o = opp(Outcome.HOME, "Chicago White Sox", "Chicago C",
+            home="Chicago White Sox", away="Texas Rangers",
+            ticker="KXMLBGAME-26AUG242140CHCAZ-CHC",
+            event_teams=("Arizona", "Chicago C"))
+    assert "wrong fixture" in (verify_market_identity(o) or "")

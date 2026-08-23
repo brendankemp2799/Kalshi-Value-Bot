@@ -13,6 +13,7 @@ import re
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import config
 from core.value_detector import ValueOpportunity, Outcome
 from core.kelly_calculator import BetSizing
 
@@ -108,6 +109,27 @@ def verify_market_identity(opp: ValueOpportunity) -> str | None:
     km = me.kalshi_market
     ev = me.odds_event
     side = resolve_side(opp)
+
+    # ── is this even the right game? ────────────────────────────────────────────
+    #
+    # Applies to every outcome type, and comes first, because the checks below all
+    # assume the fixture is already settled and only ask WHICH SIDE of it we bought.
+    # On 2026-08-21..23 that assumption was false: three orders priced Blue Jays @
+    # Yankees and landed on Mets @ White Sox markets, and every check below passed,
+    # because _resolve_club scores 25 per shared word and "New York" alone carries
+    # "New York Mets" onto "New York Yankees". The same holds for Jets/Giants,
+    # Angels/Dodgers and Cubs/White Sox. The totals branch never looks at teams at
+    # all, so it could not have caught its own wrong-game order either.
+    #
+    # market_matcher._fixture_carries() now stops this upstream; this is the same
+    # question asked again at the money boundary, off Kalshi's own event listing.
+    if km.event_teams:
+        from core.market_matcher import _team_score
+        threshold = config.FUZZY_MATCH_THRESHOLD
+        for ours_side in (ev.home_team, ev.away_team):
+            if not any(_team_score(ours_side, t) >= threshold for t in km.event_teams):
+                return (f"wrong fixture: {km.ticker} is {km.event_teams} but we priced "
+                        f"{ev.away_team} @ {ev.home_team}")
 
     # ── team-identified outcomes: the failure mode that motivated this ──────────
     if opp.outcome in (Outcome.HOME, Outcome.AWAY, Outcome.COVER):

@@ -77,7 +77,8 @@ def test_identity_check_rejects_a_prop_bought_on_the_wrong_side(monkeypatch):
     from datetime import datetime, timezone
 
     km = SimpleNamespace(ticker="KXEPLBTTS-X", yes_team="Both Teams To Score",
-                         threshold=None, bet_type="btts", participant=None)
+                         threshold=None, bet_type="btts", participant=None,
+                         event_teams=("Arsenal", "Coventry"))
     ev = SimpleNamespace(home_team="Arsenal", away_team="Coventry",
                          sport_key="soccer_epl",
                          commence_time=datetime(2026, 8, 23, tzinfo=timezone.utc))
