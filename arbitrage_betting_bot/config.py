@@ -48,26 +48,36 @@ MAX_PCT_BANKROLL: float = 0.05        # Max 5% of bankroll per single bet
 MAX_TOTAL_EXPOSURE_PCT: float = 0.30  # Max 30% of bankroll deployed at once
 MAX_SPORT_EXPOSURE_PCT: float = 0.15  # Max 15% of bankroll in one sport
 
-# Max share of bankroll across ALL open positions on a single game, whatever the bet
-# type. This replaced "at most one open position per game" (correlation_tracker Rule 1)
-# on 2026-08-23.
+# Correlated-bet limits, expressed as MULTIPLES OF MAX_PCT_BANKROLL rather than as
+# independent percentages. That relationship is the whole point.
 #
-# The risk being managed is real: Kelly sizes each bet as if it were independent, so
-# stacking Over 8.5 + First Inning Run + a hitter's total bases -- three bets on "this
-# game scores" -- over-bets the joint position. But a position COUNT is a poor proxy
-# for it, and the count was measurably mis-firing. Of nine same-game refusals in one
-# live scan:
-#   - two blocked mutually exclusive outcomes (Liverpool win vs Newcastle win; Draw vs
-#     Elche), where the second leg REDUCES variance rather than compounding it
-#   - four refused a better edge than the position they were protecting, because the
-#     rule compares against whatever opened first in an earlier scan
-#   - roughly one was the case the rule exists for (RFI blocked by an open Over 8.5)
-# Meanwhile it had become the largest single source of refused edges (9 of 13 blocks),
-# and props make that structural: a game has one moneyline and ~50 prop markets.
+# This started as a flat MAX_GAME_EXPOSURE_PCT = 0.02, chosen as a round number without
+# checking it against the per-bet cap. At 5%/2% the largest single bet allowed was 2.5x
+# the entire game budget -- incoherent in both directions. A $8.46 bet was permitted
+# but then locked the game against everything else forever, while $1 + $1 + $1.50
+# across three markets was refused at the third, even though three small correlated
+# bets carry less joint risk than one bet 2.5x their total. Measured 2026-08-23: 5 of
+# 195 filled bets were larger than the entire game budget.
 #
-# A dollar cap targets the concentration directly. At 2% of a $164 bankroll that is
-# ~$3.27, about 3-4 bets at the current ~$0.90 average.
-MAX_GAME_EXPOSURE_PCT: float = float(os.getenv("MAX_GAME_EXPOSURE_PCT", "0.02"))
+# What is actually being managed is that Kelly sizes every bet as if independent. So
+# the rule is: bets that load on the SAME factor must not, together, exceed what a
+# single bet was allowed to be. Correlated bets count as one position.
+#
+#   factor cap = MAX_FACTOR_EXPOSURE_MULTIPLE x MAX_PCT_BANKROLL
+#       all "scoring" bets on one game (totals + btts + rfi + player props), or all
+#       "result" bets (h2h + spread), summed. See core/correlation_tracker.py.
+#
+#   game cap   = MAX_GAME_EXPOSURE_MULTIPLE x MAX_PCT_BANKROLL
+#       every open position on the game regardless of factor. Bounds the case where
+#       all legs lose together -- including mutually exclusive h2h outcomes, which are
+#       exempt from the FACTOR cap (they cannot both win) but not from this one (they
+#       can both lose).
+#
+# Because both derive from MAX_PCT_BANKROLL, a max-size single bet always fits.
+MAX_FACTOR_EXPOSURE_MULTIPLE: float = float(
+    os.getenv("MAX_FACTOR_EXPOSURE_MULTIPLE", "1.0"))
+MAX_GAME_EXPOSURE_MULTIPLE: float = float(
+    os.getenv("MAX_GAME_EXPOSURE_MULTIPLE", "2.0"))
 MAX_OPEN_POSITIONS: int = 40          # Backstop circuit-breaker only (e.g. a bug placing runaway
                                        # duplicate positions) -- exposure % (below) and correlation
                                        # rules (core/correlation_tracker.py) are the real, bankroll-

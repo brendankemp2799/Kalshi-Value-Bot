@@ -2,8 +2,9 @@
 Prevents correlated bets that could amplify losses.
 
 Rules (in order):
-  1. Same game:  total stake across all open positions on this event, plus the
-     proposed one, must stay under config.MAX_GAME_EXPOSURE_PCT of bankroll.
+  1. Same game:  bets sharing a factor (scoring / result) must not together
+     exceed one max-size bet; the game overall must not exceed two. Both are
+     multiples of MAX_PCT_BANKROLL — see config for why that relationship matters.
   2. Same team, same day: already have an open position involving one of these
      teams, with a game on the same UTC calendar date.
   3. Exposure:   BankrollManager cap on total / per-sport exposure.
@@ -23,6 +24,48 @@ from core.bankroll_manager import BankrollManager
 from storage import db
 
 logger = logging.getLogger(__name__)
+
+
+# Which latent factor each bet type resolves on. Bets sharing a factor are the ones
+# Kelly mis-sized by treating them as independent: Over 8.5, First Inning Run and a
+# hitter's total bases are three bets on "this game scores".
+_BET_FACTOR: dict[str, str] = {
+    "h2h":         "result",
+    "spread":      "result",
+    "totals":      "scoring",
+    "btts":        "scoring",
+    "rfi":         "scoring",
+    "player_prop": "scoring",
+}
+
+
+def bet_factor(bet_type: str) -> str:
+    """The factor a bet type loads on.
+
+    An unmapped type gets a bucket of its OWN rather than silently joining an existing
+    one -- a new market type must not inherit a correlation assumption by accident,
+    which is the same failure that put 11 positions on the wrong side on 2026-08-22.
+    tests/test_correlation_rules.py pins that every enabled bet type is mapped here.
+    """
+    return _BET_FACTOR.get(bet_type) or f"unmapped:{bet_type}"
+
+
+def _cannot_both_win(new_bet_type: str, new_team: str, new_side: str, pos) -> bool:
+    """True if these two bets are mutually exclusive outcomes of one 3-way market.
+
+    Two YES bets on different runners of the same match -- Liverpool win vs Newcastle
+    win vs Draw -- cannot both pay. Stacking them is not the correlated over-betting
+    the factor cap exists to stop, so they do not accumulate against it. They CAN all
+    lose together, so they still accumulate against the game cap.
+
+    Side matters: NO on Newcastle means "Newcastle does not win", which OVERLAPS with
+    Liverpool YES rather than excluding it. Only YES-vs-YES qualifies.
+    """
+    if new_bet_type != "h2h" or pos["bet_type"] != "h2h":
+        return False
+    if new_side != "yes" or (pos["side"] or "yes") != "yes":
+        return False
+    return (new_team or "").strip().lower() != (pos["team_name"] or "").strip().lower()
 
 
 class CorrelationTracker:
@@ -89,41 +132,55 @@ class CorrelationTracker:
             else:
                 del self._failed_cooldowns[ticker]
 
-        # Rule 1: same game — a DOLLAR cap, not a position count.
+        # Rule 1: same game — correlated bets must not, together, exceed what a
+        # single bet was allowed to be.
         #
-        # Kelly sizes each bet as if independent, so several bets on one game that all
-        # load on the same thing (Over 8.5, First Inning Run, a hitter's total bases)
-        # over-bet the joint position. What matters is how much money ends up on that
-        # game, which is what this measures. See config.MAX_GAME_EXPOSURE_PCT for the
-        # live evidence that the old one-position-per-game count was the wrong proxy --
-        # it blocked mutually exclusive outcomes that HEDGE each other just as readily
-        # as it blocked genuine doubling-up.
-        #
-        # The FIRST position on a game is always allowed through this rule, however
-        # large: a single Kelly-sized bet is not the concentration this guards against,
-        # and MAX_PCT_BANKROLL/MAX_BET_DOLLARS already bound it. Otherwise a
-        # high-conviction game would be refused every bet including the first.
-        #
-        # pending_game_stakes covers what is approved but not yet written: live entries
-        # land in the DB only after the whole approval loop, so open_positions cannot
-        # see anything queued earlier in THIS scan. The old count-based rule had this
-        # hole too and silently permitted same-game stacking within a single scan --
-        # which is exactly when several props on one game arrive together.
+        # Both caps derive from MAX_PCT_BANKROLL (see the config block), so a max-size
+        # single bet always fits. The predecessor was a flat 2%-of-bankroll figure that
+        # was 2.5x SMALLER than the largest permitted single bet -- so one big bet
+        # locked the game against everything else, while three small correlated bets
+        # got refused.
         if not is_special:
-            on_this_game = sum(
-                pos["stake"] or 0.0 for pos in open_positions
-                if pos["home_team"] == home and pos["away_team"] == away
-            )
+            same_game = [dict(p) for p in open_positions
+                         if p["home_team"] == home and p["away_team"] == away]
             if pending_game_stakes:
-                on_this_game += pending_game_stakes.get((home, away), 0.0)
-            if on_this_game > 0:
-                cap = config.MAX_GAME_EXPOSURE_PCT * self.bm.bankroll
-                if on_this_game + recommended_dollars > cap:
+                same_game += pending_game_stakes.get((home, away), [])
+
+            if same_game:
+                from execution.trade_executor import resolve_side
+
+                km = opp.matched_event.kalshi_market
+                new_bet_type = km.bet_type
+                new_factor = bet_factor(new_bet_type)
+                new_side = resolve_side(opp)
+
+                max_bet = config.MAX_PCT_BANKROLL * self.bm.bankroll
+                factor_cap = config.MAX_FACTOR_EXPOSURE_MULTIPLE * max_bet
+                game_cap = config.MAX_GAME_EXPOSURE_MULTIPLE * max_bet
+
+                # Factor cap: the correlation control.
+                factor_used = sum(
+                    (p["stake"] or 0.0) for p in same_game
+                    if bet_factor(p["bet_type"]) == new_factor
+                    and not _cannot_both_win(new_bet_type, opp.team_name, new_side, p)
+                )
+                if factor_used > 0 and factor_used + recommended_dollars > factor_cap:
+                    return (
+                        False,
+                        f"{new_factor} exposure on {home} vs {away} would reach "
+                        f"${factor_used + recommended_dollars:.2f} "
+                        f"(max ${factor_cap:.2f} — correlated bets count as one)",
+                    )
+
+                # Game cap: the concentration control. Everything counts, including
+                # mutually exclusive outcomes, which can all lose together.
+                game_used = sum((p["stake"] or 0.0) for p in same_game)
+                if game_used > 0 and game_used + recommended_dollars > game_cap:
                     return (
                         False,
                         f"Game exposure would reach "
-                        f"${on_this_game + recommended_dollars:.2f} on {home} vs "
-                        f"{away} (max ${cap:.2f})",
+                        f"${game_used + recommended_dollars:.2f} on {home} vs {away} "
+                        f"(max ${game_cap:.2f})",
                     )
 
         # Rule 2: same team, same day — skip for arb pairs / MM. Scoped to the same
