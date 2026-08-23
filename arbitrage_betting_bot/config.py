@@ -695,6 +695,25 @@ ENABLED_BET_TYPES: set[str] = {
 # cadence) got more patience, NEAR_GAME (120s) was left alone since it's already
 # close to its own 2min poll cadence and is exactly the tier where staying
 # responsive matters most.
+# Minimum gap between consecutive order POSTs to Kalshi, across all threads.
+#
+# main.py places every approved order from a ThreadPoolExecutor sized
+# max_workers=len(approved_live) -- one thread per order, all POSTing at once. That
+# was harmless while a scan approved a handful of orders. Props changed the shape: one
+# MLB game carries ~50 prop markets, all evaluated in the same scan, so approvals
+# concentrate into a single burst instead of trickling. On 2026-08-22 a scan approved
+# 33 orders, 12 POSTs landed inside 600ms, and Kalshi rejected all 12 with HTTP 429 --
+# every 429 the bot has ever seen came from that day.
+#
+# The fix is spacing, not a smaller pool: each worker then blocks up to
+# LIMIT_ORDER_TIMEOUT_DEFAULT_SECONDS waiting on its GTC order, so a small pool would
+# serialise the WAITING and take hours to work through a batch. This gate applies to
+# the POST only and leaves the poll loops fully parallel.
+#
+# 0.15s is ~6.7 orders/sec, so a 33-order batch takes ~5s to place. Set to 0 to disable.
+KALSHI_ORDER_MIN_SPACING_SECONDS: float = float(
+    os.getenv("KALSHI_ORDER_MIN_SPACING_SECONDS", "0.15"))
+
 LIMIT_ORDER_TIMEOUT_DEFAULT_SECONDS: int = 900   # step 1 — game > 1 hour away (was 600)
 LIMIT_ORDER_TIMEOUT_PRE_GAME_SECONDS: int = 450  # step 1 — within 1 hour (was 300)
 LIMIT_ORDER_TIMEOUT_NEAR_GAME_SECONDS: int = 120 # step 1 — within 30 minutes (unchanged)

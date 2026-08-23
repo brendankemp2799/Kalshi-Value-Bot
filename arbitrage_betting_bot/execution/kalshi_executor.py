@@ -50,6 +50,7 @@ from __future__ import annotations
 import json as _json
 import logging
 import math
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -191,6 +192,32 @@ def _cancel_order(order_id: str) -> bool:
         return False
 
 
+# Serialises order POSTs across every thread. See
+# config.KALSHI_ORDER_MIN_SPACING_SECONDS for the incident this exists to prevent.
+_ORDER_POST_LOCK = threading.Lock()
+_last_order_post_at: float = 0.0
+
+
+def _throttle_order_post() -> None:
+    """Block until this thread may POST an order.
+
+    The lock is deliberately held across the sleep: that is what makes concurrent
+    callers come out one at a time, spaced, rather than all waking together and
+    re-creating the burst.
+    """
+    global _last_order_post_at
+    spacing = getattr(config, "KALSHI_ORDER_MIN_SPACING_SECONDS", 0.0)
+    if spacing <= 0:
+        return
+    with _ORDER_POST_LOCK:
+        now = time.monotonic()
+        wait = _last_order_post_at + spacing - now
+        if wait > 0:
+            time.sleep(wait)
+            now = time.monotonic()
+        _last_order_post_at = now
+
+
 def _place_raw_order(
     ticker: str,
     api_side: str,
@@ -218,6 +245,7 @@ def _place_raw_order(
         "self_trade_prevention_type": "taker_at_cross",
         "reduce_only": reduce_only,
     }
+    _throttle_order_post()
     headers = auth_headers("POST", _ORDERS_URL)
     resp = session().post(_ORDERS_URL, json=payload, headers=headers, timeout=15)
     resp.raise_for_status()
