@@ -47,6 +47,27 @@ MAX_BET_DOLLARS: float = 100.0        # Hard dollar cap per bet
 MAX_PCT_BANKROLL: float = 0.05        # Max 5% of bankroll per single bet
 MAX_TOTAL_EXPOSURE_PCT: float = 0.30  # Max 30% of bankroll deployed at once
 MAX_SPORT_EXPOSURE_PCT: float = 0.15  # Max 15% of bankroll in one sport
+
+# Max share of bankroll across ALL open positions on a single game, whatever the bet
+# type. This replaced "at most one open position per game" (correlation_tracker Rule 1)
+# on 2026-08-23.
+#
+# The risk being managed is real: Kelly sizes each bet as if it were independent, so
+# stacking Over 8.5 + First Inning Run + a hitter's total bases -- three bets on "this
+# game scores" -- over-bets the joint position. But a position COUNT is a poor proxy
+# for it, and the count was measurably mis-firing. Of nine same-game refusals in one
+# live scan:
+#   - two blocked mutually exclusive outcomes (Liverpool win vs Newcastle win; Draw vs
+#     Elche), where the second leg REDUCES variance rather than compounding it
+#   - four refused a better edge than the position they were protecting, because the
+#     rule compares against whatever opened first in an earlier scan
+#   - roughly one was the case the rule exists for (RFI blocked by an open Over 8.5)
+# Meanwhile it had become the largest single source of refused edges (9 of 13 blocks),
+# and props make that structural: a game has one moneyline and ~50 prop markets.
+#
+# A dollar cap targets the concentration directly. At 2% of a $164 bankroll that is
+# ~$3.27, about 3-4 bets at the current ~$0.90 average.
+MAX_GAME_EXPOSURE_PCT: float = float(os.getenv("MAX_GAME_EXPOSURE_PCT", "0.02"))
 MAX_OPEN_POSITIONS: int = 40          # Backstop circuit-breaker only (e.g. a bug placing runaway
                                        # duplicate positions) -- exposure % (below) and correlation
                                        # rules (core/correlation_tracker.py) are the real, bankroll-

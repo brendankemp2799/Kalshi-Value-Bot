@@ -393,10 +393,17 @@ def run_scan(
     # so tracker.is_allowed()'s same-ticker rule can't see anything queued earlier in
     # THIS scan. Track it locally so the same ticker can't be approved twice in one batch.
     approved_tickers_this_scan: set[str] = set()
+    # Same blind spot, for Rule 1's per-game dollar cap: without this, several
+    # opportunities on one game all read a DB that shows zero exposure there and every
+    # one of them is approved. Props make that the common case rather than the corner
+    # case -- one game carries ~50 prop markets.
+    pending_game_stakes: dict[tuple[str, str], float] = {}
 
     for _score, opp, sizing in scored:
         ticker = opp.matched_event.kalshi_market.ticker
-        allowed, reason = tracker.is_allowed(opp, sizing.recommended_dollars, arb_game_keys=arb_game_keys)
+        allowed, reason = tracker.is_allowed(opp, sizing.recommended_dollars,
+                                             arb_game_keys=arb_game_keys,
+                                             pending_game_stakes=pending_game_stakes)
         if allowed and not dry_run and not paper and ticker in approved_tickers_this_scan:
             allowed, reason = False, f"Already queued an entry on {ticker} earlier this scan"
 
@@ -468,9 +475,15 @@ def run_scan(
                 )
             logger.info("[PAPER] Position logged: %s $%.2f on Kalshi",
                         opp.team_name, sizing.recommended_dollars)
+            _game_key = (event.home_team, event.away_team)
+            pending_game_stakes[_game_key] = (
+                pending_game_stakes.get(_game_key, 0.0) + actual_stake)
         elif opp_id:
             # Live mode: queue for parallel execution below
             approved_tickers_this_scan.add(ticker)
+            _game_key = (event.home_team, event.away_team)
+            pending_game_stakes[_game_key] = (
+                pending_game_stakes.get(_game_key, 0.0) + sizing.recommended_dollars)
             approved_live.append((opp, sizing, opp_id))
 
     # 4c. Live mode — place all approved orders in parallel (GTC timeouts run concurrently)

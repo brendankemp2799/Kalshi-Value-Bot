@@ -2,7 +2,8 @@
 Prevents correlated bets that could amplify losses.
 
 Rules (in order):
-  1. Same game:  already have an open position on this exact event.
+  1. Same game:  total stake across all open positions on this event, plus the
+     proposed one, must stay under config.MAX_GAME_EXPOSURE_PCT of bankroll.
   2. Same team, same day: already have an open position involving one of these
      teams, with a game on the same UTC calendar date.
   3. Exposure:   BankrollManager cap on total / per-sport exposure.
@@ -40,6 +41,7 @@ class CorrelationTracker:
         recommended_dollars: float,
         arb_game_keys: set[tuple[str, str]] | None = None,
         is_mm: bool = False,
+        pending_game_stakes: dict[tuple[str, str], float] | None = None,
     ) -> tuple[bool, str]:
         """
         Returns (allowed, reason).
@@ -87,11 +89,42 @@ class CorrelationTracker:
             else:
                 del self._failed_cooldowns[ticker]
 
-        # Rule 1: same game — skip for arb pairs / MM (both legs placed in same scan)
+        # Rule 1: same game — a DOLLAR cap, not a position count.
+        #
+        # Kelly sizes each bet as if independent, so several bets on one game that all
+        # load on the same thing (Over 8.5, First Inning Run, a hitter's total bases)
+        # over-bet the joint position. What matters is how much money ends up on that
+        # game, which is what this measures. See config.MAX_GAME_EXPOSURE_PCT for the
+        # live evidence that the old one-position-per-game count was the wrong proxy --
+        # it blocked mutually exclusive outcomes that HEDGE each other just as readily
+        # as it blocked genuine doubling-up.
+        #
+        # The FIRST position on a game is always allowed through this rule, however
+        # large: a single Kelly-sized bet is not the concentration this guards against,
+        # and MAX_PCT_BANKROLL/MAX_BET_DOLLARS already bound it. Otherwise a
+        # high-conviction game would be refused every bet including the first.
+        #
+        # pending_game_stakes covers what is approved but not yet written: live entries
+        # land in the DB only after the whole approval loop, so open_positions cannot
+        # see anything queued earlier in THIS scan. The old count-based rule had this
+        # hole too and silently permitted same-game stacking within a single scan --
+        # which is exactly when several props on one game arrive together.
         if not is_special:
-            for pos in open_positions:
-                if pos["home_team"] == home and pos["away_team"] == away:
-                    return False, f"Already have an open position on {home} vs {away}"
+            on_this_game = sum(
+                pos["stake"] or 0.0 for pos in open_positions
+                if pos["home_team"] == home and pos["away_team"] == away
+            )
+            if pending_game_stakes:
+                on_this_game += pending_game_stakes.get((home, away), 0.0)
+            if on_this_game > 0:
+                cap = config.MAX_GAME_EXPOSURE_PCT * self.bm.bankroll
+                if on_this_game + recommended_dollars > cap:
+                    return (
+                        False,
+                        f"Game exposure would reach "
+                        f"${on_this_game + recommended_dollars:.2f} on {home} vs "
+                        f"{away} (max ${cap:.2f})",
+                    )
 
         # Rule 2: same team, same day — skip for arb pairs / MM. Scoped to the same
         # UTC calendar date rather than "any open position on this team, indefinitely" —
@@ -102,6 +135,15 @@ class CorrelationTracker:
         if not is_special:
             event_date = event.commence_time.astimezone(timezone.utc).date()
             for pos in open_positions:
+                if pos["home_team"] == home and pos["away_team"] == away:
+                    # Same game -- Rule 1's dollar cap governs this, not Rule 2.
+                    # Rule 2 exists for a DIFFERENT game involving a shared team, and
+                    # its team test matches both clubs of the same fixture, so without
+                    # this it blocks every same-game second bet on the same date --
+                    # i.e. always. That made Rule 1 pure redundancy: the count-based
+                    # version never had to fire to get the same outcome, and the
+                    # dollar cap that replaced it would have been inert.
+                    continue
                 if pos["home_team"] not in (home, away) and pos["away_team"] not in (home, away):
                     continue
                 same_day = True
