@@ -158,3 +158,41 @@ def test_only_markets_pinnacle_quotes_are_wired():
 def test_player_prop_is_enabled_with_a_quality_tier():
     assert "player_prop" in config.ENABLED_BET_TYPES
     assert "player_prop" in config.QUALITY_FILTERS
+
+
+# ── 3. accented names ───────────────────────────────────────────────────────────
+#
+# Kalshi writes "Ronald Acuña Jr."; The Odds API's `description` may carry a different
+# accent convention. The participant filter compares these for EXACT equality after
+# normalisation, so an unfolded accent is not a fuzzy near-miss -- it is a total
+# lookup failure, and the rung is logged "no consensus" forever. Every accented
+# player in MLB was unpriceable until _norm_team started folding.
+
+def _accented_book(kalshi_name, book_name):
+    return [{"key": "pinnacle", "markets": [{"key": "batter_total_bases", "outcomes": [
+        {"name": "Over",  "description": book_name, "point": 1.5, "price": -140},
+        {"name": "Under", "description": book_name, "point": 1.5, "price": 115},
+    ]}]}]
+
+
+@pytest.mark.parametrize("kalshi_name,book_name", [
+    ("Ronald Acuña Jr.", "Ronald Acuna Jr."),
+    ("Ronald Acuna Jr.", "Ronald Acuña Jr."),
+    ("José Ramírez",     "Jose Ramirez"),
+    ("Eugenio Suárez",   "Eugenio Suarez"),
+])
+def test_an_accent_difference_does_not_hide_the_line(kalshi_name, book_name):
+    prob, n, _ = consensus_stats(_accented_book(kalshi_name, book_name), "Over",
+                                 market_key="batter_total_bases", point=1.5,
+                                 participant=kalshi_name)
+    assert prob is not None and n == 1, (
+        f"{kalshi_name!r} could not find {book_name!r} -- the rung would be "
+        f"logged 'no consensus' against data we paid for"
+    )
+
+
+def test_folding_does_not_merge_genuinely_different_players():
+    books = _accented_book("Jose Ramirez", "Jose Ramirez")
+    prob, n, _ = consensus_stats(books, "Over", market_key="batter_total_bases",
+                                 point=1.5, participant="Jose Altuve")
+    assert prob is None and n == 0

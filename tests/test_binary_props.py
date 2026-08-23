@@ -148,3 +148,21 @@ def test_first_half_series_are_not_wired():
     from data.kalshi_client import _SERIES_TO_BET_TYPE
     bad = [s for s in _SERIES_TO_BET_TYPE if "1H" in s or "2H" in s]
     assert bad == [], f"untradable half-markets wired in: {bad}"
+
+
+# ── the Outcome must come from the table, not a two-branch guess ────────────────
+
+def test_every_binary_prop_carries_its_own_outcome():
+    """This was `Outcome.BTTS if bet_type == "btts" else Outcome.RFI` -- the same
+    fallthrough shape that put 11 positions on the wrong side on 2026-08-22. A third
+    entry added to _BINARY_PROPS would have been priced, logged and settled as RFI."""
+    from core.value_detector import _BINARY_PROPS, Outcome
+
+    seen = set()
+    for bet_type, spec in _BINARY_PROPS.items():
+        outcome = spec[4]
+        assert isinstance(outcome, Outcome), f"{bet_type} has no Outcome of its own"
+        assert outcome not in seen, f"{bet_type} reuses {outcome!r}"
+        seen.add(outcome)
+    assert _BINARY_PROPS["btts"][4] is Outcome.BTTS
+    assert _BINARY_PROPS["rfi"][4] is Outcome.RFI

@@ -31,9 +31,9 @@ from data.odds_fetcher import OddsAPIClient, OddsEvent
 
 @pytest.fixture(autouse=True)
 def _clean_cache():
-    of._ALT_FETCHED_AT.clear()
+    of._ALT_CACHE.clear()
     yield
-    of._ALT_FETCHED_AT.clear()
+    of._ALT_CACHE.clear()
 
 
 def ev(event_id="e1", hours_out=6.0, sport="baseball_mlb", books=None):
@@ -92,14 +92,14 @@ def test_a_game_is_fetched_once_then_not_again_immediately():
     now = datetime.now(timezone.utc)
     c = now + timedelta(hours=6)
     assert OddsAPIClient._alternates_due("e1", c, now) is True
-    of._ALT_FETCHED_AT["e1"] = now
+    of._ALT_CACHE["e1"] = (now, [])
     assert OddsAPIClient._alternates_due("e1", c, now + timedelta(minutes=45)) is False
 
 
 def test_near_games_refresh_hourly():
     now = datetime.now(timezone.utc)
     c = now + timedelta(hours=6)          # inside the 12h tier -> hourly
-    of._ALT_FETCHED_AT["e1"] = now
+    of._ALT_CACHE["e1"] = (now, [])
     assert OddsAPIClient._alternates_due("e1", c, now + timedelta(minutes=59)) is False
     assert OddsAPIClient._alternates_due("e1", c, now + timedelta(hours=1, minutes=1)) is True
 
@@ -108,7 +108,7 @@ def test_distant_games_refresh_far_less_often():
     """A game 36h out sits in the 6-hourly tier; hourly would triple the bill."""
     now = datetime.now(timezone.utc)
     c = now + timedelta(hours=36)
-    of._ALT_FETCHED_AT["e1"] = now
+    of._ALT_CACHE["e1"] = (now, [])
     assert OddsAPIClient._alternates_due("e1", c, now + timedelta(hours=3)) is False
     assert OddsAPIClient._alternates_due("e1", c, now + timedelta(hours=6, minutes=1)) is True
 
@@ -169,10 +169,118 @@ def test_enrichment_only_pays_for_requested_events(monkeypatch):
     monkeypatch.setattr(OddsAPIClient, "fetch_event_alternates",
                         lambda self, s, e, markets="alternate_totals": calls.append(e) or [])
     client = OddsAPIClient.__new__(OddsAPIClient)
+    client._last_call_cost = 1
     events = [ev("wanted", 6), ev("ignored", 6)]
     spent = client.enrich_with_alternates(events, {"wanted"})
     assert calls == ["wanted"]
-    assert spent == 1, "credits spent must equal events fetched"
+    # Reported from the API's own x-requests-last header, not inferred from the number
+    # of events: cost is (markets x units), and a market the book does not carry bills
+    # nothing, so neither direction is derivable from our side of the call.
+    assert spent == 1
+
+
+def test_the_ladder_we_bought_stays_visible_between_refreshes(monkeypatch):
+    """THE BUG THIS FILE EXISTS TO PREVENT.
+
+    fetch_all_sports() builds new OddsEvent objects every scan, so enrichment merged
+    into scan N is gone by scan N+1. When the cache held only a timestamp, the refresh
+    tiers then said "not due" for the next 1-6 hours and the detector spent that whole
+    window pricing against featured lines it had already paid to replace. Live on
+    2026-08-23: 2 of 39 totals rows and 12 of 149 prop rows saw the data we owned.
+    """
+    monkeypatch.setattr(config, "ENABLE_ALTERNATE_LINES", True)
+    ladder = [{"key": "pinnacle",
+               "markets": [{"key": "alternate_totals",
+                            "outcomes": [{"name": "Over", "point": 9.5, "price": -110},
+                                         {"name": "Under", "point": 9.5, "price": -110}]}]}]
+    calls = []
+    monkeypatch.setattr(OddsAPIClient, "fetch_event_alternates",
+                        lambda self, s, e, markets="alternate_totals":
+                            calls.append(e) or ladder)
+    client = OddsAPIClient.__new__(OddsAPIClient)
+
+    first = ev("e1", 6)
+    client.enrich_with_alternates([first], {"e1"})
+    assert any(m["key"] == "alternate_totals"
+               for b in first.bookmakers for m in b["markets"])
+
+    # Next scan, 15 minutes later: a fresh object for the same game, and the hourly
+    # tier says do not re-buy. The ladder must still be there.
+    second = ev("e1", 5.75)
+    spent = client.enrich_with_alternates([second], {"e1"})
+    assert calls == ["e1"], "re-bought a ladder that was still fresh"
+    assert spent == 0, "served from cache, so nothing should be billed"
+    assert any(m["key"] == "alternate_totals"
+               for b in second.bookmakers for m in b["markets"]), \
+        "the ladder we already paid for did not reach the detector"
+
+
+def test_props_also_survive_between_refreshes(monkeypatch):
+    monkeypatch.setattr(config, "ENABLE_ALTERNATE_LINES", True)
+    monkeypatch.setattr(config, "ENABLE_PROP_MARKETS", True)
+    monkeypatch.setattr(config, "PROP_MARKETS", {"baseball_mlb": "totals_1st_1_innings"})
+    payload = [{"key": "pinnacle",
+                "markets": [{"key": "totals_1st_1_innings",
+                             "outcomes": [{"name": "Over", "point": 0.5, "price": 107},
+                                          {"name": "Under", "point": 0.5, "price": -125}]}]}]
+    monkeypatch.setattr(OddsAPIClient, "fetch_event_alternates",
+                        lambda self, s, e, markets="": payload)
+    client = OddsAPIClient.__new__(OddsAPIClient)
+    client.enrich_with_props([ev("e1", 6)], {"e1"})
+
+    later = ev("e1", 5.75)
+    client.enrich_with_props([later], {"e1"})
+    assert any(m["key"] == "totals_1st_1_innings"
+               for b in later.bookmakers for m in b["markets"])
+
+
+def test_a_cached_payload_expires_rather_than_pricing_against_stale_lines(monkeypatch):
+    """The refresh tiers normally re-buy long before this. It exists so a run of failed
+    fetches drops the data instead of quietly pricing against hours-old odds."""
+    monkeypatch.setattr(config, "ENABLE_ALTERNATE_LINES", True)
+    # A refresh interval wider than the maximum age -- the only way "not due to re-buy"
+    # and "too old to reuse" can both hold. At the shipped tiers they cannot, which is
+    # the point of test_max_age_covers_the_widest_refresh_tier below.
+    monkeypatch.setattr(config, "ALTERNATE_LINE_REFRESH_TIERS", [(48, 24)])
+    monkeypatch.setattr(OddsAPIClient, "fetch_event_alternates",
+                        lambda self, s, e, markets="alternate_totals": [])
+    client = OddsAPIClient.__new__(OddsAPIClient)
+    stale = datetime.now(timezone.utc) - timedelta(
+        seconds=of._ALT_CACHE_MAX_AGE_SECONDS + 60)
+    of._ALT_CACHE["e1"] = (stale, [{"key": "pinnacle", "markets": [
+        {"key": "alternate_totals", "outcomes": []}]}])
+    e = ev("e1", 30)
+    client.enrich_with_alternates([e], {"e1"})
+    assert e.bookmakers == [], "merged a payload past its maximum age"
+    assert of._ALT_CACHE.get("e1", (None, []))[1] == [], "kept the expired payload"
+
+
+def test_max_age_covers_the_widest_refresh_tier():
+    """As shipped, the tiers re-buy before the cache can expire, so no scan ever runs
+    on featured lines while holding a paid-for ladder. Widening a tier past the max age
+    would reintroduce exactly that gap silently, so pin the relationship."""
+    widest = max(refresh_h for _, refresh_h in config.ALTERNATE_LINE_REFRESH_TIERS)
+    assert widest * 3600 <= of._ALT_CACHE_MAX_AGE_SECONDS, (
+        f"a {widest}h refresh tier outlives the "
+        f"{of._ALT_CACHE_MAX_AGE_SECONDS / 3600:g}h cache -- enriched markets would "
+        f"vanish from the detector between refreshes"
+    )
+
+
+def test_cache_does_not_grow_without_bound(monkeypatch):
+    monkeypatch.setattr(config, "ENABLE_ALTERNATE_LINES", True)
+    monkeypatch.setattr(OddsAPIClient, "fetch_event_alternates",
+                        lambda self, s, e, markets="alternate_totals": [])
+    client = OddsAPIClient.__new__(OddsAPIClient)
+    now = datetime.now(timezone.utc)
+    old_entry = now - timedelta(seconds=of._ALT_CACHE_MAX_AGE_SECONDS + 60)
+    of._ALT_CACHE["finished_game"] = (old_entry, [])
+    of._ALT_CACHE["prop:finished_game"] = (old_entry, [])
+    of._ALT_CACHE["still_warm"] = (now, [])
+    client.enrich_with_alternates([ev("still_upcoming", 6)], {"still_upcoming"})
+    assert "finished_game" not in of._ALT_CACHE
+    assert "prop:finished_game" not in of._ALT_CACHE
+    assert "still_warm" in of._ALT_CACHE, "pruned a payload that was still usable"
 
 
 def test_enrichment_is_a_no_op_when_disabled(monkeypatch):

@@ -65,6 +65,16 @@ def _resolve_club(label: str, home: str, away: str) -> str | None:
     return home if home_score > away_score else away
 
 
+def _plus_line(label: str) -> float | None:
+    """The N of an at-least label: 'Shane Drohan 8+' -> 8.0. None if absent.
+
+    Separate from _label_line because that regex anchors on a trailing number and a
+    player label ends in '+', so it matches nothing here.
+    """
+    m = re.search(r"(\d+)\+\s*$", label or "")
+    return float(m.group(1)) if m else None
+
+
 def _label_line(label: str) -> float | None:
     """The signed line trailing a label: 'Chicago Cubs -1.5' -> -1.5, 'Over 3.5' -> 3.5."""
     m = re.search(r"([-+]?\d+(?:\.\d+)?)\s*$", label or "")
@@ -145,17 +155,48 @@ def verify_market_identity(opp: ValueOpportunity) -> str | None:
                     f"priced {opp.team_name!r}")
 
     # ── binary props: the side must be YES, and the market must be the right one ──
+    #
+    # Every check here re-derives from Kalshi's OWN title/subtitle/ticker. The first
+    # version of this branch compared km.participant against opp.team_name, which
+    # value_detector builds FROM km.participant -- so it agreed with itself and could
+    # never fire. A guard that cannot fail is worse than no guard, because it is
+    # counted as coverage.
     elif opp.outcome in (Outcome.BTTS, Outcome.RFI, Outcome.PLAYER):
         if side != "yes":
             return (f"{opp.outcome.value} edge is computed on Kalshi's YES side but "
                     f"this order buys {side.upper()}")
         if opp.outcome == Outcome.BTTS and "both teams" not in (km.yes_team or "").lower():
             return f"priced BTTS but {km.ticker} YES is {km.yes_team!r}"
+        if opp.outcome == Outcome.RFI and "first inning run" not in (km.title or "").lower():
+            # RFI's yes_sub_title is the bare word "Yes"; the title is the only field
+            # that says what the contract is about.
+            return f"priced a first-inning run but {km.ticker} is titled {km.title!r}"
         if opp.outcome == Outcome.PLAYER:
-            who = getattr(km, "participant", None)
-            if not who or who.lower() not in (opp.team_name or "").lower():
-                return (f"player mismatch: priced {opp.team_name!r} but market is for "
+            from data.kalshi_client import _parse_player_prop
+            from core.odds_converter import _norm_team
+
+            parsed = _parse_player_prop(km.yes_team or "")
+            if parsed is None:
+                return (f"cannot read a player and threshold from {km.ticker} "
+                        f"YES {km.yes_team!r}")
+            who, sb_line = parsed
+            label = opp.team_name or ""
+            if _norm_team(who) not in _norm_team(label):
+                return (f"player mismatch: priced {label!r} but {km.ticker} is for "
                         f"{who!r}")
+
+            # The threshold appears in three independent places -- our label, Kalshi's
+            # subtitle, and the ticker suffix. They must agree: "Drohan 8+" priced
+            # against the 7+ contract is a different bet at a plausible-looking price,
+            # exactly the class of error that stays invisible after the fill.
+            ours = _plus_line(label)
+            if ours is None or abs((sb_line + 0.5) - ours) > 0.01:
+                return (f"threshold mismatch: priced {label!r} but {km.ticker} YES is "
+                        f"{km.yes_team!r}")
+            suffix = km.ticker.rsplit("-", 1)[-1]
+            if suffix.isdigit() and abs(int(suffix) - ours) > 0.01:
+                return (f"threshold mismatch: priced {label!r} but ticker {km.ticker} "
+                        f"pays at {suffix}+")
 
     # ── draw/tie: the market must actually be the tie market ────────────────────
     elif opp.outcome == Outcome.DRAW:

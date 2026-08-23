@@ -657,9 +657,13 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
 #   BTTS  Kalshi YES "Both Teams To Score"  <-> Odds API btts outcome "Yes"
 #   RFI   Kalshi YES "a run scores in the   <-> Odds API totals_1st_1_innings
 #         1st inning"                            outcome "Over" at line 0.5
-_BINARY_PROPS: dict[str, tuple[str, str, float | None, str, "Outcome"]] = {
-    "btts": ("btts", "Yes", None, "Both Teams To Score", None),
-    "rfi":  ("totals_1st_1_innings", "Over", 0.5, "First Inning Run", None),
+# The Outcome is stored here, not derived at the call site. It was originally a
+# two-branch `Outcome.BTTS if bet_type == "btts" else Outcome.RFI`, which is the same
+# shape as the resolve_side() fallthrough that bet 11 positions on the wrong side on
+# 2026-08-22: a third entry added to this dict would have been silently priced as RFI.
+_BINARY_PROPS: dict[str, tuple[str, str, float | None, str, Outcome]] = {
+    "btts": ("btts", "Yes", None, "Both Teams To Score", Outcome.BTTS),
+    "rfi":  ("totals_1st_1_innings", "Over", 0.5, "First Inning Run", Outcome.RFI),
 }
 
 
@@ -673,8 +677,7 @@ def _detect_binary_prop(me, event, km, min_edge, opportunities, scan_log,
     spec = _BINARY_PROPS.get(km.bet_type)
     if spec is None:
         return
-    market_key, outcome_name, point, label, _ = spec
-    outcome_enum = Outcome.BTTS if km.bet_type == "btts" else Outcome.RFI
+    market_key, outcome_name, point, label, outcome_enum = spec
     kalshi_side = "yes"
 
     consensus, book_count, std_dev = consensus_stats(

@@ -19,11 +19,25 @@ import config
 
 logger = logging.getLogger(__name__)
 
-# When each event's alternate-line ladder was last bought. Alternates bill per game
-# per refresh, so this is what stops a 45-minute scan loop from re-buying the same
-# ladder every cycle. In memory by design -- a restart re-fetches (a few credits),
-# which is the safe direction, since a stale ladder would misprice silently.
-_ALT_FETCHED_AT: dict[str, datetime] = {}
+# Per-event enrichment cache: key -> (fetched_at, bookmakers payload).
+#
+# THE PAYLOAD IS THE POINT. This started life as a timestamp-only dict, which stopped
+# the 45-minute scan loop from re-buying the same ladder every cycle -- and silently
+# threw the ladder away with it. fetch_all_sports() builds brand-new OddsEvent objects
+# every scan, so the merged alternates/props lived on exactly the scan that paid for
+# them and were gone for the whole refresh interval after. Measured on live data
+# 2026-08-23: 2 of 39 totals rows and 12 of 149 prop rows reached the detector with
+# the market we had already bought for them. Every other row logged "no consensus"
+# against data we owned.
+#
+# In memory by design -- a restart re-fetches (a few credits), which is the safe
+# direction, since a stale ladder would misprice silently.
+_ALT_CACHE: dict[str, tuple[datetime, list[dict]]] = {}
+
+# Hard ceiling on reusing a cached payload, independent of the refresh tiers. Normally
+# _alternates_due() re-buys well before this; it exists so a run of failed fetches
+# expires the data instead of pricing against hours-old lines.
+_ALT_CACHE_MAX_AGE_SECONDS = 6 * 3600
 
 # Active months for each sport (inclusive).
 # Months outside this range return zero events from The Odds API — querying
@@ -71,12 +85,20 @@ class OddsEvent:
 
 
 class OddsAPIClient:
+    # Class-level default so any instance built without __init__ (test stubs) still
+    # has it; _get() overwrites it on every call.
+    _last_call_cost: int = 0
+
     def __init__(self, api_key: str = config.ODDS_API_KEY):
         if not api_key:
             raise ValueError("ODDS_API_KEY is not set. Check your .env file.")
         self.api_key = api_key
         self.base_url = config.ODDS_API_BASE_URL
         self.session = requests.Session()
+        # Credits the most recent call actually cost, per the API's own header. Cost is
+        # (markets x units), so a four-market prop request is not one credit, and a
+        # market the book does not carry is zero -- neither is inferable from our side.
+        self._last_call_cost: int = 0
 
     def _get(self, path: str, params: dict) -> dict | list:
         params["apiKey"] = self.api_key
@@ -85,6 +107,11 @@ class OddsAPIClient:
         resp.raise_for_status()
         remaining = resp.headers.get("x-requests-remaining")
         used = resp.headers.get("x-requests-used")
+        last = resp.headers.get("x-requests-last")
+        try:
+            self._last_call_cost = int(last) if last is not None else 0
+        except ValueError:
+            self._last_call_cost = 0
         logger.debug("Odds API — used: %s, remaining: %s", used, remaining)
         # Persist latest credit snapshot so dashboard can display it
         if remaining is not None or used is not None:
@@ -298,6 +325,7 @@ class OddsAPIClient:
         Returns the raw bookmakers list, or [] on error -- a failed enrichment must
         degrade to "no alternates for this game", never break the scan.
         """
+        self._last_call_cost = 0
         try:
             resp = self._get(
                 f"/sports/{sport}/events/{event_id}/odds",
@@ -365,10 +393,54 @@ class OddsAPIClient:
                 break
         if every is None:
             return False           # beyond the last tier -> outside our window
-        last = _ALT_FETCHED_AT.get(event_id)
-        if last is None:
+        cached = _ALT_CACHE.get(event_id)
+        if cached is None:
             return True
-        return (now - last).total_seconds() >= every * 3600
+        return (now - cached[0]).total_seconds() >= every * 3600
+
+    def _enrich(self, ev: "OddsEvent", key: str, markets: str,
+                now: datetime) -> int:
+        """Merge this event's extra markets into `ev.bookmakers`, buying them if due.
+
+        Returns credits actually charged for this event (0 when served from cache or
+        when the response was empty -- The Odds API bills nothing for a market it has
+        no data for).
+
+        Buying and merging are deliberately separate concerns: the refresh tiers decide
+        how often we PAY, not how often the detector gets to SEE the data. Conflating
+        the two is what made every enriched market invisible for hours at a stretch.
+        """
+        if self._alternates_due(key, ev.commence_time, now):
+            extra = self.fetch_event_alternates(ev.sport_key, ev.event_id,
+                                                markets=markets)
+            _ALT_CACHE[key] = (now, extra)
+            cost = self._last_call_cost
+        else:
+            cached = _ALT_CACHE.get(key)
+            if not cached:
+                return 0
+            fetched_at, extra = cached
+            if (now - fetched_at).total_seconds() > _ALT_CACHE_MAX_AGE_SECONDS:
+                del _ALT_CACHE[key]
+                return 0
+            cost = 0
+
+        if extra:
+            ev.bookmakers = self._merge_bookmakers(ev.bookmakers, extra)
+        return cost
+
+    @staticmethod
+    def _prune_enrichment_cache(now: datetime) -> None:
+        """Drop payloads too old to be reusable, so the dict cannot grow without bound.
+
+        Age-based rather than "not in the current events list" on purpose: the callers
+        happen to pass every event today, but a filtered list would then silently wipe
+        the cache and re-buy everything. A started game simply stops being refreshed
+        and ages out on its own.
+        """
+        for key in [k for k, (at, _) in _ALT_CACHE.items()
+                    if (now - at).total_seconds() > _ALT_CACHE_MAX_AGE_SECONDS]:
+            del _ALT_CACHE[key]
 
     def enrich_with_props(self, events: list[OddsEvent],
                           event_ids: set[str] | None = None) -> int:
@@ -388,7 +460,10 @@ class OddsAPIClient:
         if not getattr(config, "ENABLE_PROP_MARKETS", False):
             return 0
         now = datetime.now(timezone.utc)
+        self._prune_enrichment_cache(now)
         spent = 0
+        bought = 0
+        served = 0
         for ev in events:
             if event_ids is not None and ev.event_id not in event_ids:
                 continue
@@ -396,19 +471,21 @@ class OddsAPIClient:
             if not market:
                 continue
             key = f"prop:{ev.event_id}"
-            if not self._alternates_due(key, ev.commence_time, now):
-                continue
-            if spent:
+            due = self._alternates_due(key, ev.commence_time, now)
+            if due and bought:
                 time.sleep(0.15)
-            extra = self.fetch_event_alternates(ev.sport_key, ev.event_id, markets=market)
-            _ALT_FETCHED_AT[key] = now
-            # An empty response costs nothing (verified: Pinnacle-without-the-market
-            # returns cost=0), so count only calls that returned data.
-            if extra:
-                spent += 1
-                ev.bookmakers = self._merge_bookmakers(ev.bookmakers, extra)
-        if spent:
-            logger.info("Fetched prop markets for %d event(s) (~%d credits)", spent, spent)
+            cost = self._enrich(ev, key, market, now)
+            if due:
+                bought += 1
+            spent += cost
+            if _ALT_CACHE.get(key, (None, None))[1]:
+                served += 1
+        if served or spent:
+            # Cost is (markets x units), so an MLB event asking for four prop markets
+            # bills up to 4 -- not 1. Reported from the API's own x-requests-last
+            # header rather than inferred, since markets with no data bill nothing.
+            logger.info("Props: %d event(s) priced (%d bought, %d credits)",
+                        served, bought, spent)
         return spent
 
     def enrich_with_alternates(self, events: list[OddsEvent],
@@ -425,22 +502,25 @@ class OddsAPIClient:
             return 0
 
         now = datetime.now(timezone.utc)
+        self._prune_enrichment_cache(now)
         spent = 0
+        bought = 0
+        served = 0
         for ev in events:
             if event_ids is not None and ev.event_id not in event_ids:
                 continue
-            if not self._alternates_due(ev.event_id, ev.commence_time, now):
-                continue
-            if spent:
+            due = self._alternates_due(ev.event_id, ev.commence_time, now)
+            if due and bought:
                 time.sleep(0.15)   # be polite; this is N calls, not one
-            extra = self.fetch_event_alternates(ev.sport_key, ev.event_id)
-            _ALT_FETCHED_AT[ev.event_id] = now
-            spent += 1
-            if extra:
-                ev.bookmakers = self._merge_bookmakers(ev.bookmakers, extra)
-        if spent:
-            logger.info("Fetched alternate lines for %d event(s) (~%d credits)",
-                        spent, spent)
+            cost = self._enrich(ev, ev.event_id, "alternate_totals", now)
+            if due:
+                bought += 1
+            spent += cost
+            if _ALT_CACHE.get(ev.event_id, (None, None))[1]:
+                served += 1
+        if served or spent:
+            logger.info("Alternate lines: %d event(s) priced (%d bought, %d credits)",
+                        served, bought, spent)
         return spent
 
     def fetch_all_sports(self) -> list[OddsEvent]:

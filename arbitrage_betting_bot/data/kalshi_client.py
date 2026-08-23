@@ -169,8 +169,9 @@ _SERIES_NEEDS_EVENT_TITLE: set[str] = {
     "KXMLBKS", "KXMLBHR", "KXMLBTB",
 }
 
-# "Zach Neto: 2+"  ->  ("Zach Neto", 2).  Kalshi always words player props as an
-# at-least threshold; the sportsbook equivalent is Over (N - 0.5).
+# "Zach Neto: 2+"  ->  ("Zach Neto", 1.5).  Kalshi always words player props as an
+# at-least threshold; the sportsbook equivalent is Over (N - 0.5), and that is what
+# this returns -- the SPORTSBOOK line, not the Kalshi one.
 _PLAYER_SUB = re.compile(r"^(?P<name>.+?):\s*(?P<n>\d+)\+\s*$")
 
 

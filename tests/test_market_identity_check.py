@@ -171,3 +171,69 @@ def test_execute_trade_refuses_and_never_reaches_kalshi(monkeypatch):
     assert status == "failed"
     assert stake == 0.0
     assert "identity check failed" in reason
+
+
+# ── props: the guard that used to agree with itself ─────────────────────────────
+#
+# The first version compared km.participant against opp.team_name. value_detector
+# BUILDS team_name from km.participant, so the comparison was a tautology and could
+# never refuse anything. These re-derive from Kalshi's own subtitle and ticker, which
+# are the only fields that cannot be wrong about the market they describe.
+
+def _player_opp(label, yes_sub_title, ticker="KXMLBKS-26AUG231910ATLMIL-MILSDROHAN73-8"):
+    return opp(Outcome.PLAYER, label, yes_team=yes_sub_title,
+               home="Milwaukee Brewers", away="Atlanta Braves",
+               ticker=ticker, bet_type="player_prop")
+
+
+def test_a_player_prop_priced_against_the_wrong_rung_is_refused():
+    """'Drohan 8+' filled on the 7+ contract is a different bet at a price that looks
+    entirely plausible afterwards."""
+    o = _player_opp("Shane Drohan 8+", "Shane Drohan: 7+")
+    reason = verify_market_identity(o)
+    assert reason is not None, "an off-by-one rung would be bought"
+    assert "threshold" in reason
+
+
+def test_a_player_prop_for_a_different_player_is_refused():
+    o = _player_opp("Shane Drohan 8+", "Freddy Peralta: 8+")
+    reason = verify_market_identity(o)
+    assert reason is not None and "player mismatch" in reason
+
+
+def test_a_ticker_that_disagrees_with_its_own_subtitle_is_refused():
+    """Third independent source. Subtitle and ticker both encode the rung."""
+    o = _player_opp("Shane Drohan 8+", "Shane Drohan: 8+",
+                    ticker="KXMLBKS-26AUG231910ATLMIL-MILSDROHAN73-6")
+    reason = verify_market_identity(o)
+    assert reason is not None and "6+" in reason
+
+
+def test_a_correct_player_prop_passes():
+    assert verify_market_identity(_player_opp("Shane Drohan 8+", "Shane Drohan: 8+")) is None
+
+
+def test_an_accented_player_name_still_passes():
+    """Kalshi writes 'Ronald Acuna Jr.'; the sportsbook may not. Folding happens in
+    _norm_team, so the guard must not reject on the accent alone."""
+    o = opp(Outcome.PLAYER, "Ronald Acuna Jr. 2+", yes_team="Ronald Acuña Jr.: 2+",
+            home="Milwaukee Brewers", away="Atlanta Braves",
+            ticker="KXMLBTB-26AUG231910ATLMIL-ATLRACUNA13-2", bet_type="player_prop")
+    assert verify_market_identity(o) is None
+
+
+def test_an_rfi_priced_against_some_other_market_is_refused():
+    """RFI's yes_sub_title is the bare word 'Yes' -- only the title says what it is."""
+    o = opp(Outcome.RFI, "First Inning Run", yes_team="Yes",
+            home="St. Louis Cardinals", away="Baltimore Orioles",
+            ticker="KXMLBRFI-26AUG251945BALSTL", bet_type="rfi")
+    o.matched_event.kalshi_market.title = "Baltimore vs St. Louis Total Runs?"
+    assert verify_market_identity(o) is not None
+
+
+def test_a_correct_rfi_passes():
+    o = opp(Outcome.RFI, "First Inning Run", yes_team="Yes",
+            home="St. Louis Cardinals", away="Baltimore Orioles",
+            ticker="KXMLBRFI-26AUG251945BALSTL", bet_type="rfi")
+    o.matched_event.kalshi_market.title = "Baltimore vs St. Louis First Inning Run?"
+    assert verify_market_identity(o) is None

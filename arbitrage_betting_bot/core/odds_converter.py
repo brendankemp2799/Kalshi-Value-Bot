@@ -79,6 +79,7 @@ _ABBREV: dict[str, str] = {
 
 
 import re as _re
+import unicodedata as _unicodedata
 
 
 def _norm_team(name: str) -> str:
@@ -89,6 +90,13 @@ def _norm_team(name: str) -> str:
       - Lowercase everything
     e.g. "TB Rays" → "tampa bay rays", "St. Louis Cardinals" → "st louis cardinals"
     """
+    # Fold accents first: Kalshi writes "Ronald Acuna Jr." where The Odds API writes
+    # "Ronald Acuña Jr.". The participant filter below compares these for EXACT
+    # equality, so without folding every accented player -- and "Atletico Madrid" --
+    # silently finds no consensus and is never priced. \w keeps "ñ" as a word char,
+    # so the punctuation strip on the next line does not do this for us.
+    name = "".join(c for c in _unicodedata.normalize("NFKD", name or "")
+                   if not _unicodedata.combining(c))
     # Remove punctuation except hyphens inside words
     cleaned = _re.sub(r"[^\w\s-]", " ", name)
     words = cleaned.strip().split()
