@@ -167,7 +167,46 @@ POSITION_MONITOR_INTERVAL_SECONDS: int = int(os.getenv("POSITION_MONITOR_INTERVA
 # trailing stop) had a -51% ROI vs -1% for trailing-stop-managed exits. Confirmed
 # against real candlestick history that these losses decline gradually (20-185 min),
 # not in a single tick, so a polling check has time to catch them.
-# Master switch — defaults off. Validate in paper mode before enabling live.
+# ── TURNED OFF LIVE 2026-08-23 ────────────────────────────────────────────────
+#
+# Set ENABLE_STOP_LOSS=false on the droplet. The machinery below is retained and
+# fully functional -- flip the env var back to `true` and restart to re-enable.
+#
+# WHY. Every stop-loss close was replayed against its market's actual settlement, so
+# the counterfactual ("what if we had just held?") is observed rather than modelled.
+# Across 70 settled stop-loss exits, stopping realised $8.46 LESS than holding would
+# have. The mechanism is clearer than the P&L: bucketed by the price we exited at,
+#
+#     exit <0.05   n=32   22% of them went on to WIN
+#     exit 0.05-15 n=15   13%
+#     exit 0.15-25 n=8    50%
+#     exit >=0.25  n=9    33%
+#
+# In every bucket the exit price sits BELOW the realised win rate. The break-even rule
+# is "stop only if exit proceeds exceed the probability of winning if held", and it
+# never held -- we were systematically selling below fair value, partly because the
+# exit crosses to the bid on a thin book.
+#
+# THE EVIDENCE WAS NOT UNIFORM, and this switch is deliberately blunter than the data.
+# By segment (spread excluded as a disabled bet type):
+#     stop_loss h2h     n=29  -$14.30  95% CI [-26.0, -3.8]   <- the real result
+#     trailing  h2h     n=11   -$7.17     CI [-17.7, +1.9]
+#     stop_loss totals  n=30   +$2.59     CI [ -5.3, +9.1]   <- stop was EARNING here
+#     stop_loss btts    n=4    +$3.55     CI [ +2.9,  +3.9]
+# h2h alone accounted for -$21.47 while every other segment combined was +$7.01.
+# Disabling h2h only would have returned +$6.35; disabling everything, -$0.65. The
+# blanket switch-off was chosen by the operator with that $7.00 difference known.
+#
+# WHAT IS GIVEN UP. Open positions now always ride to settlement, so a bet that is
+# wrong for a reason we cannot see (injury news, a lineup change, or a bug in our own
+# pricing) runs to zero. The stop-loss recovered $2.06 of the wrong-side prop bug on
+# 2026-08-22 -- its value is insurance against OUR errors, not against market moves.
+# Capital lock-up is not a cost here: zero scans have ever been blocked by an exposure
+# cap, peak utilisation 27.3% against the 30% limit.
+#
+# BEFORE RE-ENABLING, re-run the replay rather than trusting the numbers above -- they
+# rest on one month in which holding happened to pay, and the totals/props segments
+# were never significant in either direction.
 ENABLE_STOP_LOSS: bool = os.getenv("ENABLE_STOP_LOSS", "false").lower() == "true"
 # The threshold is PER BET TYPE, because the two books behave nothing alike after an
 # adverse move. Measured 2026-08-17 (research/experiments/2026-08-17-stop-loss-by-bet-
