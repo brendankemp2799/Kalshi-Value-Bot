@@ -54,6 +54,17 @@ _SPORT_SEASONS: dict[str, list[tuple[int, int]]] = {
     "soccer_spain_la_liga":      [(8, 5)],   # Aug – May  (wraps Jan)
     "soccer_italy_serie_a":      [(8, 5)],   # Aug – May  (wraps Jan)
     "soccer_france_ligue_one":   [(8, 5)],   # Aug – May  (wraps Jan)
+    # Added 2026-08-23. Ranges are deliberately generous: an out-of-season query
+    # returns zero events and bills nothing, whereas a range that is too narrow
+    # silently drops a league for weeks.
+    "soccer_mexico_ligamx":        [(7, 5)],   # Apertura Jul–Dec, Clausura Jan–May
+    "soccer_germany_bundesliga":   [(8, 5)],   # Aug – May  (wraps Jan)
+    "soccer_netherlands_eredivisie": [(8, 5)], # Aug – May  (wraps Jan)
+    "soccer_sweden_allsvenskan":   [(3, 11)],  # Mar – Nov  (summer league)
+    "soccer_turkey_super_league":  [(8, 5)],   # Aug – May  (wraps Jan)
+    "soccer_korea_kleague1":       [(2, 11)],  # Feb – Nov  (summer league)
+    "baseball_npb":                [(3, 11)],  # Mar – Nov
+    "baseball_kbo":                [(3, 10)],  # Mar – Oct
 }
 
 

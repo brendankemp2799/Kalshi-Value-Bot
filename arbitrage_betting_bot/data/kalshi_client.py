@@ -100,6 +100,38 @@ _SPORT_TO_SERIES: dict[str, list[str]] = {
     "soccer_spain_la_liga":      ["KXLALIGAGAME", "KXLALIGATOTAL", "KXLALIGABTTS"],
     "soccer_italy_serie_a":      ["KXSERIEAGAME", "KXSERIEATOTAL", "KXSERIEABTTS"],
     "soccer_france_ligue_one":   ["KXLIGUE1GAME", "KXLIGUE1TOTAL", "KXLIGUE1BTTS"],
+    # Added 2026-08-23. Selected on MEASURED tradability, not on what Kalshi lists.
+    # "tradable" = open market with a two-sided quote inside max_kalshi_spread (0.05)
+    # and non-zero volume/open interest, counted live on 2026-08-23:
+    #
+    #   KXLIGAMXGAME       34/60     KXNPBGAME          12/28
+    #   KXBUNDESLIGAGAME   25/54     KXNPBTOTAL         11/56
+    #   KXALLSVENSKANGAME  15/30     KXKBOGAME          11/26
+    #   KXLIGAMXTOTAL      15/60     KXKBOTOTAL         10/52
+    #   KXEREDIVISIETOTAL  12/18     KXSUPERLIGGAME      9/36
+    #   KXEREDIVISIEGAME   11/39     KXKLEAGUEGAME       9/42
+    #   KXALLSVENSKANTOTAL  7/24     KXSUPERLIGTOTAL     5/24
+    #
+    # Pinnacle coverage confirmed for all eight sports before wiring (h2h + totals
+    # present on every league). Deliberately EXCLUDED after measuring:
+    #   *SPREAD          -- `spread` is not in ENABLED_BET_TYPES
+    #   KXNPBRFI (7 tradable), KXKBORFI (4) -- Pinnacle carries NO
+    #     totals_1st_1_innings for NPB or KBO, verified 2026-08-23, so every rung
+    #     would log "no consensus" forever. Same trap as the player-prop ladder.
+    #   KXLIGAMXBTTS (1), KXBUNDESLIGABTTS (1), KXSUPERLIGBTTS (2) -- too thin
+    #   KXEKSTRAKLASA*, KXLALIGA2GAME (median spread 0.78), KXLIGUE2GAME (2),
+    #     KXBUNDESLIGA2GAME (2), KXELITESERIENGAME (0) -- not enough tradable depth
+    #   KXBUNDESLIGATOTAL (4) -- below the bar, but the sport is already fetched so
+    #     it costs nothing extra; included for the same reason KXKLEAGUETOTAL is not
+    #     (that one has no open markets at all).
+    "soccer_mexico_ligamx":        ["KXLIGAMXGAME", "KXLIGAMXTOTAL"],
+    "soccer_germany_bundesliga":   ["KXBUNDESLIGAGAME", "KXBUNDESLIGATOTAL"],
+    "soccer_netherlands_eredivisie": ["KXEREDIVISIEGAME", "KXEREDIVISIETOTAL"],
+    "soccer_sweden_allsvenskan":   ["KXALLSVENSKANGAME", "KXALLSVENSKANTOTAL"],
+    "soccer_turkey_super_league":  ["KXSUPERLIGGAME", "KXSUPERLIGTOTAL"],
+    "soccer_korea_kleague1":       ["KXKLEAGUEGAME"],
+    "baseball_npb":                ["KXNPBGAME", "KXNPBTOTAL"],
+    "baseball_kbo":                ["KXKBOGAME", "KXKBOTOTAL"],
 }
 # Props added 2026-08-21, chosen by MEASURED tradability against our own
 # max_kalshi_spread=0.05 plus a volume floor -- not by what exists:
@@ -119,7 +151,14 @@ _SPORT_TO_SERIES["soccer_epl"].append("KXEPLBTTS")
 # Soccer H2H series have 3 outcomes (home/away/draw), so we keep each team's
 # market separately instead of deduplicating to one per event.
 SOCCER_GAME_SERIES: set[str] = {"KXMLSGAME", "KXEPLGAME", "KXUCLGAME",
-                                "KXLALIGAGAME", "KXSERIEAGAME", "KXLIGUE1GAME"}
+                                "KXLALIGAGAME", "KXSERIEAGAME", "KXLIGUE1GAME",
+                                # Added 2026-08-23 -- MUST be listed here, not just in
+                                # _SPORT_TO_SERIES. Omitting a soccer league collapses
+                                # its three outcomes to one market per event and the
+                                # draw plus one team silently stop being priced.
+                                "KXLIGAMXGAME", "KXBUNDESLIGAGAME",
+                                "KXEREDIVISIEGAME", "KXALLSVENSKANGAME",
+                                "KXSUPERLIGGAME", "KXKLEAGUEGAME"}
 
 # Maps Kalshi series prefix → bet type ("h2h" is default / omitted)
 _SERIES_TO_BET_TYPE: dict[str, str] = {
@@ -133,6 +172,13 @@ _SERIES_TO_BET_TYPE: dict[str, str] = {
     "KXLALIGATOTAL":  "totals",
     "KXSERIEATOTAL":  "totals",
     "KXLIGUE1TOTAL":  "totals",
+    "KXLIGAMXTOTAL":       "totals",
+    "KXBUNDESLIGATOTAL":   "totals",
+    "KXEREDIVISIETOTAL":   "totals",
+    "KXALLSVENSKANTOTAL":  "totals",
+    "KXSUPERLIGTOTAL":     "totals",
+    "KXNPBTOTAL":          "totals",
+    "KXKBOTOTAL":          "totals",
     # SPREAD entries removed alongside the series above -- see _SPORT_TO_SERIES.
     # The parsing/detection code still handles bet_type "spread" if it returns.
     "KXEPLBTTS":      "btts",

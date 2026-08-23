@@ -468,6 +468,19 @@ SPORTS: list[str] = [
     "soccer_spain_la_liga",
     "soccer_italy_serie_a",
     "soccer_france_ligue_one",
+    # Added 2026-08-23 to raise bet volume. Every one measured on BOTH sides before
+    # wiring -- Kalshi tradable-market count (spread <= max_kalshi_spread with real
+    # volume) and confirmed Pinnacle coverage. Leagues Kalshi lists but nobody trades,
+    # or that Pinnacle does not quote, are deliberately absent; see kalshi_client.py
+    # _SPORT_TO_SERIES for the per-series numbers.
+    "soccer_mexico_ligamx",
+    "soccer_germany_bundesliga",
+    "soccer_netherlands_eredivisie",
+    "soccer_sweden_allsvenskan",
+    "soccer_turkey_super_league",
+    "soccer_korea_kleague1",
+    "baseball_npb",
+    "baseball_kbo",
 ]
 
 # ── Odds API ──────────────────────────────────────────────────────────────────
@@ -598,6 +611,14 @@ SPORT_MARKETS: dict[str, str] = {
     "soccer_spain_la_liga":        "h2h,totals",
     "soccer_italy_serie_a":        "h2h,totals",
     "soccer_france_ligue_one":     "h2h,totals",
+    "soccer_mexico_ligamx":        "h2h,totals",
+    "soccer_germany_bundesliga":   "h2h,totals",
+    "soccer_netherlands_eredivisie": "h2h,totals",
+    "soccer_sweden_allsvenskan":   "h2h,totals",
+    "soccer_turkey_super_league":  "h2h,totals",
+    "soccer_korea_kleague1":       "h2h",       # Kalshi lists no tradable K-League totals
+    "baseball_npb":                "h2h,totals",
+    "baseball_kbo":                "h2h,totals",
     # BTTS excluded — not available in us region from Odds API
     # alternate_totals/alternate_spreads cover all the non-main lines that
     # Kalshi lists (e.g. 7.5, 9.5, 10.5 in addition to the main 8.5 line)
