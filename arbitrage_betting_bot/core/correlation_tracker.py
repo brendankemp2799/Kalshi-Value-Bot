@@ -117,11 +117,21 @@ class CorrelationTracker:
 
         # Rule 0: same Kalshi ticker — never bet the same market twice, except MM
         # laying a quote alongside/against its own existing MM inventory on that ticker.
-        for pos in open_positions:
-            if pos["market_ticker"] == ticker:
-                if is_mm and pos["strategy"] == "market_making":
-                    continue
-                return False, f"Already have an open position on {ticker}"
+        #
+        # Asked of every position we have EVER filled on the ticker, not just the open
+        # ones. Scoped to open positions, this rule freed the ticker the moment a
+        # position closed, and the next scan re-bought the identical market at the
+        # identical price -- the edge had not moved, so the same opportunity was still
+        # sitting there. KXMLBBTTS-26AUG22SJMIN-BTTS went through that loop four times
+        # on 2026-08-21..22 for -$3.91, each re-entry following a stop-loss exit.
+        #
+        # Stop-losses are off as of 2026-08-23, which removes the only driver we have
+        # actually observed, but not the hole: any early close reopens it. A Kalshi
+        # game ticker names one fixture at one start time and never recurs, so this
+        # costs no legitimate volume.
+        held_by = db.strategies_ever_filled_on(ticker, self.bm.is_paper)
+        if held_by and not (is_mm and held_by == {"market_making"}):
+            return False, f"Already bet {ticker} (held by {'/'.join(sorted(held_by))})"
 
         # Rule 0b: failed-bet cooldown — skip recently failed tickers
         failed_at = self._failed_cooldowns.get(ticker, 0)

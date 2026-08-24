@@ -76,10 +76,20 @@ def position(bet_type="totals", team_name="Over 8.5", stake=1.0, side="yes",
 
 
 @pytest.fixture
-def tracker(monkeypatch):
-    def _make(open_positions, bankroll=BANKROLL):
+def tracker(monkeypatch, request):
+    def _make(open_positions, bankroll=BANKROLL, also_closed=()):
+        """also_closed: positions we filled and have since CLOSED. Invisible to
+        get_open_positions, which is exactly how the same-ticker re-entry loop got
+        through -- so Rule 0 has to see them."""
         import core.correlation_tracker as ct
         monkeypatch.setattr(ct.db, "get_open_positions", lambda paper: open_positions)
+
+        # Every position here was filled, open or not, so it is "ever filled" too.
+        ever = {}
+        for p in list(open_positions) + list(also_closed):
+            ever.setdefault(p["market_ticker"], set()).add(p.get("strategy", "value_edge"))
+        monkeypatch.setattr(ct.db, "strategies_ever_filled_on",
+                            lambda tk, paper=False: ever.get(tk, set()))
         bm = SimpleNamespace(bankroll=bankroll, is_paper=False,
                              can_add_exposure=lambda d, s, is_mm=False: (True, "OK"))
         return CorrelationTracker(bm)
@@ -296,3 +306,57 @@ def test_a_missing_stake_does_not_crash_the_gate(tracker):
     t = tracker([position(stake=None)])
     allowed, _ = t.is_allowed(opp(bet_type="btts", ticker="KX-B"), 0.10)
     assert allowed is True
+
+
+# ── re-entry after a close ────────────────────────────────────────────────────
+#
+# Rule 0 asked get_open_positions(), so a closed position freed its ticker and the
+# next scan re-bought the identical market at the identical price -- the edge had not
+# moved, so the opportunity was still sitting there. KXMLBBTTS-26AUG22SJMIN-BTTS went
+# round that loop four times on 2026-08-21..22 for -$3.91, each re-entry following a
+# stop-loss exit at 20:59, 03:01, 06:02 and 09:03.
+
+def test_a_closed_position_still_blocks_its_ticker(tracker):
+    """The San Jose BTTS loop, replayed: nothing open, but we have been here before."""
+    prior = position(ticker="KXMLBBTTS-26AUG22SJMIN-BTTS", bet_type="btts",
+                     team_name="Both Teams To Score", stake=1.98)
+    t = tracker([], also_closed=[prior])
+    allowed, reason = t.is_allowed(
+        opp(ticker="KXMLBBTTS-26AUG22SJMIN-BTTS", bet_type="btts",
+            team_name="Both Teams To Score"), 1.98)
+    assert not allowed, "re-bought a market we already closed out of"
+    assert "Already bet" in reason
+
+
+def test_re_entry_is_blocked_however_the_position_closed(tracker):
+    """Stop-losses are off, but they were never the rule -- any early exit reopens it."""
+    for strategy in ("value_edge", "market_making"):
+        prior = position(ticker="KX-CLOSED", strategy=strategy)
+        t = tracker([], also_closed=[prior])
+        allowed, _ = t.is_allowed(opp(ticker="KX-CLOSED"), 1.0)
+        assert not allowed, f"re-entered a closed {strategy} position"
+
+
+def test_a_ticker_never_touched_is_still_allowed(tracker):
+    """The rule must not become a blanket refusal."""
+    t = tracker([], also_closed=[position(ticker="KX-SOMETHING-ELSE")])
+    allowed, reason = t.is_allowed(opp(ticker="KX-FRESH"), 1.0)
+    assert allowed, reason
+
+
+def test_market_making_may_still_re_quote_its_own_ticker(tracker):
+    """MM works by quoting in and out of the same market; that is the strategy, not a
+    correlation failure. It stays exempt -- but only against its own inventory."""
+    prior = position(ticker="KX-MM", strategy="market_making")
+    t = tracker([], also_closed=[prior])
+    allowed, reason = t.is_allowed(opp(ticker="KX-MM"), 1.0, is_mm=True)
+    assert allowed, reason
+
+
+def test_market_making_may_not_quote_over_a_closed_value_bet(tracker):
+    """The exemption is for MM's own inventory only, matching the open-position rule
+    it replaces."""
+    prior = position(ticker="KX-VALUE", strategy="value_edge")
+    t = tracker([], also_closed=[prior])
+    allowed, reason = t.is_allowed(opp(ticker="KX-VALUE"), 1.0, is_mm=True)
+    assert not allowed, reason

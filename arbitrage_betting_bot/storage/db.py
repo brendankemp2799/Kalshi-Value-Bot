@@ -306,6 +306,15 @@ def _migrate() -> None:
                 conn.execute(ddl)
                 logger.debug("Migration: added positions.%s", col)
 
+        # positions carried NO indexes at all, so every lookup was a full table scan --
+        # 4.7ms each on 1,392 rows, and growing linearly with the table. Rule 0 asks
+        # "have we ever held this ticker?" once per candidate, several hundred times a
+        # scan, which is what made the cost worth paying attention to.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_positions_ticker "
+            "ON positions(market_ticker, is_paper)"
+        )
+
         # book_probability_log migrations -- widening it from a narrow book-
         # calibration table into a general archive of every scanned candidate
         # (passed or placed), so future experiments aren't limited to the ~40
@@ -494,6 +503,31 @@ def get_open_positions(is_paper: bool = False) -> list[sqlite3.Row]:
             "WHERE status = 'open' AND is_paper = ? AND execution_status != 'failed'",
             (1 if is_paper else 0,),
         ).fetchall()
+
+
+def strategies_ever_filled_on(ticker: str, is_paper: bool = False) -> set[str]:
+    """Which strategies have ever had a FILLED position on this ticker.
+
+    get_open_positions() answers "do we hold this now", which is a different question
+    and the wrong one for re-entry. A Kalshi game ticker names one fixture at one start
+    time and never recurs, so a filled position on it is permanent evidence that we
+    already took this bet -- whether or not it is still open.
+
+    Between 2026-08-21 and 08-22 the bot bought KXMLBBTTS-26AUG22SJMIN-BTTS four times
+    for -$3.91: each stop-loss closed the position, which freed the ticker, and the
+    next scan re-bought the same market at the same price because the edge had not
+    moved. Empty set means never filled; failed attempts are Rule 0b's business, not
+    this one.
+    """
+    with get_connection() as conn:
+        return {
+            r[0] for r in conn.execute(
+                "SELECT DISTINCT strategy FROM positions "
+                "WHERE market_ticker = ? AND is_paper = ? "
+                "AND execution_status = 'submitted'",
+                (ticker, 1 if is_paper else 0),
+            )
+        }
 
 
 def close_position(position_id: int) -> None:
