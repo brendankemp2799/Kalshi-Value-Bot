@@ -301,6 +301,14 @@ def _migrate() -> None:
             # both makes exit slippage (exit_price - trigger_price) a direct read.
             ("exit_price",    "ALTER TABLE positions ADD COLUMN exit_price REAL"),
             ("trigger_price", "ALTER TABLE positions ADD COLUMN trigger_price REAL"),
+            # Entry-time sportsbook consensus probability for OUR side (2026-08-25).
+            # Without this, "book CLV" (did the sharp market itself move toward or
+            # away from our side after we bet) can't be computed directly -- edge
+            # alone doesn't reconstruct it, since edge is measured against different
+            # prices depending on maker_only (mid vs ask). consensus_close_prob
+            # already exists (captured post-settlement, same de-vig convention) --
+            # this is its entry-time counterpart. See core/clv_analytics.py.
+            ("consensus_prob", "ALTER TABLE positions ADD COLUMN consensus_prob REAL"),
         ]:
             if col not in existing:
                 conn.execute(ddl)
@@ -427,6 +435,7 @@ def add_position(
     entry_fee_paid: float = 0.0,
     strategy: str = "value_edge",
     maker_only: bool | None = None,
+    consensus_prob: float | None = None,
 ) -> int:
     with get_connection() as conn:
         cur = conn.execute(
@@ -437,8 +446,8 @@ def add_position(
                  order_id, execution_status, market_ticker, side,
                  edge, bookmaker_count, consensus_std, kalshi_spread, commence_time,
                  bet_type, threshold, bookmakers_json, failure_reason, fill_type,
-                 entry_fee_paid, strategy, maker_only)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 entry_fee_paid, strategy, maker_only, consensus_prob)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 datetime.utcnow().isoformat(),
@@ -462,6 +471,7 @@ def add_position(
                 entry_fee_paid,
                 strategy,
                 None if maker_only is None else (1 if maker_only else 0),
+                consensus_prob,
             ),
         )
         return cur.lastrowid
@@ -882,6 +892,27 @@ def get_all_positions(is_paper: bool = False) -> list[sqlite3.Row]:
             "SELECT * FROM positions WHERE is_paper = ? ORDER BY entered_at DESC",
             (1 if is_paper else 0,),
         ).fetchall()
+
+
+def get_positions_for_clv_analytics(is_paper: bool = False) -> list[dict]:
+    """Closed positions with the raw fields core/clv_analytics.py needs, oldest
+    first (so weekly_clv_series doesn't need to re-sort). Returns plain dicts, not
+    sqlite3.Row -- clv_analytics.compute_row() does dict unpacking (**pos) to build
+    its output, which sqlite3.Row does not support directly."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT sport, bet_type, team_name, entered_at, commence_time,
+                   market_price, kalshi_close_price, consensus_prob,
+                   consensus_close_prob, pnl, stake, threshold, maker_only,
+                   market_ticker
+            FROM positions
+            WHERE is_paper = ? AND status = 'closed'
+            ORDER BY entered_at ASC
+            """,
+            (1 if is_paper else 0,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_bankroll_history() -> list[sqlite3.Row]:

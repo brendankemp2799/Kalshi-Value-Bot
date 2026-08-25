@@ -36,6 +36,7 @@ from functools import wraps
 from flask import Flask, jsonify, render_template_string, abort, request, Response
 import storage.db as db
 from core.odds_converter import american_to_prob, _devig, _norm_team, _names_match
+import core.clv_analytics as clv
 from execution.auto_settle import auto_settle_positions
 from data.kalshi_client import KalshiClient
 import config
@@ -835,6 +836,57 @@ def mm_decisions():
     )
 
 
+@app.route("/clv")
+@_requires_auth
+def clv_page():
+    """CLV (closing-line value) and TTE (time-to-event) analytics.
+
+    Added 2026-08-25: P&L is now tracked externally via Pikkit (synced directly to
+    the Kalshi account, more accurate than anything reconstructable here), so this
+    page is deliberately NOT another P&L view. It answers the two questions Pikkit
+    doesn't: how CLV breaks down by sport/bet-type/time, and whether how far ahead
+    of game time a bet was placed (TTE) correlates with CLV or win rate. See
+    core/clv_analytics.py for the math.
+    """
+    raw = db.get_positions_for_clv_analytics(is_paper=IS_PAPER)
+    rows = clv.compute_rows(raw)
+
+    summary = clv.overall_summary(rows)
+    by_sport = [{**g, "key": _short_sport(g["key"])} for g in clv.group_by_field(rows, "sport")]
+    by_bet_type = [{**g, "key": _bet_type_label(g["key"])} for g in clv.group_by_field(rows, "bet_type")]
+    tte_buckets = clv.bucket_by_tte(rows)
+    weekly = clv.weekly_clv_series(rows)
+
+    # Recent rows table, newest first (rows arrive oldest-first from the DB layer
+    # so weekly_clv_series doesn't need to re-sort).
+    recent = []
+    for r in reversed(rows[-200:]):
+        recent.append({
+            "sport":        _short_sport(r.get("sport") or ""),
+            "bet_type":     _bet_type_label(r.get("bet_type")),
+            "team_name":    r.get("team_name") or "",
+            "url":          _kalshi_market_url(r.get("market_ticker") or ""),
+            "entered_at":   _fmt_dt(r.get("entered_at")),
+            "tte_hours":    r["tte_hours"],
+            "kalshi_clv":   r["kalshi_clv"],
+            "consensus_clv": r["consensus_clv"],
+            "won":          r["won"],
+            "pnl":          r.get("pnl"),
+        })
+
+    scatter = [{"x": r["tte_hours"], "y": r["kalshi_clv"]} for r in rows
+               if r["tte_hours"] is not None and r["kalshi_clv"] is not None]
+
+    return render_template_string(
+        CLV_TEMPLATE,
+        summary=summary, by_sport=by_sport, by_bet_type=by_bet_type,
+        tte_buckets=tte_buckets, weekly=weekly, recent=recent,
+        scatter_json=json.dumps(scatter),
+        weekly_json=json.dumps(weekly),
+        min_sample=MIN_CALIBRATION_SAMPLE,
+    )
+
+
 @app.route("/")
 @_requires_auth
 def index():
@@ -1557,6 +1609,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <header>
   <h1>Kalshi Arb Bot</h1>
   <div class="header-right">
+    <a href="/clv" style="font-size:12px;color:var(--bg);background:var(--green);text-decoration:none;padding:4px 10px;border:1px solid var(--green);border-radius:6px;white-space:nowrap;font-weight:600;">CLV &amp; TTE</a>
     <a href="/scan" style="font-size:12px;color:var(--blue);text-decoration:none;padding:4px 10px;border:1px solid var(--blue);border-radius:6px;white-space:nowrap;">Last Scan</a>
     <a href="/mm" style="font-size:12px;color:var(--blue);text-decoration:none;padding:4px 10px;border:1px solid var(--blue);border-radius:6px;white-space:nowrap;">Market Making</a>
     <span id="mode-badge" class="mode-badge">—</span>
@@ -2100,6 +2153,7 @@ MM_TEMPLATE = """<!DOCTYPE html>
 <body>
 <header>
   <a href="/">← Dashboard</a>
+  <a href="/clv">CLV &amp; TTE</a>
   <a href="/scan">Last Scan</a>
   <h1>Market Making</h1>
   <span class="meta">Last tick: {{ decided_at }}</span>
@@ -2188,6 +2242,338 @@ MM_TEMPLATE = """<!DOCTYPE html>
     </tbody>
   </table>
 </main>
+</body>
+</html>
+"""
+
+# ── CLV / TTE analytics template ──────────────────────────────────────────────
+
+CLV_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLV & TTE — Arb Bot</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:#0f1117;--surface:#1a1d27;--border:#2a2d3a;--text:#e2e8f0;
+    --muted:#64748b;--green:#22c55e;--red:#ef4444;--blue:#3b82f6;
+    --yellow:#f59e0b;--orange:#f97316;--purple:#a855f7;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{overflow-x:hidden;}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;}
+  header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+  header a{color:var(--muted);text-decoration:none;font-size:13px;white-space:nowrap;}
+  header a:hover{color:var(--text);}
+  header h1{font-size:16px;font-weight:600;}
+  .meta{color:var(--muted);font-size:12px;}
+  main{padding:20px;max-width:1500px;margin:0 auto;}
+  .cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;min-width:130px;flex:1 1 130px;}
+  .card .n{font-size:22px;font-weight:600;}
+  .card .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
+  .card .h{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.4;}
+  .section-title{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;
+                 letter-spacing:.6px;margin:20px 0 10px;}
+  .why{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+       padding:12px 16px;margin-bottom:16px;}
+  .why p{font-size:12px;color:var(--muted);}
+  .charts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;}
+  @media (max-width:900px){.charts{grid-template-columns:1fr;}}
+  .chart-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;}
+  .chart-box h2{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;}
+  .chart-box canvas{max-height:240px;}
+  .chart-box.wide{grid-column:1 / -1;}
+  table{width:100%;border-collapse:collapse;background:var(--surface);
+        border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px;}
+  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;
+     color:var(--muted);padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  td{padding:9px 10px;border-bottom:1px solid var(--border);font-size:12px;white-space:nowrap;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:rgba(255,255,255,.02);}
+  .num{font-variant-numeric:tabular-nums;text-align:right;}
+  .pos{color:var(--green);} .neg{color:var(--red);}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;
+        font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
+  .p-won{background:rgba(34,197,94,.15);color:var(--green);}
+  .p-lost{background:rgba(239,68,68,.15);color:var(--red);}
+  .p-pending{background:rgba(100,116,139,.15);color:var(--muted);}
+  .empty{text-align:center;color:var(--muted);padding:28px;}
+  a.tick{color:var(--text);text-decoration:none;}
+  a.tick:hover{color:var(--blue);}
+  @media (max-width:820px){
+    thead{display:none;}
+    table,tbody,tr,td{display:block;width:100%;}
+    tr{border-bottom:1px solid var(--border);padding:8px 0;}
+    td{border:none;padding:4px 12px;display:flex;gap:10px;white-space:normal;}
+    td::before{content:attr(data-label);font-size:10px;color:var(--muted);
+               text-transform:uppercase;letter-spacing:.5px;font-weight:600;min-width:100px;}
+    .num{text-align:left;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← Dashboard</a>
+  <a href="/scan">Last Scan</a>
+  <a href="/mm">Market Making</a>
+  <h1>CLV &amp; TTE</h1>
+</header>
+<main>
+  <div class="why">
+    <p>P&amp;L is tracked externally via Pikkit now, synced directly to the Kalshi
+       account. This page tracks what Pikkit only shows daily/weekly and doesn't
+       break out by sport or bet type: <strong style="color:var(--text)">closing-line
+       value</strong> over time, and whether <strong style="color:var(--text)">time-to-event</strong>
+       at bet placement correlates with CLV or win rate.</p>
+  </div>
+
+  {% if summary.n < min_sample %}
+  <div class="why">
+    <p><strong style="color:var(--text)">Only {{ summary.n }} settled bet(s) so
+       far</strong> (of {{ min_sample }} wanted for the numbers below to mean much).
+       History was reset 2026-08-25 to start clean from current strategy code —
+       this builds up as new bets settle.</p>
+  </div>
+  {% endif %}
+
+  <div class="cards">
+    <div class="card"><div class="n">{{ summary.n }}</div><div class="l">Settled bets</div></div>
+    <div class="card">
+      <div class="n" style="{% if summary.win_rate is not none and summary.win_rate >= 50 %}color:var(--green){% elif summary.win_rate is not none %}color:var(--red){% endif %}">
+        {{ '%.1f'|format(summary.win_rate) + '%' if summary.win_rate is not none else '—' }}</div>
+      <div class="l">Win rate</div>
+    </div>
+    <div class="card">
+      <div class="n {% if summary.mean_kalshi_clv is not none and summary.mean_kalshi_clv > 0 %}pos{% elif summary.mean_kalshi_clv is not none and summary.mean_kalshi_clv < 0 %}neg{% endif %}">
+        {{ '%+.3f'|format(summary.mean_kalshi_clv) if summary.mean_kalshi_clv is not none else '—' }}</div>
+      <div class="l">Mean Kalshi CLV</div>
+      <div class="h">Entry price vs. Kalshi's own closing price</div>
+    </div>
+    <div class="card">
+      <div class="n {% if summary.mean_consensus_clv is not none and summary.mean_consensus_clv > 0 %}pos{% elif summary.mean_consensus_clv is not none and summary.mean_consensus_clv < 0 %}neg{% endif %}">
+        {{ '%+.3f'|format(summary.mean_consensus_clv) if summary.mean_consensus_clv is not none else '—' }}</div>
+      <div class="l">Mean book CLV</div>
+      <div class="h">Entry consensus vs. sportsbook's closing consensus</div>
+    </div>
+    <div class="card">
+      <div class="n">{{ '%.1f'|format(summary.pct_positive_kalshi_clv) + '%' if summary.pct_positive_kalshi_clv is not none else '—' }}</div>
+      <div class="l">Positive CLV rate</div>
+      <div class="h">of {{ summary.n_with_kalshi_clv }} with a captured closing line</div>
+    </div>
+  </div>
+
+  <div class="section-title">Does time-to-event correlate with anything?</div>
+  <div class="cards">
+    <div class="card">
+      <div class="n">{{ '%+.3f'|format(summary.tte_vs_kalshi_clv_corr) if summary.tte_vs_kalshi_clv_corr is not none else '—' }}</div>
+      <div class="l">TTE vs. Kalshi CLV</div>
+      <div class="h">Pearson r. Positive = betting further ahead of game time tends
+        toward better CLV; negative = betting closer to game time does.</div>
+    </div>
+    <div class="card">
+      <div class="n">{{ '%+.3f'|format(summary.tte_vs_win_corr) if summary.tte_vs_win_corr is not none else '—' }}</div>
+      <div class="l">TTE vs. win rate</div>
+      <div class="h">Same idea, against actual outcome instead of CLV.</div>
+    </div>
+    <div class="card">
+      <div class="n">{{ '%+.3f'|format(summary.tte_vs_consensus_clv_corr) if summary.tte_vs_consensus_clv_corr is not none else '—' }}</div>
+      <div class="l">TTE vs. book CLV</div>
+      <div class="h">Whether the sharp line itself moves more with more lead time.</div>
+    </div>
+  </div>
+  <div class="why">
+    <p>r near 0 means no relationship; |r| above ~0.3 is worth a second look, but
+       even then this is observational, not causal — treat it as a lead, not a
+       verdict, until the sample is large.</p>
+  </div>
+
+  <div class="charts">
+    <div class="chart-box wide">
+      <h2>Weekly Kalshi CLV trend</h2>
+      <canvas id="weeklyChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <h2>Mean Kalshi CLV by sport</h2>
+      <canvas id="sportChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <h2>Mean Kalshi CLV by bet type</h2>
+      <canvas id="betTypeChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <h2>Win rate by time-to-event</h2>
+      <canvas id="tteWinChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <h2>Kalshi CLV vs. time-to-event</h2>
+      <canvas id="scatterChart"></canvas>
+    </div>
+  </div>
+
+  <div class="section-title">By sport</div>
+  <table>
+    <thead><tr><th>Sport</th><th class="num">Bets</th><th class="num">Win rate</th>
+      <th class="num">Mean Kalshi CLV</th><th class="num">Mean book CLV</th></tr></thead>
+    <tbody>
+      {% if not by_sport %}<tr><td colspan="5" class="empty">No settled bets yet.</td></tr>{% endif %}
+      {% for g in by_sport %}
+      <tr>
+        <td data-label="Sport">{{ g.key }}</td>
+        <td data-label="Bets" class="num">{{ g.n }}</td>
+        <td data-label="Win rate" class="num">{{ '%.1f'|format(g.win_rate) + '%' if g.win_rate is not none else '—' }}</td>
+        <td data-label="Kalshi CLV" class="num {% if g.mean_kalshi_clv and g.mean_kalshi_clv > 0 %}pos{% elif g.mean_kalshi_clv and g.mean_kalshi_clv < 0 %}neg{% endif %}">
+          {{ '%+.3f'|format(g.mean_kalshi_clv) if g.mean_kalshi_clv is not none else '—' }}</td>
+        <td data-label="Book CLV" class="num {% if g.mean_consensus_clv and g.mean_consensus_clv > 0 %}pos{% elif g.mean_consensus_clv and g.mean_consensus_clv < 0 %}neg{% endif %}">
+          {{ '%+.3f'|format(g.mean_consensus_clv) if g.mean_consensus_clv is not none else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="section-title">By bet type</div>
+  <table>
+    <thead><tr><th>Bet type</th><th class="num">Bets</th><th class="num">Win rate</th>
+      <th class="num">Mean Kalshi CLV</th><th class="num">Mean book CLV</th></tr></thead>
+    <tbody>
+      {% if not by_bet_type %}<tr><td colspan="5" class="empty">No settled bets yet.</td></tr>{% endif %}
+      {% for g in by_bet_type %}
+      <tr>
+        <td data-label="Bet type">{{ g.key }}</td>
+        <td data-label="Bets" class="num">{{ g.n }}</td>
+        <td data-label="Win rate" class="num">{{ '%.1f'|format(g.win_rate) + '%' if g.win_rate is not none else '—' }}</td>
+        <td data-label="Kalshi CLV" class="num {% if g.mean_kalshi_clv and g.mean_kalshi_clv > 0 %}pos{% elif g.mean_kalshi_clv and g.mean_kalshi_clv < 0 %}neg{% endif %}">
+          {{ '%+.3f'|format(g.mean_kalshi_clv) if g.mean_kalshi_clv is not none else '—' }}</td>
+        <td data-label="Book CLV" class="num {% if g.mean_consensus_clv and g.mean_consensus_clv > 0 %}pos{% elif g.mean_consensus_clv and g.mean_consensus_clv < 0 %}neg{% endif %}">
+          {{ '%+.3f'|format(g.mean_consensus_clv) if g.mean_consensus_clv is not none else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="section-title">By time-to-event</div>
+  <table>
+    <thead><tr><th>Hours before game</th><th class="num">Bets</th><th class="num">Win rate</th>
+      <th class="num">Mean Kalshi CLV</th><th class="num">Mean book CLV</th></tr></thead>
+    <tbody>
+      {% for b in tte_buckets %}
+      <tr>
+        <td data-label="Hours before">{{ b.range }}</td>
+        <td data-label="Bets" class="num">{{ b.n }}</td>
+        <td data-label="Win rate" class="num">{{ '%.1f'|format(b.win_rate) + '%' if b.win_rate is not none else '—' }}</td>
+        <td data-label="Kalshi CLV" class="num {% if b.mean_kalshi_clv and b.mean_kalshi_clv > 0 %}pos{% elif b.mean_kalshi_clv and b.mean_kalshi_clv < 0 %}neg{% endif %}">
+          {{ '%+.3f'|format(b.mean_kalshi_clv) if b.mean_kalshi_clv is not none else '—' }}</td>
+        <td data-label="Book CLV" class="num {% if b.mean_consensus_clv and b.mean_consensus_clv > 0 %}pos{% elif b.mean_consensus_clv and b.mean_consensus_clv < 0 %}neg{% endif %}">
+          {{ '%+.3f'|format(b.mean_consensus_clv) if b.mean_consensus_clv is not none else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="section-title">Recent settled bets</div>
+  <table>
+    <thead>
+      <tr><th>Sport</th><th>Type</th><th>Bet</th><th class="num">TTE (h)</th>
+        <th class="num">Kalshi CLV</th><th class="num">Book CLV</th><th>Outcome</th><th>Entered</th></tr>
+    </thead>
+    <tbody>
+      {% if not recent %}<tr><td colspan="8" class="empty">No settled bets yet.</td></tr>{% endif %}
+      {% for r in recent %}
+      <tr>
+        <td data-label="Sport">{{ r.sport }}</td>
+        <td data-label="Type">{{ r.bet_type }}</td>
+        <td data-label="Bet"><a class="tick" href="{{ r.url }}" target="_blank" rel="noopener">{{ r.team_name }}</a></td>
+        <td data-label="TTE" class="num">{{ r.tte_hours if r.tte_hours is not none else '—' }}</td>
+        <td data-label="Kalshi CLV" class="num {% if r.kalshi_clv and r.kalshi_clv > 0 %}pos{% elif r.kalshi_clv and r.kalshi_clv < 0 %}neg{% endif %}">
+          {{ '%+.3f'|format(r.kalshi_clv) if r.kalshi_clv is not none else '—' }}</td>
+        <td data-label="Book CLV" class="num {% if r.consensus_clv and r.consensus_clv > 0 %}pos{% elif r.consensus_clv and r.consensus_clv < 0 %}neg{% endif %}">
+          {{ '%+.3f'|format(r.consensus_clv) if r.consensus_clv is not none else '—' }}</td>
+        <td data-label="Outcome">
+          {% if r.won is none %}<span class="pill p-pending">Void</span>
+          {% elif r.won %}<span class="pill p-won">Won</span>
+          {% else %}<span class="pill p-lost">Lost</span>{% endif %}
+        </td>
+        <td data-label="Entered" class="meta">{{ r.entered_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</main>
+<script>
+  const weekly = {{ weekly_json|safe }};
+  const scatterData = {{ scatter_json|safe }};
+  const bySport = {{ by_sport|tojson }};
+  const byBetType = {{ by_bet_type|tojson }};
+  const tteBuckets = {{ tte_buckets|tojson }};
+  const gridColor = 'rgba(255,255,255,0.06)';
+  const textColor = '#64748b';
+  const commonScales = (yLabel) => ({
+    x: { grid: { color: gridColor }, ticks: { color: textColor } },
+    y: { grid: { color: gridColor }, ticks: { color: textColor },
+         title: yLabel ? { display: true, text: yLabel, color: textColor } : undefined },
+  });
+
+  new Chart(document.getElementById('weeklyChart'), {
+    type: 'line',
+    data: {
+      labels: weekly.map(w => w.week),
+      datasets: [{
+        label: 'Mean Kalshi CLV', data: weekly.map(w => w.mean_kalshi_clv),
+        borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.15)',
+        tension: 0.25, spanGaps: true, fill: true,
+      }],
+    },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } }, scales: commonScales('CLV') },
+  });
+
+  new Chart(document.getElementById('sportChart'), {
+    type: 'bar',
+    data: { labels: bySport.map(g => g.key),
+      datasets: [{ label: 'Mean Kalshi CLV', data: bySport.map(g => g.mean_kalshi_clv),
+        backgroundColor: bySport.map(g => (g.mean_kalshi_clv || 0) >= 0 ? '#22c55e' : '#ef4444') }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } }, scales: commonScales('CLV') },
+  });
+
+  new Chart(document.getElementById('betTypeChart'), {
+    type: 'bar',
+    data: { labels: byBetType.map(g => g.key),
+      datasets: [{ label: 'Mean Kalshi CLV', data: byBetType.map(g => g.mean_kalshi_clv),
+        backgroundColor: byBetType.map(g => (g.mean_kalshi_clv || 0) >= 0 ? '#22c55e' : '#ef4444') }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } }, scales: commonScales('CLV') },
+  });
+
+  new Chart(document.getElementById('tteWinChart'), {
+    type: 'bar',
+    data: { labels: tteBuckets.map(b => b.range),
+      datasets: [{ label: 'Win rate %', data: tteBuckets.map(b => b.win_rate),
+        backgroundColor: '#a855f7' }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: commonScales().x,
+                y: { grid: { color: gridColor }, ticks: { color: textColor },
+                     title: { display: true, text: 'Win rate %', color: textColor },
+                     min: 0, max: 100 } } },
+  });
+
+  new Chart(document.getElementById('scatterChart'), {
+    type: 'scatter',
+    data: { datasets: [{ label: 'Kalshi CLV', data: scatterData,
+        backgroundColor: 'rgba(59,130,246,0.6)' }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { title: { display: true, text: 'Hours before game', color: textColor },
+             grid: { color: gridColor }, ticks: { color: textColor } },
+        y: { title: { display: true, text: 'Kalshi CLV', color: textColor },
+             grid: { color: gridColor }, ticks: { color: textColor } },
+      } },
+  });
+</script>
 </body>
 </html>
 """

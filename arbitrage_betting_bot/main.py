@@ -486,6 +486,7 @@ def run_scan(
                 threshold=opp.matched_event.kalshi_market.threshold,
                 bookmakers_json=json.dumps(event.bookmakers),
                 maker_only=opp.maker_only,
+                consensus_prob=opp.consensus_prob,
             )
             try:
                 link_book_probability_to_position(scan_id, ticker, opp.team_name, paper_position_id)
@@ -560,6 +561,7 @@ def run_scan(
                         fill_type=fill_type or "taker",
                         entry_fee_paid=fee_paid,
                         maker_only=opp.maker_only,
+                        consensus_prob=opp.consensus_prob,
                     )
                 except Exception as e:
                     logger.critical(
