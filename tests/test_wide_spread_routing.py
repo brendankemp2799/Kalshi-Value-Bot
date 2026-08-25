@@ -25,7 +25,7 @@ import pytest
 
 import config
 from core.market_matcher import MatchedEvent
-from core.value_detector import detect_value, _resolve_wide_spread, _spread_too_wide
+from core.value_detector import detect_value, _resolve_wide_spread, _spread_too_wide, Outcome
 from data.kalshi_client import KalshiMarket
 from data.odds_fetcher import OddsEvent
 
@@ -156,3 +156,75 @@ def test_scan_log_records_why_a_wide_market_was_refused():
     assert entry["status"] == "value"
     assert "passive only" in entry["reason"]
     assert entry["edge"] is not None, "the edge must now be recorded, not discarded"
+
+
+# ── totals: the same rule, checked directly against _detect_totals (2026-08-24) ──
+#
+# THE BUG THIS SECTION PINS. Unlike _detect_h2h above, _detect_totals appended the
+# opportunity UNCONDITIONALLY after computing `allow` -- the `if not allow:` branch
+# logged the refusal and set up an MM candidate, then execution fell through and
+# appended the bet anyway regardless of what `allow` said. A market _resolve_wide_
+# spread had just said NOT to cross (wide spread, maker_only=False) was placed as a
+# real crossing order. Found while extending this exact wide-spread logic to
+# player props/BTTS/RFI and using _detect_totals as the template. Checked against
+# real production data before fixing: zero totals positions have ever combined a
+# wide Kalshi spread with a crossing (maker_only=0) fill, so this had not yet cost
+# money -- but nothing before this section would have caught it if it had.
+
+TOTALS_BOOKS = [
+    {"key": "draftkings", "title": "DraftKings", "markets": [{"key": "totals", "outcomes": [
+        {"name": "Over", "point": 8.5, "price": -145}, {"name": "Under", "point": 8.5, "price": +121}]}]},
+    {"key": "fanduel", "title": "FanDuel", "markets": [{"key": "totals", "outcomes": [
+        {"name": "Over", "point": 8.5, "price": -148}, {"name": "Under", "point": 8.5, "price": +124}]}]},
+    {"key": "betmgm", "title": "BetMGM", "markets": [{"key": "totals", "outcomes": [
+        {"name": "Over", "point": 8.5, "price": -146}, {"name": "Under", "point": 8.5, "price": +122}]}]},
+]  # same shape/prices as BOOKS above -- ~58% consensus, this time on Over 8.5.
+
+
+def _totals_km(yes_bid: float, yes_ask: float) -> KalshiMarket:
+    return KalshiMarket(
+        ticker="KXMLBTOTAL-26JUL22TEST", title="Miami at Milwaukee Over 8.5?",
+        yes_team="Over 8.5 runs scored", no_team="Under",
+        yes_price=(yes_bid + yes_ask) / 2, no_price=1 - (yes_bid + yes_ask) / 2,
+        yes_bid=yes_bid, yes_ask=yes_ask, volume=10000,
+        close_time="2026-07-23T00:00:00Z", category="sports",
+        event_ticker="KXMLBTOTAL-26JUL22TEST", bet_type="totals", threshold=8.5,
+    )
+
+
+def _run_totals(yes_bid, yes_ask):
+    event = OddsEvent(event_id="e", sport_key="baseball_mlb",
+                      home_team="Milwaukee Brewers", away_team="Miami Marlins",
+                      commence_time=datetime(2026, 7, 22, 20, tzinfo=timezone.utc),
+                      bookmakers=TOTALS_BOOKS)
+    km = _totals_km(yes_bid, yes_ask)
+    matched = [MatchedEvent(odds_event=event, kalshi_market=km, kalshi_outcome="yes")]
+    scan_log, mm = [], []
+    opps = detect_value(matched, min_edge=config.MIN_EDGE, scan_log=scan_log,
+                        mm_candidates=mm)
+    return opps, mm, scan_log
+
+
+def test_wide_spread_totals_crossing_edge_is_not_a_bet():
+    """THE REGRESSION. ~58% consensus vs a 0.20/0.50 market: ask_edge (0.08) clears
+    even the fee-adjusted bar (maker_only=False, a crossing order), and the 30-cent
+    spread is far past max_kalshi_spread. _resolve_wide_spread must refuse this,
+    and the refusal must actually stick."""
+    opps, mm, scan_log = _run_totals(0.20, 0.50)
+    assert opps == [], "a crossing order was placed into a spread flagged too wide to cross"
+    entry = next(e for e in scan_log if "Over" in e["team_name"])
+    assert entry["status"] == "spread_too_wide_take"
+
+
+def test_wide_spread_totals_is_never_both_a_bet_and_an_mm_candidate():
+    for bid, ask in [(0.20, 0.50), (0.15, 0.45), (0.45, 0.56), (0.30, 0.44)]:
+        opps, mm, _ = _run_totals(bid, ask)
+        assert not (opps and mm), f"both routes fired for {bid}/{ask}"
+
+
+def test_narrow_spread_totals_is_unaffected_by_the_fix():
+    """A narrow, crossable spread must still become a real bet -- the fix must not
+    have made _detect_totals refuse everything."""
+    opps, mm, _ = _run_totals(0.50, 0.53)
+    assert len(opps) == 1
+    assert opps[0].outcome == Outcome.OVER

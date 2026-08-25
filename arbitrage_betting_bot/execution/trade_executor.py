@@ -31,6 +31,15 @@ _YES_SIDE_OUTCOMES = frozenset({
     Outcome.BTTS, Outcome.RFI, Outcome.PLAYER,
 })
 
+# The NO-side counterparts. Same discipline as _YES_SIDE_OUTCOMES -- explicit
+# membership, not a fallthrough -- added 2026-08-24 alongside value_detector's
+# symmetric NO-side evaluation for props. Kept as its own set (not folded into
+# _YES_SIDE_OUTCOMES's checks) so "which outcomes buy YES" stays readable at a
+# glance rather than requiring a mental NOT.
+_NO_SIDE_OUTCOMES = frozenset({
+    Outcome.NO_OVER, Outcome.NO_BTTS, Outcome.NO_RFI, Outcome.NO_PLAYER,
+})
+
 
 def resolve_side(opp: ValueOpportunity) -> str:
     """Return the Kalshi side ('yes' or 'no') to bet for this opportunity.
@@ -41,8 +50,7 @@ def resolve_side(opp: ValueOpportunity) -> str:
     looks entirely normal.
     """
     me = opp.matched_event
-    # NO_OVER = buying the NO (Under) side of an Over market
-    if opp.outcome == Outcome.NO_OVER:
+    if opp.outcome in _NO_SIDE_OUTCOMES:
         return "no"
     if opp.outcome in _YES_SIDE_OUTCOMES:
         return "yes"
@@ -52,7 +60,8 @@ def resolve_side(opp: ValueOpportunity) -> str:
         return "no" if (me.kalshi_outcome or "yes") == "yes" else "yes"
     raise ValueError(
         f"resolve_side has no case for {opp.outcome!r} — add it to _YES_SIDE_OUTCOMES "
-        f"or handle it explicitly rather than letting it default to a side"
+        f"/_NO_SIDE_OUTCOMES or handle it explicitly rather than letting it default "
+        f"to a side"
     )
 
 
@@ -176,24 +185,34 @@ def verify_market_identity(opp: ValueOpportunity) -> str | None:
             return (f"direction mismatch: {km.ticker} YES is {km.yes_team!r} but we "
                     f"priced {opp.team_name!r}")
 
-    # ── binary props: the side must be YES, and the market must be the right one ──
+    # ── binary props: the side must match what the edge was computed on, and the
+    #    market must be the right one ──
     #
     # Every check here re-derives from Kalshi's OWN title/subtitle/ticker. The first
     # version of this branch compared km.participant against opp.team_name, which
     # value_detector builds FROM km.participant -- so it agreed with itself and could
     # never fire. A guard that cannot fail is worse than no guard, because it is
     # counted as coverage.
-    elif opp.outcome in (Outcome.BTTS, Outcome.RFI, Outcome.PLAYER):
-        if side != "yes":
-            return (f"{opp.outcome.value} edge is computed on Kalshi's YES side but "
-                    f"this order buys {side.upper()}")
-        if opp.outcome == Outcome.BTTS and "both teams" not in (km.yes_team or "").lower():
+    #
+    # NO_BTTS/NO_RFI/NO_PLAYER (2026-08-24): the SAME market's NO side. expected_side
+    # flips per outcome rather than hardcoding "yes" -- a NO_PLAYER bet buying YES
+    # would be exactly the 2026-08-22 inversion again, just on the new outcomes.
+    elif opp.outcome in (Outcome.BTTS, Outcome.RFI, Outcome.PLAYER,
+                         Outcome.NO_BTTS, Outcome.NO_RFI, Outcome.NO_PLAYER):
+        is_no = opp.outcome in (Outcome.NO_BTTS, Outcome.NO_RFI, Outcome.NO_PLAYER)
+        expected_side = "no" if is_no else "yes"
+        if side != expected_side:
+            return (f"{opp.outcome.value} edge is computed on Kalshi's "
+                    f"{expected_side.upper()} side but this order buys {side.upper()}")
+        if (opp.outcome in (Outcome.BTTS, Outcome.NO_BTTS)
+                and "both teams" not in (km.yes_team or "").lower()):
             return f"priced BTTS but {km.ticker} YES is {km.yes_team!r}"
-        if opp.outcome == Outcome.RFI and "first inning run" not in (km.title or "").lower():
+        if (opp.outcome in (Outcome.RFI, Outcome.NO_RFI)
+                and "first inning run" not in (km.title or "").lower()):
             # RFI's yes_sub_title is the bare word "Yes"; the title is the only field
             # that says what the contract is about.
             return f"priced a first-inning run but {km.ticker} is titled {km.title!r}"
-        if opp.outcome == Outcome.PLAYER:
+        if opp.outcome in (Outcome.PLAYER, Outcome.NO_PLAYER):
             from data.kalshi_client import _parse_player_prop
             from core.odds_converter import _norm_team
 
@@ -210,8 +229,10 @@ def verify_market_identity(opp: ValueOpportunity) -> str | None:
             # The threshold appears in three independent places -- our label, Kalshi's
             # subtitle, and the ticker suffix. They must agree: "Drohan 8+" priced
             # against the 7+ contract is a different bet at a plausible-looking price,
-            # exactly the class of error that stays invisible after the fill.
-            ours = _plus_line(label)
+            # exactly the class of error that stays invisible after the fill. YES
+            # labels end "N+" (_plus_line); NO labels end "Under N" (_label_line) --
+            # both carry the SAME boundary N as Kalshi's "N+" subtitle either way.
+            ours = _label_line(label) if is_no else _plus_line(label)
             if ours is None or abs((sb_line + 0.5) - ours) > 0.01:
                 return (f"threshold mismatch: priced {label!r} but {km.ticker} YES is "
                         f"{km.yes_team!r}")

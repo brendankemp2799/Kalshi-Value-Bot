@@ -243,6 +243,53 @@ def test_a_correct_rfi_passes():
     assert verify_market_identity(o) is None
 
 
+# ── NO side of the props (2026-08-24) ────────────────────────────────────────────
+#
+# _detect_player_prop/_detect_binary_prop now also evaluate the NO side of each
+# ticker (the player does NOT clear the threshold, both teams do NOT score, no run
+# in the 1st). Same discipline as the YES side: side must match what the edge was
+# computed on, or this is the 2026-08-22 inversion again on new outcomes.
+
+def _no_player_opp(label, yes_sub_title, ticker="KXMLBKS-26AUG231910ATLMIL-MILSDROHAN73-8"):
+    o = opp(Outcome.NO_PLAYER, label, yes_team=yes_sub_title,
+            home="Milwaukee Brewers", away="Atlanta Braves",
+            ticker=ticker, bet_type="player_prop")
+    return o
+
+
+def test_a_correct_no_player_prop_passes():
+    """Label carries 'Under 8' -- the SAME boundary number as Kalshi's '8+' YES
+    subtitle, just phrased for the other side."""
+    o = _no_player_opp("Shane Drohan Under 8", "Shane Drohan: 8+")
+    assert verify_market_identity(o) is None
+
+
+def test_a_no_player_prop_bought_on_yes_is_refused(monkeypatch):
+    """The inversion, replayed on the new outcome: NO_PLAYER's edge is computed on
+    Kalshi's NO side, so an order that actually buys YES is the wrong bet -- same
+    shape as test_resolve_side.py's test_identity_check_rejects_a_prop_bought_on_
+    the_wrong_side, just for the outcome added 2026-08-24."""
+    import execution.trade_executor as te
+    o = _no_player_opp("Shane Drohan Under 8", "Shane Drohan: 8+")
+    monkeypatch.setattr(te, "resolve_side", lambda _o: "yes")
+    reason = te.verify_market_identity(o)
+    assert reason is not None and "NO side" in reason
+
+
+def test_a_correct_no_btts_passes():
+    o = opp(Outcome.NO_BTTS, "Not Both Teams To Score", yes_team="Both Teams To Score",
+            home="Crystal Palace", away="Manchester City")
+    assert verify_market_identity(o) is None
+
+
+def test_a_correct_no_rfi_passes():
+    o = opp(Outcome.NO_RFI, "No First Inning Run", yes_team="Yes",
+            home="St. Louis Cardinals", away="Baltimore Orioles",
+            ticker="KXMLBRFI-26AUG251945BALSTL", bet_type="rfi")
+    o.matched_event.kalshi_market.title = "Baltimore vs St. Louis First Inning Run?"
+    assert verify_market_identity(o) is None
+
+
 # ── wrong fixture ─────────────────────────────────────────────────────────────
 #
 # The check below every other check: is this even the right game? On 2026-08-21..23

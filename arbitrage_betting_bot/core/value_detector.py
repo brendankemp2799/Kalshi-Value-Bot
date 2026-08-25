@@ -35,6 +35,13 @@ class Outcome(str, Enum):
     BTTS    = "btts"     # both teams to score (soccer)
     RFI     = "rfi"      # a run scores in the 1st inning (MLB)
     PLAYER  = "player"   # a named player clears a stat threshold
+    # NO sides of the three props above, added 2026-08-24 alongside the symmetric
+    # NO-side evaluation in _detect_binary_prop/_detect_player_prop -- previously
+    # these outcomes could not exist, so a player/game unlikely to hit was invisible
+    # regardless of edge, the same gap NO_OVER already closed for totals.
+    NO_BTTS   = "no_btts"
+    NO_RFI    = "no_rfi"
+    NO_PLAYER = "no_player"
 
 
 @dataclass
@@ -578,6 +585,17 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
     Unlike totals there is no ladder to buy on the sportsbook side -- Pinnacle
     populates NO *_alternate player markets (verified 2026-08-22) -- so a rung Pinnacle
     does not quote simply cannot be priced.
+
+    BOTH SIDES (added 2026-08-24). Previously only the YES side (player clears the
+    threshold) was ever evaluated -- a player UNLIKELY to clear it, exactly the shape
+    of a good NO bet, was invisible regardless of edge. Now mirrors _detect_totals's
+    Over/Under split: `consensus` prices YES, `1 - consensus` prices NO (Outcome.
+    NO_PLAYER, priced off `1 - yes_bid`), and the MM candidate is deferred until both
+    sides are decided so a resting quote never opens on a ticker we already hold
+    directionally (see _detect_h2h for the same pattern; _detect_totals had a bug in
+    its own version of this deferral -- appended an opportunity even when
+    _resolve_wide_spread said not to allow one -- fixed the same day this was added,
+    see _detect_totals's docstring).
     """
     from data.kalshi_client import PLAYER_PROP_MARKET
 
@@ -609,7 +627,16 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
              status, reason, "yes")
         return
 
+    # Both sides below price the SAME Kalshi ticker (YES = player clears the
+    # threshold, NO = player does not), so the MM decision is held until both have
+    # run -- see _detect_h2h/_detect_totals for the same pattern and why: emitting
+    # an MM quote on a ticker we are already directionally betting would put the
+    # bot on both sides of its own position.
+    opps_before = len(opportunities)
+    pending_mm: tuple | None = None
     wide_reason = _spread_too_wide(km, "player_prop")
+
+    # ── YES: the player clears the threshold ──────────────────────────────────
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
     result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if result is None:
@@ -623,29 +650,72 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              best_edge, status, reason, "yes")
         if wide_reason:
-            _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
-                                std_dev, status, reason)
-        return
+            pending_mm = (me, label, consensus, book_count, std_dev, status, reason)
+    else:
+        edge, maker_only = result
+        allow, status, reason = _resolve_wide_spread(maker_only, wide_reason)
+        if not allow:
+            _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
+                 edge, status, reason, "yes", maker_only=maker_only)
+            pending_mm = (me, label, consensus, book_count, std_dev,
+                          "spread_too_wide", reason)
+        else:
+            opportunities.append(ValueOpportunity(
+                matched_event=me, outcome=Outcome.PLAYER, team_name=label,
+                consensus_prob=consensus, market_price=kalshi_price, edge=edge,
+                market_url=_kalshi_url(km.ticker, km.event_ticker),
+                bookmaker_count=book_count, consensus_std=std_dev,
+                maker_only=maker_only,
+            ))
+            _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
+                 edge, status, reason, "yes", maker_only=maker_only)
+            logger.debug("VALUE PLAYER: %s — edge %.1f%%", label, edge * 100)
 
-    edge, maker_only = result
-    allow, status, reason = _resolve_wide_spread(maker_only, wide_reason)
-    if not allow:
-        _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-             edge, status, reason, "yes", maker_only=maker_only)
-        _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
-                            std_dev, "spread_too_wide", reason)
-        return
+    # ── NO: the player does NOT clear the threshold ───────────────────────────
+    #
+    # Symmetric to _detect_totals's Under block (added 2026-08-24): before this,
+    # a player unlikely to clear a threshold -- exactly the shape of a good NO
+    # bet -- was invisible, because only the YES/Over edge was ever computed.
+    # "Under N" (not "N-1 or fewer") to keep the SAME boundary number N that
+    # Kalshi's own "N+" subtitle uses -- trade_executor.verify_market_identity()
+    # checks our label's trailing number against that subtitle directly.
+    no_label = f"{km.participant} Under {km.threshold + 0.5:g}"
+    no_consensus = 1.0 - consensus
+    no_price = (1.0 - km.yes_bid) if km.yes_bid > 0 else (1.0 - km.yes_price)
+    no_result = _eval_edge(no_consensus, no_price, km.spread, min_edge)
+    if no_result is None:
+        no_best = no_consensus - no_price
+        eff_min = _effective_min_edge(no_price, min_edge)
+        if wide_reason:
+            no_status, reason = "spread_too_wide", wide_reason
+        else:
+            no_status = "no_edge"
+            reason = f"Edge {no_best*100:.2f}% net below minimum {eff_min*100:.2f}%"
+        _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
+             no_best, no_status, reason, "no")
+    else:
+        no_edge, no_maker_only = no_result
+        no_allow, no_status, reason = _resolve_wide_spread(no_maker_only, wide_reason)
+        if not no_allow:
+            _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
+                 no_edge, no_status, reason, "no", maker_only=no_maker_only)
+        else:
+            opportunities.append(ValueOpportunity(
+                matched_event=me, outcome=Outcome.NO_PLAYER, team_name=no_label,
+                consensus_prob=no_consensus, market_price=no_price, edge=no_edge,
+                market_url=_kalshi_url(km.ticker, km.event_ticker),
+                bookmaker_count=book_count, consensus_std=std_dev,
+                maker_only=no_maker_only,
+            ))
+            _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
+                 no_edge, no_status, "Edge found on NO side — " + reason, "no",
+                 maker_only=no_maker_only)
+            logger.debug("VALUE PLAYER (NO/Under): %s — edge %.1f%%",
+                        no_label, no_edge * 100)
 
-    opportunities.append(ValueOpportunity(
-        matched_event=me, outcome=Outcome.PLAYER, team_name=label,
-        consensus_prob=consensus, market_price=kalshi_price, edge=edge,
-        market_url=_kalshi_url(km.ticker, km.event_ticker),
-        bookmaker_count=book_count, consensus_std=std_dev,
-        maker_only=maker_only,
-    ))
-    _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-         edge, status, reason, "yes", maker_only=maker_only)
-    logger.debug("VALUE PLAYER: %s — edge %.1f%%", label, edge * 100)
+    # Quote this ticker only if NEITHER side became a directional bet.
+    if pending_mm is not None and len(opportunities) == opps_before:
+        _maybe_mm_candidate(mm_candidates, *pending_mm)
 
 
 # ── Binary props (BTTS, first-inning run) ─────────────────────────────────────
@@ -661,40 +731,56 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
 # two-branch `Outcome.BTTS if bet_type == "btts" else Outcome.RFI`, which is the same
 # shape as the resolve_side() fallthrough that bet 11 positions on the wrong side on
 # 2026-08-22: a third entry added to this dict would have been silently priced as RFI.
-_BINARY_PROPS: dict[str, tuple[str, str, float | None, str, Outcome]] = {
-    "btts": ("btts", "Yes", None, "Both Teams To Score", Outcome.BTTS),
-    "rfi":  ("totals_1st_1_innings", "Over", 0.5, "First Inning Run", Outcome.RFI),
+#
+# no_label/no_outcome (added 2026-08-24) are the SAME market's NO side -- "both teams
+# do NOT score", "no run in the 1st inning" -- previously never evaluated at all.
+_BINARY_PROPS: dict[str, tuple[str, str, float | None, str, Outcome, str, Outcome]] = {
+    "btts": ("btts", "Yes", None, "Both Teams To Score", Outcome.BTTS,
+             "Not Both Teams To Score", Outcome.NO_BTTS),
+    "rfi":  ("totals_1st_1_innings", "Over", 0.5, "First Inning Run", Outcome.RFI,
+             "No First Inning Run", Outcome.NO_RFI),
 }
 
 
 def _detect_binary_prop(me, event, km, min_edge, opportunities, scan_log,
                         mm_candidates=None):
-    """Price a two-outcome prop: Kalshi's YES against the sportsbook's matching side.
+    """Price a two-outcome prop: Kalshi's YES/NO against the sportsbook's matching side.
 
     No team disambiguation is involved -- these markets are about the GAME, not about
     which club does something -- so the #930 wrong-team failure mode cannot arise here.
+
+    Both sides evaluated (2026-08-24), mirroring _detect_totals's Over/Under split and
+    _detect_player_prop's YES/NO split -- the NO side was previously invisible
+    regardless of edge. MM candidate deferred until both sides are decided, same
+    reason as those two: a resting quote must not open on a ticker already held
+    directionally. _detect_totals had a bug in its own version of this deferral
+    (appended an opportunity even when _resolve_wide_spread said not to) -- fixed
+    the same day this was added, see _detect_totals's docstring.
     """
     spec = _BINARY_PROPS.get(km.bet_type)
     if spec is None:
         return
-    market_key, outcome_name, point, label, outcome_enum = spec
-    kalshi_side = "yes"
+    market_key, outcome_name, point, label, outcome_enum, no_label, no_outcome_enum = spec
 
     consensus, book_count, std_dev = consensus_stats(
         event.bookmakers, outcome_name, market_key=market_key, point=point)
     if consensus is None:
         _log(scan_log, me, label, None, None, 0, 0.0, None,
-             "no_consensus", f"No sportsbook {market_key} data", kalshi_side)
+             "no_consensus", f"No sportsbook {market_key} data", "yes")
         return
 
     qcheck = _quality_check(km, book_count, std_dev, km.bet_type)
     if qcheck:
         status, reason = qcheck
         _log(scan_log, me, label, None, consensus, book_count, std_dev, None,
-             status, reason, kalshi_side)
+             status, reason, "yes")
         return
 
+    opps_before = len(opportunities)
+    pending_mm: tuple | None = None
     wide_reason = _spread_too_wide(km, km.bet_type)
+
+    # ── YES ─────────────────────────────────────────────────────────────────────
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
     result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if result is None:
@@ -706,37 +792,84 @@ def _detect_binary_prop(me, event, km, min_edge, opportunities, scan_log,
             status = "no_edge"
             reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-             best_edge, status, reason, kalshi_side)
+             best_edge, status, reason, "yes")
         if wide_reason:
-            _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
-                                std_dev, status, reason)
-        return
+            pending_mm = (me, label, consensus, book_count, std_dev, status, reason)
+    else:
+        edge, maker_only = result
+        allow, status, reason = _resolve_wide_spread(maker_only, wide_reason)
+        if not allow:
+            _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
+                 edge, status, reason, "yes", maker_only=maker_only)
+            pending_mm = (me, label, consensus, book_count, std_dev,
+                          "spread_too_wide", reason)
+        else:
+            opportunities.append(ValueOpportunity(
+                matched_event=me, outcome=outcome_enum, team_name=label,
+                consensus_prob=consensus, market_price=kalshi_price, edge=edge,
+                market_url=_kalshi_url(km.ticker, km.event_ticker),
+                bookmaker_count=book_count, consensus_std=std_dev,
+                maker_only=maker_only,
+            ))
+            _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
+                 edge, status, reason, "yes", maker_only=maker_only)
+            logger.debug("VALUE %s: %s vs %s — edge %.1f%%",
+                         label, event.home_team, event.away_team, edge * 100)
 
-    edge, maker_only = result
-    allow, status, reason = _resolve_wide_spread(maker_only, wide_reason)
-    if not allow:
-        _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-             edge, status, reason, kalshi_side, maker_only=maker_only)
-        _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
-                            std_dev, "spread_too_wide", reason)
-        return
+    # ── NO ──────────────────────────────────────────────────────────────────────
+    no_consensus = 1.0 - consensus
+    no_price = (1.0 - km.yes_bid) if km.yes_bid > 0 else (1.0 - km.yes_price)
+    no_result = _eval_edge(no_consensus, no_price, km.spread, min_edge)
+    if no_result is None:
+        no_best = no_consensus - no_price
+        eff_min = _effective_min_edge(no_price, min_edge)
+        if wide_reason:
+            no_status, reason = "spread_too_wide", wide_reason
+        else:
+            no_status = "no_edge"
+            reason = f"Edge {no_best*100:.2f}% net below minimum {eff_min*100:.2f}%"
+        _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
+             no_best, no_status, reason, "no")
+    else:
+        no_edge, no_maker_only = no_result
+        no_allow, no_status, reason = _resolve_wide_spread(no_maker_only, wide_reason)
+        if not no_allow:
+            _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
+                 no_edge, no_status, reason, "no", maker_only=no_maker_only)
+        else:
+            opportunities.append(ValueOpportunity(
+                matched_event=me, outcome=no_outcome_enum, team_name=no_label,
+                consensus_prob=no_consensus, market_price=no_price, edge=no_edge,
+                market_url=_kalshi_url(km.ticker, km.event_ticker),
+                bookmaker_count=book_count, consensus_std=std_dev,
+                maker_only=no_maker_only,
+            ))
+            _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
+                 no_edge, no_status, "Edge found on NO side — " + reason, "no",
+                 maker_only=no_maker_only)
+            logger.debug("VALUE %s (NO): %s vs %s — edge %.1f%%",
+                         no_label, event.home_team, event.away_team, no_edge * 100)
 
-    opportunities.append(ValueOpportunity(
-        matched_event=me, outcome=outcome_enum, team_name=label,
-        consensus_prob=consensus, market_price=kalshi_price, edge=edge,
-        market_url=_kalshi_url(km.ticker, km.event_ticker),
-        bookmaker_count=book_count, consensus_std=std_dev,
-        maker_only=maker_only,
-    ))
-    _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-         edge, status, reason, kalshi_side, maker_only=maker_only)
-    logger.debug("VALUE %s: %s vs %s — edge %.1f%%",
-                 label, event.home_team, event.away_team, edge * 100)
+    if pending_mm is not None and len(opportunities) == opps_before:
+        _maybe_mm_candidate(mm_candidates, *pending_mm)
 
 
 # ── Totals ────────────────────────────────────────────────────────────────────
 
 def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidates=None):
+    """Price Over/Under against the sportsbook consensus.
+
+    FIX (2026-08-24): the Over branch used to append its ValueOpportunity
+    unconditionally after computing `allow` from _resolve_wide_spread -- the
+    `if not allow:` block logged the refusal and set up an MM candidate, but
+    execution fell through and appended the bet anyway regardless of what `allow`
+    said. A market explicitly flagged "too wide to cross" was placed as a real
+    crossing order. _detect_h2h's identical two-sided structure has always gated
+    this correctly; totals never had it. Checked against real production data
+    before fixing: zero totals positions had ever combined a wide Kalshi spread
+    with a crossing (maker_only=0) fill, so this was live and latent but had not
+    yet cost money. Now gated behind `if allow:`, matching _detect_h2h.
+    """
     if km.threshold is None:
         reason = f"No threshold parsed from title: {km.title[:50]}"
         logger.debug("Skip totals %s — %s", km.ticker, reason)
@@ -806,21 +939,33 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidat
         edge, maker_only = result
         allow, status, reason = _resolve_wide_spread(maker_only, wide_reason)
         if not allow:
+            # FIX (2026-08-24): this branch used to fall through and append the
+            # opportunity anyway, regardless of `allow` -- meaning a market
+            # _resolve_wide_spread had just said NOT to bet (either maker_only=True
+            # with ALLOW_WIDE_SPREAD_MAKER off, or a crossing order into a spread
+            # too wide to safely cross) was appended and traded exactly as if it
+            # had cleared. _detect_h2h's identical two-sided structure has always
+            # gated this correctly (see its `continue` in the same spot); totals
+            # never got it. Checked against real production data before fixing:
+            # zero totals positions have ever combined a wide Kalshi spread with a
+            # crossing (maker_only=0) order -- so this was a live, latent bug, not
+            # one that has cost money yet.
             _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
                  edge, status, reason, "yes", maker_only=maker_only)
             pending_mm = (me, label, consensus, book_count, std_dev,
                           "spread_too_wide", reason)
-        opportunities.append(ValueOpportunity(
-            matched_event=me, outcome=outcome_type, team_name=label,
-            consensus_prob=consensus, market_price=kalshi_price, edge=edge,
-            market_url=_kalshi_url(km.ticker, km.event_ticker),
-            bookmaker_count=book_count, consensus_std=std_dev,
-            maker_only=maker_only,
-        ))
-        _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
-             edge, status, reason, "yes", maker_only=maker_only)
-        logger.debug("VALUE TOTALS: %s (%s vs %s) — edge %.1f%% net (maker_only=%s)",
-                    label, event.home_team, event.away_team, edge*100, maker_only)
+        else:
+            opportunities.append(ValueOpportunity(
+                matched_event=me, outcome=outcome_type, team_name=label,
+                consensus_prob=consensus, market_price=kalshi_price, edge=edge,
+                market_url=_kalshi_url(km.ticker, km.event_ticker),
+                bookmaker_count=book_count, consensus_std=std_dev,
+                maker_only=maker_only,
+            ))
+            _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
+                 edge, status, reason, "yes", maker_only=maker_only)
+            logger.debug("VALUE TOTALS: %s (%s vs %s) — edge %.1f%% net (maker_only=%s)",
+                        label, event.home_team, event.away_team, edge*100, maker_only)
 
     # ── Also evaluate the NO side (Under) of this Over market ─────────────────
     if direction_label == "Over":

@@ -27,10 +27,15 @@ import config
 from core.value_detector import Outcome, _BINARY_PROPS, _detect_binary_prop
 
 
-def _mk(bet_type, yes_ask=0.50, spread=0.01):
+def _mk(bet_type, yes_ask=0.50, spread=0.01, yes_bid=None):
+    # yes_bid defaults to yes_ask (a zero-width test market) so existing single-
+    # sided assertions keep holding without every call site needing to reason about
+    # the NO price too -- override explicitly wherever a test cares about the NO
+    # side specifically (see the wide-bid/ask cases below).
     return SimpleNamespace(
         ticker=f"KXTEST{bet_type.upper()}-X", event_ticker="KXTEST-X",
         bet_type=bet_type, threshold=None, yes_ask=yes_ask, yes_price=yes_ask,
+        yes_bid=yes_ask if yes_bid is None else yes_bid,
         spread=spread, volume=5000, yes_team="", title="A vs B")
 
 
@@ -83,11 +88,30 @@ def test_btts_prices_kalshi_yes_off_the_books_yes():
 
 
 def test_btts_with_no_edge_is_logged_not_bet():
-    km, ev = _mk("btts", yes_ask=0.60), _ev(btts_book())
+    # yes_bid=0.40: the NO side must ALSO show no edge here (no_price=0.60 against
+    # ~0.56 no_consensus), or this stops testing "no edge anywhere" and starts
+    # testing "the YES side specifically has no edge, but see test_btts_finds_edge
+    # on the NO side below" without saying so.
+    km, ev = _mk("btts", yes_ask=0.60, yes_bid=0.40), _ev(btts_book())
     opps, log = [], []
     _detect_binary_prop(_me(km, ev), ev, km, 0.01, opps, log)
     assert opps == []
-    assert log and log[0]["status"] in ("no_edge", "spread_too_wide")
+    assert log and all(row["status"] in ("no_edge", "spread_too_wide") for row in log)
+
+
+def test_btts_finds_edge_on_the_no_side_too():
+    """THE NEW CASE. Kalshi's YES ask is too rich to buy (0.90 vs ~0.41 consensus),
+    but its bid is priced high too (0.85) -- the complementary NO price (1-bid=0.15)
+    is cheap relative to 1-consensus (~0.59). Before 2026-08-24 this was invisible:
+    only the YES/Over edge was ever computed."""
+    km, ev = _mk("btts", yes_ask=0.90, yes_bid=0.85), _ev(btts_book())
+    opps, log = [], []
+    _detect_binary_prop(_me(km, ev), ev, km, 0.01, opps, log)
+    assert len(opps) == 1
+    o = opps[0]
+    assert o.outcome == Outcome.NO_BTTS
+    assert o.team_name == "Not Both Teams To Score"
+    assert o.edge > 0
 
 
 def test_btts_without_sportsbook_data_is_skipped_cleanly():
@@ -166,3 +190,44 @@ def test_every_binary_prop_carries_its_own_outcome():
         seen.add(outcome)
     assert _BINARY_PROPS["btts"][4] is Outcome.BTTS
     assert _BINARY_PROPS["rfi"][4] is Outcome.RFI
+
+
+def test_every_binary_prop_carries_its_own_no_outcome():
+    """Same exhaustiveness discipline as the YES side, for the NO side added
+    2026-08-24 -- a fallthrough here would put the SAME bug back on the NO leg."""
+    seen = set()
+    for bet_type, spec in _BINARY_PROPS.items():
+        no_outcome = spec[6]
+        assert isinstance(no_outcome, Outcome), f"{bet_type} has no NO Outcome of its own"
+        assert no_outcome not in seen, f"{bet_type} reuses {no_outcome!r}"
+        seen.add(no_outcome)
+    assert _BINARY_PROPS["btts"][6] is Outcome.NO_BTTS
+    assert _BINARY_PROPS["rfi"][6] is Outcome.NO_RFI
+
+
+# ── the deferred MM decision (2026-08-24) ────────────────────────────────────────
+
+def test_neither_side_becomes_an_mm_candidate_once_one_side_is_a_real_bet():
+    """Same discipline as _detect_h2h/_detect_totals/_detect_player_prop: a resting
+    quote must never open on a ticker already held directionally."""
+    from core.value_detector import _detect_binary_prop
+    km, ev = _mk("btts", yes_ask=0.40), _ev(btts_book())  # YES clears easily
+    opps, mm_cands = [], []
+    _detect_binary_prop(_me(km, ev), ev, km, 0.01, opps, [], mm_candidates=mm_cands)
+    assert len(opps) == 1
+    assert mm_cands == [], "MM quoted a ticker we already bet directionally"
+
+
+# ── the NO-side opportunity survives the real pre-order gate ────────────────────
+
+def test_the_no_btts_opportunity_survives_the_real_pre_order_gate():
+    """Integration, not just unit math -- build the opportunity through the real
+    detector and run it through the real verify_market_identity()."""
+    from execution.trade_executor import verify_market_identity
+    km, ev = _mk("btts", yes_ask=0.90, yes_bid=0.85), _ev(btts_book())
+    km.event_teams = ("Arsenal", "Coventry City")
+    km.yes_team = "Both Teams To Score"
+    opps, log = [], []
+    _detect_binary_prop(_me(km, ev), ev, km, 0.01, opps, log)
+    assert opps and opps[0].outcome == Outcome.NO_BTTS
+    assert verify_market_identity(opps[0]) is None

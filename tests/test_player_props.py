@@ -101,12 +101,20 @@ def test_an_absent_player_returns_nothing_rather_than_someone_else():
 
 # ── 3. the detector ─────────────────────────────────────────────────────────────
 
-def _km(player="Pitcher A", line=4.5, ask=0.45, series="KXMLBKS"):
+def _km(player="Pitcher A", line=4.5, ask=0.45, series="KXMLBKS", bid=None):
+    # bid defaults to ask (a zero-width test market): keeps existing single-sided
+    # assertions holding without every call site needing to reason about the NO
+    # price too. Override where a test specifically wants a NO-side result.
+    # event_teams matches _me()'s ev below, so a ValueOpportunity built here can
+    # also be run straight through the real verify_market_identity() -- see
+    # test_the_no_side_opportunity_survives_the_real_pre_order_gate.
     return SimpleNamespace(
         ticker=f"{series}-26AUG221915PITLAD-X-5", event_ticker=f"{series}-26AUG221915PITLAD",
         bet_type="player_prop", threshold=line, participant=player,
-        yes_ask=ask, yes_price=ask, spread=0.01, volume=900, yes_team=f"{player}: 5+",
-        title=f"{player}: 5+ strikeouts?")
+        yes_ask=ask, yes_price=ask, yes_bid=ask if bid is None else bid,
+        spread=0.01, volume=900, yes_team=f"{player}: 5+",
+        title=f"{player}: 5+ strikeouts?",
+        event_teams=("Los Angeles Dodgers", "Pittsburgh Pirates"))
 
 
 def _me(km, books):
@@ -196,3 +204,51 @@ def test_folding_does_not_merge_genuinely_different_players():
     prob, n, _ = consensus_stats(books, "Over", market_key="batter_total_bases",
                                  point=1.5, participant="Jose Altuve")
     assert prob is None and n == 0
+
+
+# ── 6. the symmetric NO side (2026-08-24) ────────────────────────────────────────
+#
+# Before this, only the YES/Over edge was ever computed -- a player UNLIKELY to
+# clear a threshold, exactly the shape of a good NO bet, was invisible regardless
+# of edge. Mirrors _detect_totals's Over/Under split.
+
+def test_a_rich_yes_price_finds_edge_on_the_no_side():
+    """Consensus favours Pitcher A clearing 4.5 (~0.58, see test_each_player_is_
+    priced_off_his_own_pair) -- price the market so YES is too expensive to buy but
+    NO (1 - bid) is cheap relative to 1 - consensus."""
+    km = _km(player="Pitcher A", line=4.5, ask=0.95, bid=0.90)
+    me, ev = _me(km, _two_pitchers_same_line())
+    opps, log = [], []
+    _detect_player_prop(me, ev, km, 0.01, opps, log)
+    assert len(opps) == 1
+    o = opps[0]
+    assert o.outcome == Outcome.NO_PLAYER
+    assert "Pitcher A" in o.team_name and "Under 5" in o.team_name
+    assert o.edge > 0
+
+
+def test_the_no_side_opportunity_survives_the_real_pre_order_gate():
+    """Integration, not just unit math: build a NO_PLAYER opportunity through the
+    real detector and run it through the real verify_market_identity() -- a label
+    that looks right in isolation can still fail the real regex the pre-order gate
+    checks it against, so this exercises both together rather than trusting them
+    separately."""
+    from execution.trade_executor import verify_market_identity
+
+    km = _km(player="Pitcher A", line=4.5, ask=0.95, bid=0.90)
+    me, ev = _me(km, _two_pitchers_same_line())
+    opps, log = [], []
+    _detect_player_prop(me, ev, km, 0.01, opps, log)
+    assert opps and opps[0].outcome == Outcome.NO_PLAYER
+    assert verify_market_identity(opps[0]) is None
+
+
+def test_neither_side_becomes_an_mm_candidate_once_one_side_is_a_real_bet():
+    """Same deferred-MM discipline as _detect_h2h/_detect_totals: a resting quote
+    must never open on a ticker already held directionally."""
+    km = _km(player="Pitcher A", line=4.5, ask=0.45)  # YES clears easily
+    me, ev = _me(km, _two_pitchers_same_line())
+    opps, mm_cands = [], []
+    _detect_player_prop(me, ev, km, 0.01, opps, [], mm_candidates=mm_cands)
+    assert len(opps) == 1
+    assert mm_cands == [], "MM quoted a ticker we already bet directionally"

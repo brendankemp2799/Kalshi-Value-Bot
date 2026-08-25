@@ -19,7 +19,7 @@ from types import SimpleNamespace
 import pytest
 
 from core.value_detector import Outcome
-from execution.trade_executor import resolve_side, _YES_SIDE_OUTCOMES
+from execution.trade_executor import resolve_side, _YES_SIDE_OUTCOMES, _NO_SIDE_OUTCOMES
 
 
 def opp(outcome, kalshi_outcome="yes"):
@@ -50,6 +50,13 @@ def test_pre_existing_outcomes_are_unchanged(oc, expected):
     assert resolve_side(opp(oc)) == expected
 
 
+@pytest.mark.parametrize("oc", [Outcome.NO_BTTS, Outcome.NO_RFI, Outcome.NO_PLAYER])
+def test_the_no_side_props_buy_no(oc):
+    """Added 2026-08-24 alongside value_detector's symmetric NO-side evaluation --
+    same regression shape as test_the_props_buy_yes, just the other direction."""
+    assert resolve_side(opp(oc)) == "no"
+
+
 def test_h2h_still_follows_the_markets_own_orientation():
     assert resolve_side(opp(Outcome.HOME, "yes")) == "yes"
     assert resolve_side(opp(Outcome.HOME, "no")) == "no"
@@ -64,9 +71,10 @@ def test_an_unknown_outcome_raises_rather_than_defaulting():
 
 
 def test_the_yes_set_and_the_enum_stay_in_sync():
-    """A member in neither the YES set nor an explicit branch is a latent inversion."""
-    explicit = {Outcome.NO_OVER, Outcome.HOME, Outcome.AWAY}
-    unhandled = set(Outcome) - _YES_SIDE_OUTCOMES - explicit
+    """A member in neither the YES set, the NO set, nor an explicit branch is a
+    latent inversion."""
+    explicit = {Outcome.HOME, Outcome.AWAY}
+    unhandled = set(Outcome) - _YES_SIDE_OUTCOMES - _NO_SIDE_OUTCOMES - explicit
     assert not unhandled, f"Outcome(s) with no deliberate side: {unhandled}"
 
 

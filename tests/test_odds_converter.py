@@ -1,6 +1,8 @@
 """Unit tests for de-vig math and team name normalization."""
 # conftest.py adds arbitrage_betting_bot/ to sys.path
 
+import pytest
+
 from core.odds_converter import (
     _names_match,
     _norm_team,
@@ -142,3 +144,49 @@ def test_norm_team_lowercase():
 
 def test_norm_team_strips_punctuation():
     assert "st" in _norm_team("St. Louis Cardinals")
+
+
+# ── one-sided quotes must not fabricate a probability ─────────────────────────────
+#
+# Found live 2026-08-24 while wiring up DraftKings' alternate player-prop ladder:
+# every book that carries pitcher_strikeouts_alternate/batter_home_runs_alternate/
+# batter_total_bases_alternate (checked DraftKings, FanDuel, BetOnline, William Hill,
+# Bovada, Fanatics) sends ONLY the Over leg, never a matching Under, at any point.
+# consensus_stats pairs a target outcome with its same-line "siblings" to de-vig --
+# with one outcome, remove_vig([p]) is p/p, which is 1.0 for ANY price. Live: Logan
+# Gilbert Over 7.5 Ks at DraftKings +268 (a real ~27% shot) came back as "100% certain."
+# Worse, blending that fabricated 1.0 into a point Pinnacle DID price correctly (5.5,
+# real ~0.57) dragged the combined consensus up to 0.75.
+
+def test_a_lone_outcome_is_skipped_not_devigged_into_certainty():
+    """THE BUG. One book, one side, no opposing price to de-vig against -- this must
+    return no consensus, not manufacture a fabricated 100%."""
+    one_sided = [{"key": "draftkings", "markets": [
+        {"key": "pitcher_strikeouts_alternate", "outcomes": [
+            {"name": "Over", "description": "Logan Gilbert", "price": 268, "point": 7.5},
+        ]}]}]
+    v, n, _ = consensus_stats(one_sided, "Over", market_key="pitcher_strikeouts",
+                              point=7.5, participant="Logan Gilbert")
+    assert v is None and n == 0, "a lone Over leg must not price as a certainty"
+
+
+def test_a_lone_outcome_does_not_corrupt_a_book_that_has_both_sides():
+    """The same bug, but worse: one book's genuine two-sided price got dragged toward
+    1.0 by averaging in another book's fabricated certainty at the same line."""
+    paired = [{"key": "pinnacle", "markets": [
+        {"key": "pitcher_strikeouts", "outcomes": [
+            {"name": "Over", "description": "Logan Gilbert", "price": -154, "point": 5.5},
+            {"name": "Under", "description": "Logan Gilbert", "price": 128, "point": 5.5},
+        ]}]}]
+    lone = [{"key": "draftkings", "markets": [
+        {"key": "pitcher_strikeouts_alternate", "outcomes": [
+            {"name": "Over", "description": "Logan Gilbert", "price": -154, "point": 5.5},
+        ]}]}]
+    only_paired, n_paired, _ = consensus_stats(
+        paired, "Over", market_key="pitcher_strikeouts", point=5.5, participant="Logan Gilbert")
+    both, n_both, _ = consensus_stats(
+        paired + lone, "Over", market_key="pitcher_strikeouts", point=5.5,
+        participant="Logan Gilbert")
+    assert n_both == n_paired == 1, "the one-sided book must not count as a contributor"
+    assert both == pytest.approx(only_paired), \
+        "a lone opposing-side-free quote changed a properly-devigged consensus"

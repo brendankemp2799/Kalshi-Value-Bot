@@ -442,6 +442,17 @@ def consensus_stats(
             if target not in siblings:      # defensive; target always matches itself
                 siblings = outcomes
 
+            # A de-vig needs the opposing side to normalize against. One outcome
+            # alone isn't "no vig to remove" -- remove_vig([p]) is p/p, which is 1.0
+            # for ANY price, a fabricated certainty rather than a real probability.
+            # Verified live 2026-08-24: DraftKings' alternate player-prop ladder
+            # sends Over-only, no Under at any point, for every rung. Skipping a
+            # one-sided quote (rather than "de-vigging" it into 1.0) is the same
+            # no-consensus-over-a-guess rule this function already applies when no
+            # book quotes the point at all.
+            if len(siblings) < 2:
+                continue
+
             probs = [american_to_prob(o["price"]) for o in siblings]
             no_vig = _devig(probs)
             weighted_probs.append((weight, no_vig[siblings.index(target)]))
