@@ -71,23 +71,37 @@ def test_no_closed_positions_returns_empty_list(fresh_db):
     assert fresh_db.get_positions_for_clv_analytics() == []
 
 
-# ── /clv dashboard route ──────────────────────────────────────────────────────────
+# ── CLV & TTE analytics, now on the homepage (2026-08-25) ─────────────────────────
+#
+# The standalone /clv page was folded into "/" so everything lives on the first
+# page (replacing the old P&L cards/charts/tables there) -- /clv itself is kept
+# only as a redirect for old links/bookmarks.
 
-def test_clv_page_renders_on_an_empty_db(fresh_db):
+def test_clv_redirects_to_the_homepage(fresh_db):
     import dashboard_server as ds
     ds.app.config["TESTING"] = True
     with ds.app.test_client() as c:
         r = c.get("/clv")
+        assert r.status_code == 302
+        assert r.headers["Location"] == "/"
+
+
+def test_homepage_renders_clv_content_on_an_empty_db(fresh_db):
+    import dashboard_server as ds
+    ds.app.config["TESTING"] = True
+    with ds.app.test_client() as c:
+        r = c.get("/")
         assert r.status_code == 200
         assert b"CLV" in r.data
+        assert b"Calibration" in r.data
 
 
-def test_clv_page_renders_with_real_data(fresh_db):
+def test_homepage_renders_clv_content_with_real_data(fresh_db):
     _add(fresh_db, status_via_settle="won")
     fresh_db.set_closing_lines(1, kalshi_close_price=0.55, consensus_close_prob=0.50)
     import dashboard_server as ds
     ds.app.config["TESTING"] = True
     with ds.app.test_client() as c:
-        r = c.get("/clv")
+        r = c.get("/")
         assert r.status_code == 200
         assert b"Dodgers" in r.data
