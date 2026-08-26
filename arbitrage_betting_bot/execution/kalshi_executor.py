@@ -68,6 +68,12 @@ _BASE_URL     = "https://api.elections.kalshi.com/trade-api/v2"
 _ORDERS_URL   = f"{_BASE_URL}/portfolio/events/orders"   # POST + DELETE
 _STATUS_URL   = f"{_BASE_URL}/portfolio/orders"          # GET (old path still works)
 
+# Kalshi shards the exchange across separate matching engines, each with its own
+# segregated cash balance. -1 tells Kalshi "work out the shard from the ticker"
+# rather than defaulting to shard 0. See _place_raw_order and _cancel_order for
+# the measurements behind this; note the two routes need DIFFERENT arguments.
+_AUTO_ROUTE = -1
+
 
 # Backoff schedule for reading an order back immediately after placing it. See
 # _get_order_status(retries=...) — deliberately short; the whole point is to
@@ -179,16 +185,45 @@ def _classify_fill(order_id: str, crossed_at_placement: bool) -> tuple[str, floa
     return ("taker" if crossed_at_placement else "maker"), total
 
 
-def _cancel_order(order_id: str) -> bool:
-    """Cancel a resting GTC order. Returns True if cancelled successfully."""
+def _cancel_order(order_id: str, ticker: str) -> bool:
+    """Cancel a resting GTC order. Returns True if cancelled successfully.
+
+    `ticker` is REQUIRED, and is not optional the way it looks. Cancel routes
+    differently from create: create carries the ticker in its JSON body, so
+    exchange_index=-1 is enough to auto-route it, but cancel addresses the order
+    by id in the path and Kalshi cannot infer the shard from that alone.
+    Measured against the live API on 2026-08-26:
+
+        no params at all         -> 404 not_found        (what this used to send)
+        exchange_index=-1 only   -> 400 market_ticker_is_required_when_exchange_index=-1
+        exchange_index=-1+ticker -> 200
+        exchange_index=<n> only  -> 200
+
+    The first line is the dangerous one. Every caller here treats a failed
+    cancel as "already gone", so before this fix a resting quote on a non-zero
+    shard would have been left LIVE and untracked -- the same class of orphan
+    that _drop_prior and the MM sweep exist to prevent. We pass ticker rather
+    than a hard-coded shard so this keeps working after the next re-shard.
+    """
     try:
         from data.kalshi_auth import auth_headers, session
         url = f"{_ORDERS_URL}/{order_id}"
         headers = auth_headers("DELETE", url)
-        resp = session().delete(url, headers=headers, timeout=10)
+        resp = session().delete(
+            url,
+            params={"exchange_index": _AUTO_ROUTE, "market_ticker": ticker},
+            headers=headers,
+            timeout=10,
+        )
+        if not resp.ok:
+            logger.warning(
+                "Cancel REJECTED for %s on %s — HTTP %s %s. The order may still be "
+                "LIVE; do not assume it is gone.",
+                order_id, ticker, resp.status_code, resp.text[:160],
+            )
         return resp.ok
     except Exception as e:
-        logger.warning("Could not cancel order %s: %s", order_id, e)
+        logger.warning("Could not cancel order %s on %s: %s", order_id, ticker, e)
         return False
 
 
@@ -244,6 +279,21 @@ def _place_raw_order(
         "time_in_force": time_in_force,
         "self_trade_prevention_type": "taker_at_cross",
         "reduce_only": reduce_only,
+        # Route by ticker. Kalshi split the exchange into shards on 2026-08-24
+        # 12:00 ET; new tennis/baseball events are created on shard 3 while
+        # everything else stays on shard 0. A write that omits this field is
+        # routed to shard 0, which has never heard of a shard-3 ticker and
+        # rejects it with 404 market_not_found -- that is what silently killed
+        # every MLB prop and totals order from 2026-08-24T23:22 onward (540
+        # rejections in two days, verified A/B: identical payload 404s without
+        # this field and returns 201 with it).
+        #
+        # -1 means "auto-route by ticker", which is correct on EVERY shard and
+        # survives the next re-shard without a code change. Verified against
+        # both shard 0 and shard 3. The cost is that an auto-routed write bills
+        # every shard's rate-limit bucket rather than just one; at our order
+        # volume (tens per 45-minute scan) that is not close to binding.
+        "exchange_index": _AUTO_ROUTE,
     }
     _throttle_order_post()
     headers = auth_headers("POST", _ORDERS_URL)
@@ -439,10 +489,10 @@ def place_order(
                     "Kalshi GTC mid fill: %s %s %g/%d contracts @ %.4f  actual_stake=$%.2f  fee=$%.4f (order_id=%s)",
                     api_side.upper(), ticker, filled, count, yes_price_mid, actual_stake, fee_paid, order_id,
                 )
-                _cancel_order(order_id)
+                _cancel_order(order_id, ticker)
                 return order_id, "submitted", "", actual_stake, fill_type, fee_paid
 
-            _cancel_order(order_id)
+            _cancel_order(order_id, ticker)
             if maker_only:
                 reason = (
                     f"GTC mid cancelled early — {early_cancel_reason}" if early_cancel_reason
@@ -513,10 +563,10 @@ def place_order(
                 "Kalshi GTC ask fill: %s %s %g/%d contracts @ %.4f  actual_stake=$%.2f  fee=$%.4f (order_id=%s)",
                 api_side.upper(), ticker, filled, count, yes_price_ask, actual_stake, fee_paid, order_id,
             )
-            _cancel_order(order_id)
+            _cancel_order(order_id, ticker)
             return order_id, "submitted", "", actual_stake, fill_type, fee_paid
 
-        _cancel_order(order_id)
+        _cancel_order(order_id, ticker)
         reason = f"GTC ask unfilled after {ask_timeout}s — no resting liquidity at ask"
         logger.warning("Kalshi GTC ask zero fill for %s @ %.4f", ticker, yes_price_ask)
         return order_id, "failed", reason, 0.0, "", 0.0
@@ -586,9 +636,13 @@ def order_fee_paid(order_id: str) -> float:
     return _actual_fee_dollars(order_id)
 
 
-def cancel_quote(order_id: str) -> bool:
-    """Public wrapper around _cancel_order() — cancel a resting market-making quote."""
-    return _cancel_order(order_id)
+def cancel_quote(order_id: str, ticker: str) -> bool:
+    """Public wrapper around _cancel_order() — cancel a resting market-making quote.
+
+    `ticker` is required for shard routing; see _cancel_order for why an order id
+    alone no longer addresses an order unambiguously.
+    """
+    return _cancel_order(order_id, ticker)
 
 
 def place_resting_quote(

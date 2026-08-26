@@ -83,7 +83,7 @@ def rig(monkeypatch):
 
     monkeypatch.setattr(ke, "place_resting_quote", _place)
     monkeypatch.setattr(ke, "cancel_quote",
-                        lambda oid: (state["cancelled"].append(oid), True)[1])
+                        lambda oid, ticker: (state["cancelled"].append(oid), True)[1])
     monkeypatch.setattr(ke, "get_order_status",
                         lambda oid: {"fill_count_fp": state["fills"].get(oid, 0.0)})
     monkeypatch.setattr(ke, "order_fee_paid", lambda oid: 0.0)

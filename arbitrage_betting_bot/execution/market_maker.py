@@ -119,7 +119,7 @@ def _sync_resting_quotes_from_kalshi() -> None:
         if slot[leg_side] is not None:
             dup_id = o.get("order_id")
             duplicates.append((ticker, leg_side, dup_id))
-            if dup_id and not cancel_quote(dup_id):
+            if dup_id and not cancel_quote(dup_id, ticker):
                 logger.error(
                     "MM recovery: FAILED to cancel duplicate %s quote %s on %s — it "
                     "is still live and untracked.", leg_side.upper(), dup_id, ticker,
@@ -544,7 +544,7 @@ def run_mm_tick(
         to make, which is precisely how the orphans of 2026-08-13 accumulated."""
         for leg in (legs.get("yes"), legs.get("no")):
             if leg:
-                cancel_quote(leg["order_id"])
+                cancel_quote(leg["order_id"], ticker)
         _resting_quotes.pop(ticker, None)
 
     for candidate in mm_candidates:
@@ -607,7 +607,7 @@ def run_mm_tick(
                 if filled <= 0:
                     surviving[side] = leg
                 elif filled < leg["count"]:
-                    cancel_quote(leg["order_id"])
+                    cancel_quote(leg["order_id"], ticker)
 
         # ── Phase B: should we still be quoting this market at all? ────────────
         # Re-check the live spread against the SAME threshold the directional
@@ -719,7 +719,7 @@ def run_mm_tick(
                 kept_legs += 1
                 continue
             if old:
-                cancel_quote(old["order_id"])
+                cancel_quote(old["order_id"], ticker)
             order_id, leg_filled, fee = place_resting_quote(ticker, side, price, count)
             placed_legs += 1
             if leg_filled > 0:
@@ -880,7 +880,7 @@ def sweep_orphaned_quotes(active_tickers: set[str], is_paper: bool,
                 "Cancelling the remainder now.",
                 ticker, filled, created[:19], order_id,
             )
-        if cancel_quote(order_id):
+        if cancel_quote(order_id, ticker):
             cancelled += 1
             swept_tickers.add(ticker)
         else:

@@ -40,7 +40,11 @@ def kalshi(monkeypatch):
     state = {"orders": [], "cancelled": [], "cancel_ok": True}
     monkeypatch.setattr(ke, "list_resting_orders", lambda: state["orders"])
 
-    def _cancel(oid):
+    def _cancel(oid, ticker):
+        # ticker is required for shard routing -- a cancel that omits it 404s
+        # and leaves the order LIVE, so record it and prove it was supplied.
+        assert ticker, f"cancel_quote({oid!r}) called without a ticker"
+        state.setdefault("cancel_tickers", []).append(ticker)
         if state["cancel_ok"]:
             state["cancelled"].append(oid)
         return state["cancel_ok"]
@@ -144,7 +148,11 @@ def recovery(monkeypatch):
     state = {"orders": [], "cancelled": [], "cancel_ok": True}
     monkeypatch.setattr(ke, "list_resting_orders", lambda: state["orders"])
 
-    def _cancel(oid):
+    def _cancel(oid, ticker):
+        # ticker is required for shard routing -- a cancel that omits it 404s
+        # and leaves the order LIVE, so record it and prove it was supplied.
+        assert ticker, f"cancel_quote({oid!r}) called without a ticker"
+        state.setdefault("cancel_tickers", []).append(ticker)
         if state["cancel_ok"]:
             state["cancelled"].append(oid)
         return state["cancel_ok"]
