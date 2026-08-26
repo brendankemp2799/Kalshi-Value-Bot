@@ -9,6 +9,8 @@ from core.odds_converter import (
     american_to_prob,
     consensus_stats,
     remove_vig,
+    scaled_alternate_prob,
+    scaled_alternate_diagnostics,
 )
 
 # Three-book bookmakers fixture: DK -145, FD -148, BetMGM -142 for Milwaukee.
@@ -190,3 +192,142 @@ def test_a_lone_outcome_does_not_corrupt_a_book_that_has_both_sides():
     assert n_both == n_paired == 1, "the one-sided book must not count as a contributor"
     assert both == pytest.approx(only_paired), \
         "a lone opposing-side-free quote changed a properly-devigged consensus"
+
+
+# ── scaled_alternate_prob: anchor DraftKings' one-sided ladder against Pinnacle ──
+#
+# Verified live 2026-08-24: DraftKings' alternate ladder is Over-only at every rung,
+# so it can never satisfy consensus_stats()'s two-sided de-vig. This estimates a
+# probability anyway by measuring the ratio between Pinnacle's real de-vig and
+# DraftKings' raw price at the ONE point they share, then applying that ratio to
+# DraftKings' other rungs -- a calibrated estimate, not a second book's opinion.
+
+def _ladder(anchor_price=-154, target_price=268, anchor_point=5.5, target_point=7.5,
+           alt_book="draftkings", alt_key_suffix="pitcher_strikeouts_alternate"):
+    return [
+        {"key": "pinnacle", "markets": [{"key": "pitcher_strikeouts", "outcomes": [
+            {"name": "Over", "description": "P", "price": anchor_price, "point": anchor_point},
+            {"name": "Under", "description": "P", "price": 128, "point": anchor_point},
+        ]}]},
+        {"key": alt_book, "markets": [{"key": alt_key_suffix, "outcomes": [
+            {"name": "Over", "description": "P", "price": anchor_price, "point": anchor_point},
+            {"name": "Over", "description": "P", "price": target_price, "point": target_point},
+        ]}]},
+    ]
+
+
+def test_scaled_alternate_prob_applies_the_measured_anchor_ratio():
+    books = _ladder()
+    anchor_fair, _, _ = consensus_stats(books, "Over", market_key="pitcher_strikeouts",
+                                        point=5.5, participant="P")
+    anchor_raw = american_to_prob(-154)
+    target_raw = american_to_prob(268)
+
+    scaled, n, std = scaled_alternate_prob(books, "pitcher_strikeouts", 7.5, "P")
+    assert n == 1 and std == pytest.approx(0.04)
+    assert scaled == pytest.approx(target_raw * (anchor_fair / anchor_raw))
+
+
+def test_scaled_alternate_prob_none_without_a_pinnacle_anchor():
+    books = [{"key": "draftkings", "markets": [{"key": "pitcher_strikeouts_alternate",
+             "outcomes": [{"name": "Over", "description": "P", "price": 268, "point": 7.5}]}]}]
+    v, n, _ = scaled_alternate_prob(books, "pitcher_strikeouts", 7.5, "P")
+    assert v is None and n == 0
+
+
+def test_scaled_alternate_prob_none_when_target_is_the_anchor_point():
+    """consensus_stats() already prices this directly -- scaling would be redundant."""
+    v, n, _ = scaled_alternate_prob(_ladder(), "pitcher_strikeouts", 5.5, "P")
+    assert v is None and n == 0
+
+
+def test_scaled_alternate_prob_none_when_alt_book_misses_the_anchor_point():
+    books = [
+        {"key": "pinnacle", "markets": [{"key": "pitcher_strikeouts", "outcomes": [
+            {"name": "Over", "description": "P", "price": -154, "point": 5.5},
+            {"name": "Under", "description": "P", "price": 128, "point": 5.5}]}]},
+        {"key": "draftkings", "markets": [{"key": "pitcher_strikeouts_alternate", "outcomes": [
+            {"name": "Over", "description": "P", "price": 268, "point": 7.5}]}]},
+    ]
+    v, n, _ = scaled_alternate_prob(books, "pitcher_strikeouts", 7.5, "P")
+    assert v is None and n == 0, "no overlap point exists -- no ratio is computable"
+
+
+def test_scaled_alternate_prob_none_when_alt_book_misses_the_target_point():
+    books = [
+        {"key": "pinnacle", "markets": [{"key": "pitcher_strikeouts", "outcomes": [
+            {"name": "Over", "description": "P", "price": -154, "point": 5.5},
+            {"name": "Under", "description": "P", "price": 128, "point": 5.5}]}]},
+        {"key": "draftkings", "markets": [{"key": "pitcher_strikeouts_alternate", "outcomes": [
+            {"name": "Over", "description": "P", "price": -154, "point": 5.5}]}]},
+    ]
+    v, n, _ = scaled_alternate_prob(books, "pitcher_strikeouts", 7.5, "P")
+    assert v is None and n == 0
+
+
+def test_scaled_alternate_prob_clamps_to_a_valid_probability():
+    """A pathological ratio must not escape [0, 1]."""
+    books = _ladder(anchor_price=-10000, target_price=-5000, target_point=6.5)
+    scaled, n, _ = scaled_alternate_prob(books, "pitcher_strikeouts", 6.5, "P")
+    assert scaled is not None and 0.0 <= scaled <= 1.0
+
+
+def test_scaled_alternate_prob_uses_the_configured_alt_bookmaker(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "PROP_ALTERNATE_BOOKMAKERS", "fanduel")
+    dk_books = _ladder()                        # only draftkings carries the ladder
+    fd_books = _ladder(alt_book="fanduel")       # only fanduel does
+    assert scaled_alternate_prob(dk_books, "pitcher_strikeouts", 7.5, "P")[0] is None, \
+        "must not fall back to draftkings once a different book is configured"
+    assert scaled_alternate_prob(fd_books, "pitcher_strikeouts", 7.5, "P")[0] is not None
+
+
+def test_scaled_estimates_clear_the_shared_high_uncertainty_gate():
+    """THE BUG CAUGHT BEFORE SHIPPING. kelly_calculator's real max-discount std is
+    0.05, but quality_check() shares high_uncertainty_std=0.04 (strict '>') across
+    every bet type, with high_uncertainty_min_books=4 -- and every scaled estimate
+    reports book_count=1. 0.05 would have hard-rejected all of them; 0.04 is the
+    largest value that still clears the gate. See test_player_props.py for the
+    end-to-end version of this same regression."""
+    import config
+    qf = config.quality_filters("player_prop")
+    _, book_count, std_dev = scaled_alternate_prob(_ladder(), "pitcher_strikeouts", 7.5, "P")
+    tripped = std_dev > qf["high_uncertainty_std"] and book_count < qf["high_uncertainty_min_books"]
+    assert not tripped
+
+
+# ── scaled_alternate_diagnostics: the full calibration chain (2026-08-24) ────────
+#
+# Added for shadow-mode logging (core/value_detector.py::_record_dk_shadow) --
+# scaled_alternate_prob() is now a thin wrapper around this that only keeps the
+# final number. These tests pin the wrapper and the diagnostics function agreeing,
+# and that every intermediate value a calibration record needs is actually present.
+
+def test_diagnostics_and_the_wrapper_agree_on_the_final_number():
+    books = _ladder()
+    diag = scaled_alternate_diagnostics(books, "pitcher_strikeouts", 7.5, "P")
+    scaled, n, std = scaled_alternate_prob(books, "pitcher_strikeouts", 7.5, "P")
+    assert diag is not None
+    assert diag["scaled_prob"] == pytest.approx(scaled)
+    assert n == 1 and std == pytest.approx(0.04)
+
+
+def test_diagnostics_carries_every_intermediate_value():
+    books = _ladder(anchor_point=5.5, target_point=7.5)
+    diag = scaled_alternate_diagnostics(books, "pitcher_strikeouts", 7.5, "P")
+    assert diag["anchor_point"] == pytest.approx(5.5)
+    assert diag["distance"] == pytest.approx(2.0)
+    assert diag["anchor_raw_prob"] == pytest.approx(american_to_prob(-154))
+    assert diag["target_raw_prob"] == pytest.approx(american_to_prob(268))
+    assert diag["ratio"] == pytest.approx(diag["anchor_fair_prob"] / diag["anchor_raw_prob"])
+    assert diag["scaled_prob"] == pytest.approx(diag["target_raw_prob"] * diag["ratio"])
+
+
+def test_diagnostics_none_cases_match_the_wrapper():
+    """Same refusal cases as scaled_alternate_prob() above -- diagnostics must
+    refuse under exactly the same conditions, not just return a differently-shaped
+    empty value."""
+    no_anchor = [{"key": "draftkings", "markets": [{"key": "pitcher_strikeouts_alternate",
+                 "outcomes": [{"name": "Over", "description": "P", "price": 268, "point": 7.5}]}]}]
+    assert scaled_alternate_diagnostics(no_anchor, "pitcher_strikeouts", 7.5, "P") is None
+    assert scaled_alternate_diagnostics(_ladder(), "pitcher_strikeouts", 5.5, "P") is None

@@ -19,7 +19,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 from core.market_matcher import MatchedEvent
-from core.odds_converter import consensus_stats, _norm_team
+from core.odds_converter import consensus_stats, scaled_alternate_diagnostics, _norm_team
 
 logger = logging.getLogger(__name__)
 
@@ -304,6 +304,7 @@ def detect_value(
     min_edge: float = 0.0,
     scan_log: list[dict] | None = None,
     mm_candidates: list[dict] | None = None,
+    dk_shadow_log: list[dict] | None = None,
 ) -> list[ValueOpportunity]:
     """
     mm_candidates: when provided, every matched market rejected specifically for
@@ -313,6 +314,10 @@ def detect_value(
     strategy instead of re-deriving it. See core/market_matcher.py's MatchedEvent
     and config.QUALITY_FILTERS["*"]["max_kalshi_spread"] for what "too wide to cross
     directionally" means.
+
+    dk_shadow_log: when provided, every DK-scaled player-prop estimate (see
+    _detect_player_prop) is appended here regardless of whether it became a bet --
+    the shadow-mode calibration record. See _record_dk_shadow().
     """
     opportunities: list[ValueOpportunity] = []
 
@@ -351,7 +356,8 @@ def detect_value(
 
         # ── Route by bet type ─────────────────────────────────────────────────
         if km.bet_type == "player_prop":
-            _detect_player_prop(me, event, km, min_edge, opportunities, scan_log, mm_candidates)
+            _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
+                               mm_candidates, dk_shadow_log)
         elif km.bet_type in ("btts", "rfi"):
             _detect_binary_prop(me, event, km, min_edge, opportunities, scan_log, mm_candidates)
         elif km.bet_type == "totals":
@@ -573,18 +579,80 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log, mm_candida
 
 # ── Player props ──────────────────────────────────────────────────────────────
 
+def _record_dk_shadow(
+    dk_shadow_log: list[dict] | None,
+    me: MatchedEvent,
+    km,
+    diag: dict,
+    market_key: str,
+    kalshi_side: str,
+    estimated_prob: float,
+    kalshi_price: float | None,
+    edge: float | None,
+    would_bet: bool,
+    status: str,
+    reason: str,
+) -> None:
+    """Append one DK-scaled estimate to dk_shadow_log if provided.
+
+    Written for BOTH sides of EVERY rung a DK-scaled estimate priced -- not just the
+    ones that cleared the edge bar -- so calibration can eventually be measured
+    against the full evaluated population, not the selection-biased subset that
+    would have been bet. See storage/db.py::dk_scaled_shadow_log for the table this
+    feeds and dashboard_server.py's /dk-scaled page for how it's read back.
+    """
+    if dk_shadow_log is None:
+        return
+    event = me.odds_event
+    dk_shadow_log.append({
+        "scanned_at":       "",          # filled in by caller (main.py)
+        "sport":            event.sport_key,
+        "home_team":        event.home_team,
+        "away_team":        event.away_team,
+        "participant":      km.participant,
+        "market_key":       market_key,
+        "kalshi_ticker":    km.ticker,
+        "kalshi_side":      kalshi_side,
+        "target_point":     km.threshold,
+        "anchor_point":     diag["anchor_point"],
+        "distance":         diag["distance"],
+        "anchor_fair_prob": round(diag["anchor_fair_prob"], 4),
+        "anchor_raw_prob":  round(diag["anchor_raw_prob"], 4),
+        "target_raw_prob":  round(diag["target_raw_prob"], 4),
+        "scaling_ratio":    round(diag["ratio"], 4),
+        "scaled_prob":      round(estimated_prob, 4),
+        "kalshi_price":     round(kalshi_price, 4) if kalshi_price is not None else None,
+        "edge":             round(edge, 4) if edge is not None else None,
+        "would_bet":        1 if would_bet else 0,
+        "status":           status,
+        "reason":           reason,
+        "commence_time":    event.commence_time.isoformat(),
+    })
+
+
 def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
-                        mm_candidates=None):
+                        mm_candidates=None, dk_shadow_log=None):
     """Price one player's Kalshi threshold against the sportsbook line for that player.
 
     Kalshi lists a LADDER per player -- Jared Jones 1+, 3+, 5+, 6+, 7+, 8+ strikeouts --
-    while Pinnacle posts a single line (4.5). So at most one rung per player is
-    priceable, and the rest legitimately find no consensus. That is expected, not a
-    fault: measured 27% of tradable Kalshi player markets have a matching line.
+    while Pinnacle posts a single line (4.5). Before 2026-08-24 that meant at most one
+    rung per player was priceable (measured 27% of tradable Kalshi player markets):
+    Pinnacle populates NO *_alternate player markets (verified 2026-08-22), so unlike
+    totals there was no ladder to buy on the sportsbook side.
 
-    Unlike totals there is no ladder to buy on the sportsbook side -- Pinnacle
-    populates NO *_alternate player markets (verified 2026-08-22) -- so a rung Pinnacle
-    does not quote simply cannot be priced.
+    DraftKings does carry the ladder (verified 2026-08-24 across 8 live games), but
+    ONLY the Over leg at every rung -- no matching Under anywhere, on any book checked.
+    consensus_stats() correctly refuses to de-vig a one-sided quote (see its
+    `len(siblings) < 2` guard), so it still only prices Pinnacle's own rung directly.
+    For every OTHER rung, odds_converter.scaled_alternate_prob() is tried as a
+    fallback: it anchors DraftKings' raw price against Pinnacle's real de-vigged
+    number at the one point both books share, and applies that measured ratio to
+    DraftKings' other rungs. It is a calibrated estimate, not a second opinion --
+    every rung it prices comes back with book_count=1 and std_dev=0.04, sizing at a
+    real Kelly discount (uncertainty_factor 0.6) without hard-tripping quality_
+    check()'s high_uncertainty gate (see scaled_alternate_prob()'s docstring for why
+    0.04 specifically). Unvalidated in production. A rung neither method can price
+    still legitimately finds no consensus.
 
     BOTH SIDES (added 2026-08-24). Previously only the YES side (player clears the
     threshold) was ever evaluated -- a player UNLIKELY to clear it, exactly the shape
@@ -596,6 +664,13 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
     its own version of this deferral -- appended an opportunity even when
     _resolve_wide_spread said not to allow one -- fixed the same day this was added,
     see _detect_totals's docstring).
+
+    SHADOW MODE (added 2026-08-24). A DK-scaled rung that clears every gate above is
+    NOT appended to `opportunities` while config.DK_SCALED_SHADOW_MODE is on (the
+    default) -- it is recorded to `dk_shadow_log` instead (what it WOULD have bet, at
+    what edge) so the calibration can be measured against real settlements before any
+    real capital rides on it. See dk_shadow_log's write site below and storage/
+    db.py::dk_scaled_shadow_log for the table this feeds.
     """
     from data.kalshi_client import PLAYER_PROP_MARKET
 
@@ -615,6 +690,22 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
     consensus, book_count, std_dev = consensus_stats(
         event.bookmakers, "Over", market_key=market_key,
         point=km.threshold, participant=km.participant)
+    scaled = False
+    diag: dict | None = None
+    if consensus is None:
+        diag = scaled_alternate_diagnostics(
+            event.bookmakers, market_key, km.threshold, km.participant)
+        scaled = diag is not None
+        if scaled:
+            consensus, book_count, std_dev = diag["scaled_prob"], 1, 0.04
+            # PREFIX, not suffix: trade_executor.verify_market_identity() reads the
+            # threshold off the label's trailing "N+" via a regex anchored at the
+            # end of the string ($). A suffix marker breaks that match, which means
+            # every DK-scaled opportunity would be rejected as a "threshold
+            # mismatch" at the last gate before a real order -- silently, since the
+            # edge/sizing pipeline never calls that function to notice. Found by
+            # testing the label against the real regex before shipping, not after.
+            label = "[DK-scaled] " + label
     if consensus is None:
         _log(scan_log, me, label, None, None, 0, 0.0, None, "no_consensus",
              f"No {market_key} line at {km.threshold} for {km.participant}", "yes")
@@ -651,6 +742,9 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
              best_edge, status, reason, "yes")
         if wide_reason:
             pending_mm = (me, label, consensus, book_count, std_dev, status, reason)
+        if scaled:
+            _record_dk_shadow(dk_shadow_log, me, km, diag, market_key, "yes",
+                               consensus, kalshi_price, best_edge, False, status, reason)
     else:
         edge, maker_only = result
         allow, status, reason = _resolve_wide_spread(maker_only, wide_reason)
@@ -659,6 +753,19 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
                  edge, status, reason, "yes", maker_only=maker_only)
             pending_mm = (me, label, consensus, book_count, std_dev,
                           "spread_too_wide", reason)
+            if scaled:
+                _record_dk_shadow(dk_shadow_log, me, km, diag, market_key, "yes",
+                                   consensus, kalshi_price, edge, False, status, reason)
+        elif scaled and config.DK_SCALED_SHADOW_MODE:
+            # Cleared every gate a real bet needs to clear, but this estimate is
+            # priced off an unvalidated DK-scaled ratio (see scaled_alternate_
+            # diagnostics()'s docstring) -- record what it WOULD have bet without
+            # ever risking real capital on it. See _record_dk_shadow() above.
+            shadow_status, shadow_reason = "dk_shadow_value", "DK-scaled estimate — shadow only, not bet"
+            _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
+                 edge, shadow_status, shadow_reason, "yes", maker_only=maker_only)
+            _record_dk_shadow(dk_shadow_log, me, km, diag, market_key, "yes",
+                               consensus, kalshi_price, edge, True, shadow_status, reason)
         else:
             opportunities.append(ValueOpportunity(
                 matched_event=me, outcome=Outcome.PLAYER, team_name=label,
@@ -670,6 +777,12 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
             _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
                  edge, status, reason, "yes", maker_only=maker_only)
             logger.debug("VALUE PLAYER: %s — edge %.1f%%", label, edge * 100)
+            if scaled:
+                # DK_SCALED_SHADOW_MODE is off -- this estimate graduated to a real
+                # bet. Still recorded, so calibration tracking continues after
+                # graduation, not just before it.
+                _record_dk_shadow(dk_shadow_log, me, km, diag, market_key, "yes",
+                                   consensus, kalshi_price, edge, True, status, reason)
 
     # ── NO: the player does NOT clear the threshold ───────────────────────────
     #
@@ -680,6 +793,8 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
     # Kalshi's own "N+" subtitle uses -- trade_executor.verify_market_identity()
     # checks our label's trailing number against that subtitle directly.
     no_label = f"{km.participant} Under {km.threshold + 0.5:g}"
+    if scaled:
+        no_label = "[DK-scaled] " + no_label
     no_consensus = 1.0 - consensus
     no_price = (1.0 - km.yes_bid) if km.yes_bid > 0 else (1.0 - km.yes_price)
     no_result = _eval_edge(no_consensus, no_price, km.spread, min_edge)
@@ -693,12 +808,25 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
             reason = f"Edge {no_best*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
              no_best, no_status, reason, "no")
+        if scaled:
+            _record_dk_shadow(dk_shadow_log, me, km, diag, market_key, "no",
+                               no_consensus, no_price, no_best, False, no_status, reason)
     else:
         no_edge, no_maker_only = no_result
         no_allow, no_status, reason = _resolve_wide_spread(no_maker_only, wide_reason)
         if not no_allow:
             _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
                  no_edge, no_status, reason, "no", maker_only=no_maker_only)
+            if scaled:
+                _record_dk_shadow(dk_shadow_log, me, km, diag, market_key, "no",
+                                   no_consensus, no_price, no_edge, False, no_status, reason)
+        elif scaled and config.DK_SCALED_SHADOW_MODE:
+            shadow_status = "dk_shadow_value"
+            _log(scan_log, me, no_label, no_price, no_consensus, book_count, std_dev,
+                 no_edge, shadow_status, "DK-scaled estimate — shadow only, not bet",
+                 "no", maker_only=no_maker_only)
+            _record_dk_shadow(dk_shadow_log, me, km, diag, market_key, "no",
+                               no_consensus, no_price, no_edge, True, shadow_status, reason)
         else:
             opportunities.append(ValueOpportunity(
                 matched_event=me, outcome=Outcome.NO_PLAYER, team_name=no_label,
@@ -712,6 +840,9 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
                  maker_only=no_maker_only)
             logger.debug("VALUE PLAYER (NO/Under): %s — edge %.1f%%",
                         no_label, no_edge * 100)
+            if scaled:
+                _record_dk_shadow(dk_shadow_log, me, km, diag, market_key, "no",
+                                   no_consensus, no_price, no_edge, True, no_status, reason)
 
     # Quote this ticker only if NEITHER side became a directional bet.
     if pending_mm is not None and len(opportunities) == opps_before:

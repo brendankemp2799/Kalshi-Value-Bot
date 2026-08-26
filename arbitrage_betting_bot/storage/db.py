@@ -233,6 +233,50 @@ def init_db() -> None:
                 fills         INTEGER NOT NULL DEFAULT 0,
                 reasons_json  TEXT                          -- {reason: count} for the day
             );
+
+            -- Every DK-scaled player-prop estimate core/value_detector.py's
+            -- scaled_alternate_diagnostics() fallback produced (2026-08-24), win or
+            -- lose, bet or not -- the shadow-mode calibration record ChatGPT's review
+            -- of the feature recommended before trusting it with capital: "run it in
+            -- shadow mode first and empirically measure its calibration... the most
+            -- important question is how prediction error changes with distance from
+            -- the Pinnacle anchor." Written for BOTH sides of EVERY rung a scaled
+            -- estimate priced (see _record_dk_shadow()), not just the ones that
+            -- cleared the edge bar, so calibration is measured against the full
+            -- evaluated population rather than a selection-biased subset.
+            --
+            -- Resolved the same way book_probability_log is (see
+            -- execution/auto_settle.py::_backfill_dk_scaled_outcomes()): Kalshi's own
+            -- market-resolution endpoint, no extra Odds API calls.
+            CREATE TABLE IF NOT EXISTS dk_scaled_shadow_log (
+                id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+                scan_id                TEXT,
+                scanned_at             TEXT NOT NULL,
+                sport                  TEXT NOT NULL,
+                home_team              TEXT NOT NULL,
+                away_team              TEXT NOT NULL,
+                participant            TEXT NOT NULL,
+                market_key             TEXT NOT NULL,
+                kalshi_ticker          TEXT NOT NULL,
+                kalshi_side            TEXT NOT NULL,   -- yes | no
+                target_point           REAL,
+                anchor_point           REAL,
+                distance               REAL,            -- target_point - anchor_point
+                anchor_fair_prob       REAL,            -- Pinnacle's de-vigged prob at its own point
+                anchor_raw_prob        REAL,            -- alt book's raw (vigged) prob at that SAME point
+                target_raw_prob        REAL,            -- alt book's raw prob at the target point
+                scaling_ratio          REAL,            -- anchor_fair_prob / anchor_raw_prob
+                scaled_prob            REAL,            -- our estimate at the target point
+                kalshi_price           REAL,
+                edge                   REAL,
+                would_bet              INTEGER NOT NULL DEFAULT 0,  -- cleared the edge/spread gates
+                status                 TEXT,
+                reason                 TEXT,
+                commence_time          TEXT,
+                position_id            INTEGER,         -- set only if DK_SCALED_SHADOW_MODE was off
+                actual_outcome         REAL,            -- 1.0 = this side resolved YES-true, 0.0 = false
+                outcome_check_attempts INTEGER NOT NULL DEFAULT 0
+            );
         """)
     _migrate()
     logger.info("Database initialized at %s", DB_PATH)
@@ -881,6 +925,130 @@ def get_probability_movement(kalshi_ticker: str, kalshi_side: str) -> list[sqlit
             """,
             (kalshi_ticker, kalshi_side),
         ).fetchall()
+
+
+# ── DK-scaled shadow log ─────────────────────────────────────────────────────
+
+_DK_SHADOW_COLUMNS = (
+    "sport", "home_team", "away_team", "participant", "market_key", "kalshi_ticker",
+    "kalshi_side", "target_point", "anchor_point", "distance", "anchor_fair_prob",
+    "anchor_raw_prob", "target_raw_prob", "scaling_ratio", "scaled_prob",
+    "kalshi_price", "edge", "would_bet", "status", "reason", "commence_time",
+)
+
+
+def log_dk_scaled_estimates(scan_id: str, entries: list[dict]) -> None:
+    """Persist every DK-scaled player-prop estimate from one scan (see
+    core/value_detector.py::_record_dk_shadow). Unlike scan_log, these accumulate
+    indefinitely -- they are the calibration dataset, not a live snapshot."""
+    if not entries:
+        return
+    cols = ", ".join(_DK_SHADOW_COLUMNS)
+    placeholders = ", ".join(f":{c}" for c in _DK_SHADOW_COLUMNS)
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        conn.executemany(
+            f"INSERT INTO dk_scaled_shadow_log (scan_id, scanned_at, {cols}) "
+            f"VALUES (:scan_id, :scanned_at, {placeholders})",
+            [{**e, "scan_id": scan_id, "scanned_at": now} for e in entries],
+        )
+
+
+def get_pending_dk_scaled_outcomes(max_attempts: int = 5) -> list[sqlite3.Row]:
+    """Logged DK-scaled estimates whose real outcome hasn't been resolved yet, under
+    the retry cap -- same shape as get_pending_book_probability_outcomes()."""
+    with get_connection() as conn:
+        return conn.execute(
+            """
+            SELECT * FROM dk_scaled_shadow_log
+            WHERE actual_outcome IS NULL
+              AND outcome_check_attempts < ?
+            """,
+            (max_attempts,),
+        ).fetchall()
+
+
+def set_dk_scaled_outcome(log_id: int, actual_outcome: float | None) -> None:
+    """Record the real (Kalshi-resolved) outcome for one DK-scaled estimate and bump
+    the attempt count -- see set_book_probability_outcome() for the same pattern."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE dk_scaled_shadow_log
+            SET actual_outcome = ?, outcome_check_attempts = outcome_check_attempts + 1
+            WHERE id = ?
+            """,
+            (actual_outcome, log_id),
+        )
+
+
+def get_dk_scaled_shadow_summary(min_distance: float = 0.0) -> dict:
+    """Aggregate calibration stats for settled DK-scaled estimates.
+
+    Returns overall Brier score / sample counts, plus a breakdown by distance-from-
+    anchor bucket -- the single question the 2026-08-24 review said mattered most:
+    "how does prediction error change with distance from the Pinnacle anchor."
+    Buckets on abs(distance) since the direction (above/below the anchor) is not
+    itself the hypothesis being tested here.
+    """
+    with get_connection() as conn:
+        try:
+            rows = conn.execute(
+                "SELECT scaled_prob, actual_outcome, distance, would_bet, edge "
+                "FROM dk_scaled_shadow_log WHERE actual_outcome IS NOT NULL"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return {"n": 0, "n_settled": 0, "brier": None, "buckets": [], "n_would_bet": 0}
+
+    n_settled = len(rows)
+    with get_connection() as conn:
+        n_total = conn.execute("SELECT COUNT(*) FROM dk_scaled_shadow_log").fetchone()[0]
+        n_would_bet = conn.execute(
+            "SELECT COUNT(*) FROM dk_scaled_shadow_log WHERE would_bet = 1"
+        ).fetchone()[0]
+
+    if n_settled == 0:
+        return {"n": n_total, "n_settled": 0, "brier": None, "buckets": [],
+                "n_would_bet": n_would_bet}
+
+    brier = sum((r["scaled_prob"] - r["actual_outcome"]) ** 2 for r in rows) / n_settled
+
+    # Distance buckets: 0-0.5, 0.5-1.5, 1.5-3, 3+ rungs from the Pinnacle anchor.
+    edges = [0.0, 0.5, 1.5, 3.0, float("inf")]
+    buckets = []
+    for lo, hi in zip(edges, edges[1:]):
+        bucket_rows = [r for r in rows if lo <= abs(r["distance"] or 0.0) < hi]
+        if not bucket_rows:
+            buckets.append({"range": f"{lo:g}–{hi:g}" if hi != float("inf") else f"{lo:g}+",
+                            "n": 0, "brier": None, "mean_error": None})
+            continue
+        n = len(bucket_rows)
+        b_brier = sum((r["scaled_prob"] - r["actual_outcome"]) ** 2 for r in bucket_rows) / n
+        mean_error = sum(r["scaled_prob"] - r["actual_outcome"] for r in bucket_rows) / n
+        buckets.append({
+            "range": f"{lo:g}–{hi:g}" if hi != float("inf") else f"{lo:g}+",
+            "n": n, "brier": round(b_brier, 4), "mean_error": round(mean_error, 4),
+        })
+
+    return {
+        "n": n_total, "n_settled": n_settled, "n_would_bet": n_would_bet,
+        "brier": round(brier, 4), "buckets": buckets,
+    }
+
+
+def get_dk_scaled_shadow_rows(limit: int = 200, settled_only: bool = False) -> list[sqlite3.Row]:
+    """Most recent DK-scaled shadow rows, newest first, for the /dk-scaled dashboard
+    table. settled_only restricts to rows with a resolved actual_outcome."""
+    where = "WHERE actual_outcome IS NOT NULL" if settled_only else ""
+    with get_connection() as conn:
+        try:
+            return conn.execute(
+                f"SELECT * FROM dk_scaled_shadow_log {where} "
+                f"ORDER BY scanned_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
 
 
 # ── Dashboard Queries ─────────────────────────────────────────────────────────

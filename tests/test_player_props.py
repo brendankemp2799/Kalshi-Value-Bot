@@ -206,6 +206,157 @@ def test_folding_does_not_merge_genuinely_different_players():
     assert prob is None and n == 0
 
 
+# ── 5. the DraftKings anchor-and-scale fallback (2026-08-24) ────────────────────
+#
+# DraftKings' alternate ladder is Over-only at every rung (verified live), so
+# consensus_stats() alone still only prices Pinnacle's one featured line directly.
+# _detect_player_prop() falls back to scaled_alternate_diagnostics() for every other
+# rung: anchor DraftKings' raw price against Pinnacle's real de-vig at the one point
+# they share, apply that ratio elsewhere. These tests pin the INTEGRATION -- that the
+# fallback actually fires, that the result is visibly marked, and specifically that
+# it survives _quality_check() rather than being silently killed by it (the bug
+# caught before shipping: a std_dev of 0.05 would have hard-rejected every one of
+# these at quality_check()'s high_uncertainty gate, discovered only by running the
+# full pipeline end to end rather than testing the scaling math in isolation).
+#
+# SHADOW MODE (added later the same day, after an adversarial review). By default
+# (config.DK_SCALED_SHADOW_MODE=True) a DK-scaled estimate that clears every gate is
+# NOT placed as a real bet -- it is recorded to dk_shadow_log instead. The tests below
+# were rewritten to match: "the fallback fires" is now proven by dk_shadow_log and
+# scan_log's "dk_shadow_value" status, not by `opps`. A separate section proves the
+# graduation path (shadow mode off) still produces the original real-opportunity
+# behaviour these tests originally pinned.
+
+def _pinnacle_plus_draftkings_ladder():
+    return [
+        {"key": "pinnacle", "markets": [{"key": "pitcher_strikeouts", "outcomes": [
+            {"name": "Over", "description": "Pitcher A", "price": -154, "point": 4.5},
+            {"name": "Under", "description": "Pitcher A", "price": 128, "point": 4.5},
+        ]}]},
+        {"key": "draftkings", "markets": [{"key": "pitcher_strikeouts_alternate", "outcomes": [
+            {"name": "Over", "description": "Pitcher A", "price": -154, "point": 4.5},
+            {"name": "Over", "description": "Pitcher A", "price": 268, "point": 6.5},
+        ]}]},
+    ]
+
+
+def test_a_rung_only_draftkings_quotes_now_reaches_a_real_decision():
+    """Before 2026-08-24 this rung (Pinnacle silent, DraftKings Over-only) could only
+    ever log no_consensus. The scaled fallback should let it reach a real edge
+    decision -- but under shadow mode (the default) that decision must not become a
+    real bet; it must be visible in dk_shadow_log and scan_log instead."""
+    km = _km(player="Pitcher A", line=6.5, ask=0.20)  # Pinnacle has 4.5, not 6.5
+    me, ev = _me(km, _pinnacle_plus_draftkings_ladder())
+    opps, log, shadow = [], [], []
+    _detect_player_prop(me, ev, km, 0.01, opps, log, dk_shadow_log=shadow)
+    assert opps == [], "shadow mode must never place real capital"
+    yes_shadow = [s for s in shadow if s["kalshi_side"] == "yes"]
+    assert yes_shadow, f"scaled fallback did not fire: {log}"
+    assert yes_shadow[0]["would_bet"] == 1
+    assert 0.0 < yes_shadow[0]["scaled_prob"] < 1.0
+    yes_log = [e for e in log if e["kalshi_side"] == "yes"]
+    assert yes_log[0]["status"] == "dk_shadow_value"
+    assert yes_log[0]["bookmaker_count"] == 1
+    assert yes_log[0]["consensus_std"] == pytest.approx(0.04)
+
+
+def test_the_scaled_estimate_is_visibly_marked():
+    km = _km(player="Pitcher A", line=6.5, ask=0.20)
+    me, ev = _me(km, _pinnacle_plus_draftkings_ladder())
+    opps, log = [], []
+    _detect_player_prop(me, ev, km, 0.01, opps, log)
+    yes_log = [e for e in log if e["kalshi_side"] == "yes"]
+    assert yes_log and "[DK-scaled]" in yes_log[0]["team_name"]
+
+
+def test_scaled_estimates_are_not_killed_by_the_quality_gate():
+    """THE BUG THIS TEST EXISTS TO PIN. The scaling math originally returned
+    std_dev=0.05 (kelly_calculator's real max-uncertainty-discount value) -- which is
+    ALSO above quality_check()'s shared high_uncertainty_std=0.04, checked with book_
+    count=1 < high_uncertainty_min_books=4. That combination hard-rejects, so every
+    scaled estimate silently became 'high_uncertainty' and never traded, discovered
+    only by running the full detector rather than unit-testing the math alone."""
+    km = _km(player="Pitcher A", line=6.5, ask=0.20)
+    me, ev = _me(km, _pinnacle_plus_draftkings_ladder())
+    opps, log = [], []
+    _detect_player_prop(me, ev, km, 0.01, opps, log)
+    assert log, "the scaled rung should reach a decision, not vanish silently"
+    assert log[0]["status"] != "high_uncertainty", (
+        "scaled estimate was hard-rejected by the quality gate instead of "
+        "reaching Kelly's soft uncertainty discount"
+    )
+
+
+def test_a_rung_neither_pinnacle_nor_draftkings_quotes_still_finds_no_consensus():
+    """The fallback must not turn EVERY rung priceable -- one genuinely nobody
+    quotes (11+ Ks, say) still has to log no_consensus, not guess."""
+    km = _km(player="Pitcher A", line=10.5, ask=0.05)
+    me, ev = _me(km, _pinnacle_plus_draftkings_ladder())
+    opps, log = [], []
+    _detect_player_prop(me, ev, km, 0.01, opps, log)
+    assert opps == [] and log[0]["status"] == "no_consensus"
+
+
+# ── 5b. shadow mode itself (2026-08-24) ──────────────────────────────────────────
+
+def test_shadow_mode_is_on_by_default():
+    assert config.DK_SCALED_SHADOW_MODE is True
+
+
+def test_dk_shadow_log_is_not_required_by_callers():
+    """dk_shadow_log is optional -- callers that don't care about calibration (e.g.
+    most existing tests) must not be forced to pass it."""
+    km = _km(player="Pitcher A", line=6.5, ask=0.20)
+    me, ev = _me(km, _pinnacle_plus_draftkings_ladder())
+    opps, log = [], []
+    _detect_player_prop(me, ev, km, 0.01, opps, log)  # no dk_shadow_log kwarg
+    assert opps == []  # shadow mode still suppresses the trade
+
+
+def test_shadow_log_records_the_full_calibration_chain():
+    km = _km(player="Pitcher A", line=6.5, ask=0.20)
+    me, ev = _me(km, _pinnacle_plus_draftkings_ladder())
+    opps, log, shadow = [], [], []
+    _detect_player_prop(me, ev, km, 0.01, opps, log, dk_shadow_log=shadow)
+    yes_row = next(s for s in shadow if s["kalshi_side"] == "yes")
+    assert yes_row["anchor_point"] == pytest.approx(4.5)
+    assert yes_row["target_point"] == pytest.approx(6.5)
+    assert yes_row["distance"] == pytest.approx(2.0)
+    assert yes_row["scaling_ratio"] is not None
+    assert yes_row["participant"] == "Pitcher A"
+    assert yes_row["kalshi_ticker"] == km.ticker
+
+
+def test_shadow_log_also_records_rungs_with_no_edge():
+    """Calibration needs the full evaluated population, not just the subset that
+    would have been bet -- a rung DK-scales but doesn't clear the edge bar must
+    still show up, with would_bet=False."""
+    km = _km(player="Pitcher A", line=6.5, ask=0.99)  # priced far too rich to clear
+    me, ev = _me(km, _pinnacle_plus_draftkings_ladder())
+    opps, log, shadow = [], [], []
+    _detect_player_prop(me, ev, km, 0.01, opps, log, dk_shadow_log=shadow)
+    yes_row = next(s for s in shadow if s["kalshi_side"] == "yes")
+    assert yes_row["would_bet"] == 0
+
+
+def test_shadow_mode_off_reproduces_the_original_live_behaviour(monkeypatch):
+    """The graduation path: turning DK_SCALED_SHADOW_MODE off must restore exactly
+    the pre-shadow-mode behaviour these tests originally pinned -- a cleared DK-scaled
+    estimate becomes a real, visibly-marked opportunity."""
+    monkeypatch.setattr(config, "DK_SCALED_SHADOW_MODE", False)
+    km = _km(player="Pitcher A", line=6.5, ask=0.20)
+    me, ev = _me(km, _pinnacle_plus_draftkings_ladder())
+    opps, log, shadow = [], [], []
+    _detect_player_prop(me, ev, km, 0.01, opps, log, dk_shadow_log=shadow)
+    assert opps, "shadow mode off must allow the estimate to become a real bet"
+    assert "[DK-scaled]" in opps[0].team_name
+    assert opps[0].bookmaker_count == 1
+    assert opps[0].consensus_std == pytest.approx(0.04)
+    # Still recorded for continued calibration tracking after graduation.
+    yes_row = next(s for s in shadow if s["kalshi_side"] == "yes")
+    assert yes_row["would_bet"] == 1
+
+
 # ── 6. the symmetric NO side (2026-08-24) ────────────────────────────────────────
 #
 # Before this, only the YES/Over edge was ever computed -- a player UNLIKELY to
@@ -229,10 +380,9 @@ def test_a_rich_yes_price_finds_edge_on_the_no_side():
 
 def test_the_no_side_opportunity_survives_the_real_pre_order_gate():
     """Integration, not just unit math: build a NO_PLAYER opportunity through the
-    real detector and run it through the real verify_market_identity() -- a label
-    that looks right in isolation can still fail the real regex the pre-order gate
-    checks it against, so this exercises both together rather than trusting them
-    separately."""
+    real detector and run it through the real verify_market_identity(), the same
+    way the [DK-scaled]-prefix bug was only caught by testing the label against the
+    real regex rather than trusting the isolated pieces separately."""
     from execution.trade_executor import verify_market_identity
 
     km = _km(player="Pitcher A", line=4.5, ask=0.95, bid=0.90)

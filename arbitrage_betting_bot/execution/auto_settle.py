@@ -32,6 +32,8 @@ from storage.db import (
     set_closing_lines,
     get_pending_book_probability_outcomes,
     set_book_probability_outcome,
+    get_pending_dk_scaled_outcomes,
+    set_dk_scaled_outcome,
 )
 from data.kalshi_auth import auth_headers
 from data.kalshi_client import KalshiClient
@@ -160,6 +162,10 @@ def auto_settle_positions(
             _backfill_book_probability_outcomes()
         except Exception as e:
             logger.warning("Book-probability outcome backfill failed: %s", e)
+        try:
+            _backfill_dk_scaled_outcomes()
+        except Exception as e:
+            logger.warning("DK-scaled shadow-log outcome backfill failed: %s", e)
 
     return settled_count
 
@@ -344,3 +350,43 @@ def _backfill_book_probability_outcomes() -> None:
 
     if resolved_count:
         logger.info("Resolved %d book-probability-log outcome(s).", resolved_count)
+
+
+def _backfill_dk_scaled_outcomes() -> None:
+    """
+    Resolve the real outcome for dk_scaled_shadow_log rows that don't have one yet
+    (retry-capped -- see get_pending_dk_scaled_outcomes). Same mechanism as
+    _backfill_book_probability_outcomes() immediately above -- Kalshi's own market-
+    resolution endpoint, no extra Odds API calls -- applied to the DK-scaled
+    calibration table instead. This is what turns dk_scaled_shadow_log from a list
+    of predictions into a list of scored predictions: see storage/db.py::
+    get_dk_scaled_shadow_summary() and dashboard_server.py's /dk-scaled page for
+    where actual_outcome gets used once it's here.
+    """
+    pending = get_pending_dk_scaled_outcomes()
+    if not pending:
+        return
+
+    ticker_to_market: dict[str, dict | None] = {}
+    for row in pending:
+        ticker = row["kalshi_ticker"]
+        if ticker not in ticker_to_market:
+            ticker_to_market[ticker] = _fetch_market(ticker)
+
+    resolved_count = 0
+    for row in pending:
+        market = ticker_to_market.get(row["kalshi_ticker"])
+        if not market:
+            continue
+        result = (market.get("result") or "").lower()
+        if result not in ("yes", "no", "void"):
+            continue  # still open -- leave for next attempt, don't burn a retry
+        if result == "void":
+            set_dk_scaled_outcome(row["id"], None)  # bumps attempts, eventually falls off the retry cap
+            continue
+        actual = 1.0 if result == (row["kalshi_side"] or "").lower() else 0.0
+        set_dk_scaled_outcome(row["id"], actual)
+        resolved_count += 1
+
+    if resolved_count:
+        logger.info("Resolved %d DK-scaled shadow-log outcome(s).", resolved_count)

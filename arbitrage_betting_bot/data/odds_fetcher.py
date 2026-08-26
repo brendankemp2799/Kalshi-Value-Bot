@@ -320,7 +320,8 @@ class OddsAPIClient:
         return events
 
     def fetch_event_alternates(self, sport: str, event_id: str,
-                               markets: str = "alternate_totals") -> list[dict]:
+                               markets: str = "alternate_totals",
+                               bookmakers: str | None = None) -> list[dict]:
         """
         The full line ladder for ONE game, from the per-event endpoint.
 
@@ -335,13 +336,20 @@ class OddsAPIClient:
         Costs 1 credit per call with <=10 bookmakers (markets x units = 1 x 1).
         Returns the raw bookmakers list, or [] on error -- a failed enrichment must
         degrade to "no alternates for this game", never break the scan.
+
+        bookmakers: overrides the global scope (config.ODDS_API_BOOKMAKERS) for this
+        call only. Used by enrich_with_prop_alternates to pull from a book other than
+        Pinnacle for the player-prop ladder, without touching what h2h/totals/the
+        featured prop line are priced against. None (the default) keeps existing
+        callers -- and their test doubles -- on the old single-argument shape.
         """
         self._last_call_cost = 0
+        scope = {"bookmakers": bookmakers} if bookmakers else self._scope_params()
         try:
             resp = self._get(
                 f"/sports/{sport}/events/{event_id}/odds",
                 {
-                    **self._scope_params(),
+                    **scope,
                     "markets": markets,
                     "oddsFormat": config.ODDS_API_ODDS_FORMAT,
                 },
@@ -410,7 +418,7 @@ class OddsAPIClient:
         return (now - cached[0]).total_seconds() >= every * 3600
 
     def _enrich(self, ev: "OddsEvent", key: str, markets: str,
-                now: datetime) -> int:
+                now: datetime, bookmakers: str | None = None) -> int:
         """Merge this event's extra markets into `ev.bookmakers`, buying them if due.
 
         Returns credits actually charged for this event (0 when served from cache or
@@ -420,10 +428,16 @@ class OddsAPIClient:
         Buying and merging are deliberately separate concerns: the refresh tiers decide
         how often we PAY, not how often the detector gets to SEE the data. Conflating
         the two is what made every enriched market invisible for hours at a stretch.
+
+        bookmakers, when given, is passed through to fetch_event_alternates as a kwarg
+        ONLY in that case -- existing callers (and the test doubles standing in for
+        fetch_event_alternates) keep the plain (sport, event_id, markets=...) shape.
         """
         if self._alternates_due(key, ev.commence_time, now):
-            extra = self.fetch_event_alternates(ev.sport_key, ev.event_id,
-                                                markets=markets)
+            kwargs = {"markets": markets}
+            if bookmakers is not None:
+                kwargs["bookmakers"] = bookmakers
+            extra = self.fetch_event_alternates(ev.sport_key, ev.event_id, **kwargs)
             _ALT_CACHE[key] = (now, extra)
             cost = self._last_call_cost
         else:
@@ -496,6 +510,52 @@ class OddsAPIClient:
             # bills up to 4 -- not 1. Reported from the API's own x-requests-last
             # header rather than inferred, since markets with no data bill nothing.
             logger.info("Props: %d event(s) priced (%d bought, %d credits)",
+                        served, bought, spent)
+        return spent
+
+    def enrich_with_prop_alternates(self, events: list[OddsEvent],
+                                    event_ids: set[str] | None = None) -> int:
+        """
+        Attach the player-prop alternate ladder (config.PROP_ALTERNATE_MARKETS) to
+        `events`, in place. Returns credits spent.
+
+        Pinnacle (what enrich_with_props buys) never carries *_alternate player
+        markets -- it prices exactly one rung per player, so every other rung on
+        Kalshi's ladder legitimately finds no consensus. This buys a second, narrower
+        source (config.PROP_ALTERNATE_BOOKMAKERS) to fill in the rest of the ladder,
+        the same way alternate_totals fills the totals ladder -- without touching what
+        h2h/totals/the featured prop line are priced against.
+
+        Own cache key ("prop_alt:<event_id>") and its own refresh purchase, separate
+        from enrich_with_props's "prop:<event_id>" -- sharing a key would make each
+        overwrite the other's payload instead of both merging into ev.bookmakers.
+        """
+        if not getattr(config, "ENABLE_PROP_ALTERNATE_LINES", False):
+            return 0
+        now = datetime.now(timezone.utc)
+        self._prune_enrichment_cache(now)
+        spent = 0
+        bought = 0
+        served = 0
+        for ev in events:
+            if event_ids is not None and ev.event_id not in event_ids:
+                continue
+            market = config.PROP_ALTERNATE_MARKETS.get(ev.sport_key)
+            if not market:
+                continue
+            key = f"prop_alt:{ev.event_id}"
+            due = self._alternates_due(key, ev.commence_time, now)
+            if due and bought:
+                time.sleep(0.15)
+            cost = self._enrich(ev, key, market, now,
+                                bookmakers=config.PROP_ALTERNATE_BOOKMAKERS)
+            if due:
+                bought += 1
+            spent += cost
+            if _ALT_CACHE.get(key, (None, None))[1]:
+                served += 1
+        if served or spent:
+            logger.info("Prop alternates: %d event(s) priced (%d bought, %d credits)",
                         served, bought, spent)
         return spent
 

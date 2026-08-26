@@ -41,7 +41,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 import config
-from storage.db import init_db, log_opportunity, log_alert, add_position, get_daily_stake_total, count_open_positions, log_scan_results, log_book_probabilities, link_book_probability_to_position, mark_scan_start, get_api_credits, update_bot_heartbeat, get_last_fetched_at, set_last_fetched_at
+from storage.db import init_db, log_opportunity, log_alert, add_position, get_daily_stake_total, count_open_positions, log_scan_results, log_book_probabilities, link_book_probability_to_position, mark_scan_start, get_api_credits, update_bot_heartbeat, get_last_fetched_at, set_last_fetched_at, log_dk_scaled_estimates
 from execution.trade_executor import execute_trade, resolve_side
 from data.odds_fetcher import OddsAPIClient, _in_season
 from data.kalshi_client import KalshiClient
@@ -75,7 +75,8 @@ def _update_scan_log(scan_log: list[dict], opp, status: str, reason: str) -> Non
             return
 
 
-def _finalise_scan_log(scan_log: list[dict], scan_id: str) -> None:
+def _finalise_scan_log(scan_log: list[dict], scan_id: str,
+                        dk_shadow_log: list[dict] | None = None) -> None:
     """Stamp scanned_at on all entries and write to DB."""
     now = datetime.utcnow().isoformat()
     for entry in scan_log:
@@ -85,6 +86,12 @@ def _finalise_scan_log(scan_log: list[dict], scan_id: str) -> None:
     # every candidate evaluated, not just ones that became bets. See
     # storage/db.py::log_book_probabilities().
     log_book_probabilities(scan_id, scan_log)
+    # DK-scaled shadow-mode calibration record -- see
+    # core/value_detector.py::_record_dk_shadow() and storage/db.py::
+    # dk_scaled_shadow_log. Written unconditionally like the two calls above
+    # (log_dk_scaled_estimates no-ops on an empty list).
+    if dk_shadow_log is not None:
+        log_dk_scaled_estimates(scan_id, dk_shadow_log)
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -278,6 +285,14 @@ def run_scan(
             }
             if prop_event_ids and config.ENABLE_PROP_MARKETS:
                 odds_client.enrich_with_props(odds_events, prop_event_ids)
+            # Pinnacle prices exactly one rung per player -- DraftKings' ladder fills
+            # in the rest (config.PROP_ALTERNATE_MARKETS/PROP_ALTERNATE_BOOKMAKERS).
+            # Reuses prop_event_ids: PROP_ALTERNATE_MARKETS only has entries for
+            # sports that actually carry a ladder, so this is a no-op for BTTS/RFI
+            # events the same way enrich_with_props already no-ops for sports outside
+            # PROP_MARKETS.
+            if prop_event_ids and getattr(config, "ENABLE_PROP_ALTERNATE_LINES", False):
+                odds_client.enrich_with_prop_alternates(odds_events, prop_event_ids)
         except Exception as e:
             # Enrichment is an upgrade, not a dependency: on failure the scan
             # continues on featured lines exactly as before.
@@ -287,13 +302,14 @@ def run_scan(
     scan_id = datetime.utcnow().isoformat()
     scan_log: list[dict] = []
     mm_cands: list[dict] = []
+    dk_shadow_log: list[dict] = []
     opportunities = detect_value(matched, min_edge=config.MIN_EDGE, scan_log=scan_log,
-                                  mm_candidates=mm_cands)
+                                  mm_candidates=mm_cands, dk_shadow_log=dk_shadow_log)
     global _mm_candidates_cache
     _mm_candidates_cache = mm_cands
     if not opportunities:
         if not dry_run:
-            _finalise_scan_log(scan_log, scan_id)
+            _finalise_scan_log(scan_log, scan_id, dk_shadow_log)
         _log_api_credits(logger)
         logger.info("Scan complete. No value found.")
         return
@@ -400,7 +416,7 @@ def run_scan(
 
     if not scored:
         if not dry_run:
-            _finalise_scan_log(scan_log, scan_id)
+            _finalise_scan_log(scan_log, scan_id, dk_shadow_log)
         _log_api_credits(logger)
         logger.info("Scan complete. No value found.")
         return
@@ -607,7 +623,7 @@ def run_scan(
 
 
     if not dry_run:
-        _finalise_scan_log(scan_log, scan_id)
+        _finalise_scan_log(scan_log, scan_id, dk_shadow_log)
 
     bm.snapshot()
 

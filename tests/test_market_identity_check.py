@@ -264,6 +264,18 @@ def test_a_correct_no_player_prop_passes():
     assert verify_market_identity(o) is None
 
 
+def test_the_dk_scaled_prefix_still_passes_the_threshold_check():
+    """THE BUG CAUGHT BEFORE SHIPPING. value_detector originally appended the
+    '[DK-scaled]' marker as a SUFFIX -- 'Drohan 8+ [DK-scaled]' -- which breaks
+    _plus_line()'s regex (anchored on the string's end), so ours came back None and
+    EVERY scaled opportunity was rejected here as a fabricated 'threshold mismatch',
+    no matter how good the edge. Moved to a prefix; this pins both directions."""
+    yes_o = _player_opp("[DK-scaled] Shane Drohan 8+", "Shane Drohan: 8+")
+    assert verify_market_identity(yes_o) is None
+    no_o = _no_player_opp("[DK-scaled] Shane Drohan Under 8", "Shane Drohan: 8+")
+    assert verify_market_identity(no_o) is None
+
+
 def test_a_no_player_prop_bought_on_yes_is_refused(monkeypatch):
     """The inversion, replayed on the new outcome: NO_PLAYER's edge is computed on
     Kalshi's NO side, so an order that actually buys YES is the wrong bet -- same

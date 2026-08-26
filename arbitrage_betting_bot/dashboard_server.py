@@ -893,6 +893,69 @@ def clv_page():
     return redirect(url_for("index"))
 
 
+@app.route("/dk-scaled")
+@_requires_auth
+def dk_scaled_shadow():
+    """DK-scaled player-prop estimates: what they'd have bet, and how they've
+    calibrated against real settlements so far.
+
+    Shadow mode (config.DK_SCALED_SHADOW_MODE, on by default) means these estimates
+    never place real capital -- see core/value_detector.py::_record_dk_shadow() and
+    the 2026-08-24 review that asked for exactly this before trusting the feature:
+    "run it in shadow mode first and empirically measure its calibration... the most
+    important question is how prediction error changes with distance from the
+    Pinnacle anchor." This page is that measurement.
+    """
+    summary = db.get_dk_scaled_shadow_summary()
+    rows = db.get_dk_scaled_shadow_rows(limit=200)
+
+    entries = []
+    for r in rows:
+        outcome = _col(r, "actual_outcome")
+        if outcome is None:
+            outcome_label = "Pending"
+        elif outcome >= 0.5:
+            outcome_label = "Yes"
+        else:
+            outcome_label = "No"
+        error = None
+        if outcome is not None and r["scaled_prob"] is not None:
+            error = round(r["scaled_prob"] - outcome, 4)
+        entries.append({
+            "sport":        _short_sport(r["sport"] or ""),
+            "participant":  r["participant"] or "",
+            "market":       (r["market_key"] or "").replace("_", " "),
+            "ticker":       r["kalshi_ticker"] or "",
+            "url":          _kalshi_market_url(r["kalshi_ticker"] or ""),
+            "side":         (r["kalshi_side"] or "").upper(),
+            "target_point": r["target_point"],
+            "anchor_point": r["anchor_point"],
+            "distance":     r["distance"],
+            "ratio":        round(r["scaling_ratio"], 3) if r["scaling_ratio"] is not None else None,
+            "scaled_prob":  round(r["scaled_prob"] * 100, 1) if r["scaled_prob"] is not None else None,
+            "kalshi_price": round(r["kalshi_price"] * 100, 1) if r["kalshi_price"] is not None else None,
+            "edge":         round(r["edge"] * 100, 2) if r["edge"] is not None else None,
+            "would_bet":    bool(r["would_bet"]),
+            "status":       r["status"] or "",
+            "outcome":      outcome_label,
+            "error":        error,
+            "scanned_at":   _fmt_dt(r["scanned_at"]),
+        })
+
+    # Scatter data for the distance-vs-error chart: only settled rows have an error.
+    scatter = [{"x": e["distance"], "y": e["error"]} for e in entries if e["error"] is not None]
+
+    return render_template_string(
+        DK_SCALED_TEMPLATE,
+        shadow_mode=config.DK_SCALED_SHADOW_MODE,
+        enabled=getattr(config, "ENABLE_PROP_ALTERNATE_LINES", False),
+        summary=summary,
+        entries=entries,
+        scatter_json=json.dumps(scatter),
+        min_sample=MIN_CALIBRATION_SAMPLE,
+    )
+
+
 @app.route("/")
 @_requires_auth
 def index():
@@ -1627,6 +1690,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <div class="header-right">
     <a href="/scan" style="font-size:12px;color:var(--blue);text-decoration:none;padding:4px 10px;border:1px solid var(--blue);border-radius:6px;white-space:nowrap;">Last Scan</a>
     <a href="/mm" style="font-size:12px;color:var(--blue);text-decoration:none;padding:4px 10px;border:1px solid var(--blue);border-radius:6px;white-space:nowrap;">Market Making</a>
+    <a href="/dk-scaled" style="font-size:12px;color:var(--blue);text-decoration:none;padding:4px 10px;border:1px solid var(--blue);border-radius:6px;white-space:nowrap;">DK-Scaled Shadow</a>
     <span id="mode-badge" class="mode-badge">—</span>
     <span class="refresh-info" id="last-updated">Loading…</span>
   </div>
@@ -2085,6 +2149,7 @@ def main() -> None:
 
 
 
+
 # Companion to SCAN_TEMPLATE for the market-making side. Deliberately a separate,
 # self-contained page rather than a tab on /scan: the two strategies answer
 # different questions ("is this mispriced enough to take?" vs "is this stable
@@ -2158,6 +2223,7 @@ MM_TEMPLATE = """<!DOCTYPE html>
   <a href="/">← Dashboard</a>
   <a href="/clv">CLV &amp; TTE</a>
   <a href="/scan">Last Scan</a>
+  <a href="/dk-scaled">DK-Scaled Shadow</a>
   <h1>Market Making</h1>
   <span class="meta">Last tick: {{ decided_at }}</span>
 </header>
@@ -2249,7 +2315,246 @@ MM_TEMPLATE = """<!DOCTYPE html>
 </html>
 """
 
+# ── DK-scaled shadow-mode calibration template ────────────────────────────────
+
+DK_SCALED_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DK-Scaled Shadow Mode — Arb Bot</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:#0f1117;--surface:#1a1d27;--border:#2a2d3a;--text:#e2e8f0;
+    --muted:#64748b;--green:#22c55e;--red:#ef4444;--blue:#3b82f6;
+    --yellow:#f59e0b;--orange:#f97316;--purple:#a855f7;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{overflow-x:hidden;}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;}
+  header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+  header a{color:var(--muted);text-decoration:none;font-size:13px;white-space:nowrap;}
+  header a:hover{color:var(--text);}
+  header h1{font-size:16px;font-weight:600;}
+  .meta{color:var(--muted);font-size:12px;}
+  main{padding:20px;max-width:1500px;margin:0 auto;}
+  .cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;min-width:120px;}
+  .card .n{font-size:22px;font-weight:600;}
+  .card .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
+  .off,.shadow{border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;}
+  .off{background:rgba(239,68,68,.12);border:1px solid var(--red);color:var(--red);}
+  .shadow{background:rgba(59,130,246,.12);border:1px solid var(--blue);color:var(--blue);}
+  .why{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+       padding:12px 16px;margin-bottom:16px;}
+  .why h2{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:8px;}
+  .why p{font-size:12px;color:var(--muted);margin-bottom:4px;}
+  .charts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;}
+  @media (max-width:900px){.charts{grid-template-columns:1fr;}}
+  .chart-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;}
+  .chart-box h2{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;}
+  .chart-box canvas{max-height:240px;}
+  table{width:100%;border-collapse:collapse;background:var(--surface);
+        border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px;}
+  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;
+     color:var(--muted);padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  td{padding:9px 10px;border-bottom:1px solid var(--border);font-size:12px;white-space:nowrap;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:rgba(255,255,255,.02);}
+  .num{font-variant-numeric:tabular-nums;text-align:right;}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;
+        font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
+  .p-yes{background:rgba(34,197,94,.15);color:var(--green);}
+  .p-no{background:rgba(239,68,68,.15);color:var(--red);}
+  .p-pending{background:rgba(100,116,139,.15);color:var(--muted);}
+  .p-would{background:rgba(168,85,247,.15);color:var(--purple);}
+  .empty{text-align:center;color:var(--muted);padding:28px;}
+  a.tick{color:var(--text);text-decoration:none;}
+  a.tick:hover{color:var(--blue);}
+  .pos{color:var(--green);} .neg{color:var(--red);}
+  @media (max-width:820px){
+    thead{display:none;}
+    table,tbody,tr,td{display:block;width:100%;}
+    tr{border-bottom:1px solid var(--border);padding:8px 0;}
+    td{border:none;padding:4px 12px;display:flex;gap:10px;white-space:normal;}
+    td::before{content:attr(data-label);font-size:10px;color:var(--muted);
+               text-transform:uppercase;letter-spacing:.5px;font-weight:600;min-width:78px;}
+    .num{text-align:left;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← Dashboard</a>
+  <a href="/clv">CLV &amp; TTE</a>
+  <a href="/scan">Last Scan</a>
+  <a href="/mm">Market Making</a>
+  <h1>DK-Scaled Shadow Mode</h1>
+</header>
+<main>
+  {% if not enabled %}
+  <div class="off">DraftKings alternate-line data is currently <strong>not being fetched</strong>
+    (ENABLE_PROP_ALTERNATE_LINES=false) — nothing new is being logged here.
+    {% if summary.n %}The rows below are from before it was turned off.{% endif %}</div>
+  {% elif shadow_mode %}
+  <div class="shadow">Shadow mode is <strong>on</strong> (DK_SCALED_SHADOW_MODE=true):
+    every estimate below is logged, but none of them place real capital, even the
+    ones marked "would bet". Flip the switch only once calibration below looks
+    trustworthy against a real sample of settled outcomes.</div>
+  {% else %}
+  <div class="off">Shadow mode is <strong>off</strong> (DK_SCALED_SHADOW_MODE=false) —
+    estimates that clear the edge bar are now placed as REAL bets.</div>
+  {% endif %}
+
+  <div class="cards">
+    <div class="card"><div class="n">{{ summary.n }}</div><div class="l">Logged</div></div>
+    <div class="card"><div class="n">{{ summary.n_settled }}</div><div class="l">Settled</div></div>
+    <div class="card"><div class="n" style="color:var(--purple)">{{ summary.n_would_bet }}</div><div class="l">Would bet</div></div>
+    <div class="card">
+      <div class="n" style="{% if summary.brier is not none and summary.brier < 0.20 %}color:var(--green){% elif summary.brier is not none %}color:var(--red){% endif %}">
+        {{ '%.4f'|format(summary.brier) if summary.brier is not none else '—' }}</div>
+      <div class="l">Brier score</div>
+    </div>
+  </div>
+
+  {% if summary.n_settled < min_sample %}
+  <div class="why">
+    <p><strong style="color:var(--text)">Not enough settled outcomes yet</strong>
+       ({{ summary.n_settled }} of {{ min_sample }} needed) for the Brier score or
+       calibration buckets below to mean much. Predictions accumulate as MLB games
+       settle; check back once more have resolved.</p>
+  </div>
+  {% endif %}
+
+  <div class="why">
+    <h2>Calibration by distance from the Pinnacle anchor</h2>
+    <p>The question the 2026-08-24 review said mattered most: does the estimate get
+       worse the farther the target rung sits from the one point Pinnacle actually
+       prices? Lower Brier and mean error near zero is good; either climbing with
+       distance is the sign the flat ratio assumption is breaking down.</p>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Rungs from anchor</th><th class="num">Samples</th>
+          <th class="num">Brier score</th><th class="num">Mean error</th></tr>
+    </thead>
+    <tbody>
+      {% if not summary.buckets or summary.n_settled == 0 %}
+      <tr><td colspan="4" class="empty">No settled DK-scaled estimates yet.</td></tr>
+      {% endif %}
+      {% for b in summary.buckets %}
+      <tr>
+        <td data-label="Rungs">{{ b.range }}</td>
+        <td data-label="Samples" class="num">{{ b.n }}</td>
+        <td data-label="Brier" class="num">{{ '%.4f'|format(b.brier) if b.brier is not none else '—' }}</td>
+        <td data-label="Mean error" class="num {% if b.mean_error is not none and b.mean_error > 0.03 %}neg{% elif b.mean_error is not none and b.mean_error < -0.03 %}neg{% endif %}">
+          {{ '%+.4f'|format(b.mean_error) if b.mean_error is not none else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="charts">
+    <div class="chart-box">
+      <h2>Brier score by distance bucket</h2>
+      <canvas id="bucketChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <h2>Error (predicted − actual) vs. distance</h2>
+      <canvas id="scatterChart"></canvas>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Sport</th><th>Player</th><th>Side</th>
+        <th class="num">Target</th><th class="num">Anchor</th><th class="num">Dist</th>
+        <th class="num">Ratio</th><th class="num">Est. prob</th><th class="num">Kalshi</th>
+        <th class="num">Edge</th><th>Would bet</th><th>Outcome</th><th>Logged</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if not entries %}
+      <tr><td colspan="13" class="empty">No DK-scaled estimates logged yet — enable
+        ENABLE_PROP_ALTERNATE_LINES and let a scan run.</td></tr>
+      {% endif %}
+      {% for e in entries %}
+      <tr>
+        <td data-label="Sport">{{ e.sport }}</td>
+        <td data-label="Player"><a class="tick" href="{{ e.url }}" target="_blank" rel="noopener">
+          <strong>{{ e.participant }}</strong></a> <span class="meta">{{ e.market }}</span></td>
+        <td data-label="Side">{{ e.side }}</td>
+        <td data-label="Target" class="num">{{ e.target_point }}</td>
+        <td data-label="Anchor" class="num">{{ e.anchor_point }}</td>
+        <td data-label="Dist" class="num">{{ e.distance }}</td>
+        <td data-label="Ratio" class="num">{{ e.ratio if e.ratio is not none else '—' }}</td>
+        <td data-label="Est. prob" class="num">{% if e.scaled_prob is not none %}{{ e.scaled_prob }}%{% else %}—{% endif %}</td>
+        <td data-label="Kalshi" class="num">{% if e.kalshi_price is not none %}{{ e.kalshi_price }}%{% else %}—{% endif %}</td>
+        <td data-label="Edge" class="num {% if e.edge is not none and e.edge > 0 %}pos{% endif %}">
+          {% if e.edge is not none %}{{ e.edge }}%{% else %}—{% endif %}</td>
+        <td data-label="Would bet">{% if e.would_bet %}<span class="pill p-would">Yes</span>{% else %}—{% endif %}</td>
+        <td data-label="Outcome"><span class="pill p-{{ e.outcome|lower }}">{{ e.outcome }}</span></td>
+        <td data-label="Logged" class="meta">{{ e.scanned_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</main>
+<script>
+  const buckets = {{ summary.buckets|tojson }};
+  const scatterData = {{ scatter_json|safe }};
+  const gridColor = 'rgba(255,255,255,0.06)';
+  const textColor = '#64748b';
+
+  new Chart(document.getElementById('bucketChart'), {
+    type: 'bar',
+    data: {
+      labels: buckets.map(b => b.range),
+      datasets: [{
+        label: 'Brier score (lower is better)',
+        data: buckets.map(b => b.brier),
+        backgroundColor: '#3b82f6',
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: gridColor }, ticks: { color: textColor } },
+        y: { grid: { color: gridColor }, ticks: { color: textColor }, beginAtZero: true },
+      },
+    },
+  });
+
+  new Chart(document.getElementById('scatterChart'), {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        label: 'predicted − actual',
+        data: scatterData,
+        backgroundColor: 'rgba(168,85,247,0.6)',
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { title: { display: true, text: 'Distance from anchor (rungs)', color: textColor },
+             grid: { color: gridColor }, ticks: { color: textColor } },
+        y: { title: { display: true, text: 'Error', color: textColor },
+             grid: { color: gridColor }, ticks: { color: textColor } },
+      },
+    },
+  });
+</script>
+</body>
+</html>
+"""
+
+
 
 if __name__ == "__main__":
     main()
-

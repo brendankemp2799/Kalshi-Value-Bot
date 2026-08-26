@@ -353,12 +353,19 @@ def consensus_stats(
 
     Note: for "totals" and "spreads", the corresponding "alternate_totals" /
     "alternate_spreads" markets are also checked so that non-main-line Kalshi
-    markets (e.g. Over 9.5 when the main line is 8.5) can find consensus.
+    markets (e.g. Over 9.5 when the main line is 8.5) can find consensus. The three
+    MLB player-prop markets get the same treatment (2026-08-24): Pinnacle only ever
+    populates the featured rung, so config.PROP_ALTERNATE_MARKETS buys the rest of
+    the ladder from a second book (config.PROP_ALTERNATE_BOOKMAKERS) and merges it
+    in under the "_alternate" market key, exactly like alternate_totals.
     """
     # Build the set of Odds API market keys to search
     _ALTERNATE: dict[str, str] = {
         "totals":  "alternate_totals",
         "spreads": "alternate_spreads",
+        "pitcher_strikeouts":  "pitcher_strikeouts_alternate",
+        "batter_home_runs":    "batter_home_runs_alternate",
+        "batter_total_bases":  "batter_total_bases_alternate",
     }
     keys_to_check = {market_key, _ALTERNATE.get(market_key, market_key)}
 
@@ -465,3 +472,164 @@ def consensus_stats(
     variance = sum(w * (p - mean) ** 2 for w, p in weighted_probs) / total_weight
     std_dev = variance ** 0.5
     return mean, len(weighted_probs), round(std_dev, 6)
+
+
+def _raw_prob_at_point(
+    bookmakers_data: list[dict], book_key: str, market_key: str,
+    point: float, participant: str, name: str = "Over",
+) -> float | None:
+    """Raw (still-vigged) implied probability for one book/market/point/player.
+
+    Deliberately does NOT de-vig -- there is usually only one outcome (see
+    scaled_alternate_prob), and remove_vig([p]) would fabricate a 1.0 certainty
+    (see test_odds_converter.py::test_a_lone_outcome_is_skipped_not_devigged...).
+    This returns the raw number precisely so the caller can decide what to do
+    with a one-sided price instead of silently guessing.
+    """
+    for book in bookmakers_data:
+        if book.get("key") != book_key:
+            continue
+        for market in book.get("markets", []):
+            if market.get("key") != market_key:
+                continue
+            for o in market.get("outcomes", []):
+                if o.get("name") != name:
+                    continue
+                if _norm_team(o.get("description", "")) != _norm_team(participant):
+                    continue
+                if o.get("point") is None or abs(float(o["point"]) - point) > 0.01:
+                    continue
+                return american_to_prob(o["price"])
+    return None
+
+
+def scaled_alternate_diagnostics(
+    bookmakers_data: list[dict],
+    market_key: str,
+    point: float,
+    participant: str,
+) -> dict | None:
+    """
+    Estimate a probability for a Kalshi rung that only a one-sided alternate ladder
+    quotes, by anchoring the ladder's raw price against a book that prices both sides
+    -- and return every intermediate number, not just the final estimate, so a caller
+    can log the full calibration chain for later validation (added 2026-08-24 for the
+    shadow-mode logging this exists to feed -- see storage/db.py::dk_scaled_shadow_log
+    and dashboard_server.py's /dk-scaled page).
+
+    THE PROBLEM. Verified live 2026-08-24: every book carrying pitcher_strikeouts_
+    alternate / batter_home_runs_alternate / batter_total_bases_alternate (DraftKings,
+    FanDuel, BetOnline, William Hill, Bovada, Fanatics) sends the Over leg only, never
+    a matching Under, at any point. consensus_stats() correctly refuses to price these
+    (see the len(siblings) < 2 check above) rather than fabricate a de-vig off one
+    number -- but that leaves every rung besides Pinnacle's single featured line
+    unpriced, which is the 224-of-227 no_consensus problem this exists to shrink.
+
+    THE APPROACH. Pinnacle prices its own featured rung on both sides, so its fair
+    probability there is trustworthy. Where the alternate book (config.
+    PROP_ALTERNATE_BOOKMAKERS) ALSO quotes that exact same point, the ratio between
+    Pinnacle's fair number and the alternate book's raw number is a measured
+    calibration factor for that specific player/game -- not an assumed flat vig
+    percentage. Applying that same ratio to the alternate book's raw price at the
+    TARGET rung gives an estimated fair probability there.
+
+    This is a single calibration point, not a reconstructed distribution: it assumes
+    the alternate book's vig-to-raw relationship is roughly stable across nearby
+    rungs, which weakens the further the target point sits from the anchor (vig is
+    not perfectly uniform across a ladder -- the same reason config.DEVIG_METHOD is
+    Shin's, not proportional, for the two-sided markets). Untested in production, so
+    every estimate this produces carries book_count=1 and std_dev=0.04.
+
+    0.04, not kelly_calculator's actual max-discount threshold of 0.05: quality_
+    check()'s shared high_uncertainty_std is ALSO 0.04, checked with a strict '>',
+    and high_uncertainty_min_books=4 (this always reports book_count=1) -- 0.05 would
+    have hard-REJECTED every scaled estimate before Kelly ever saw it, silently
+    turning this whole function into dead code. 0.04 is deliberately the largest
+    value that still clears that gate, which lands one Kelly discount step short of
+    the true maximum (uncertainty_factor 0.6, not 0.5) -- a real, if imperfect,
+    proxy for "size this down until it's validated."
+
+    Returns a dict with every intermediate value (anchor_point, distance,
+    anchor_fair_prob, anchor_raw_prob, target_raw_prob, ratio, scaled_prob), or None
+    if no anchor or no target-point quote exists. See scaled_alternate_prob() below
+    for the (estimated_prob, book_count, std_dev) shape core/value_detector.py
+    actually prices against.
+    """
+    import config
+    anchor_book = "pinnacle"
+    alt_book = getattr(config, "PROP_ALTERNATE_BOOKMAKERS", "draftkings")
+    alt_market_key = f"{market_key}_alternate"
+
+    # 1. Pinnacle's own quoted point for this participant (may differ from `point`,
+    #    the Kalshi threshold we're actually trying to price).
+    anchor_point = None
+    for book in bookmakers_data:
+        if book.get("key") != anchor_book:
+            continue
+        for market in book.get("markets", []):
+            if market.get("key") != market_key:
+                continue
+            for o in market.get("outcomes", []):
+                if (o.get("point") is not None
+                        and _norm_team(o.get("description", "")) == _norm_team(participant)):
+                    anchor_point = float(o["point"])
+                    break
+            if anchor_point is not None:
+                break
+        if anchor_point is not None:
+            break
+    if anchor_point is None:
+        return None
+
+    if abs(point - anchor_point) <= 0.01:
+        # This IS Pinnacle's own point -- consensus_stats() already prices it
+        # directly and correctly; scaling here would be redundant, not helpful.
+        return None
+
+    # 2. Pinnacle's de-vigged fair probability at ITS point (reuses the existing,
+    #    correct two-sided de-vig -- Pinnacle always quotes both sides).
+    anchor_fair, _, _ = consensus_stats(
+        bookmakers_data, "Over", market_key=market_key,
+        point=anchor_point, participant=participant)
+    if anchor_fair is None:
+        return None
+
+    # 3. The alternate book's raw price at that SAME point -- the calibration ratio.
+    anchor_raw = _raw_prob_at_point(bookmakers_data, alt_book, alt_market_key,
+                                    anchor_point, participant)
+    if not anchor_raw:
+        return None
+    ratio = anchor_fair / anchor_raw
+
+    # 4. The alternate book's raw price at the TARGET point -- what we actually want.
+    target_raw = _raw_prob_at_point(bookmakers_data, alt_book, alt_market_key,
+                                    point, participant)
+    if target_raw is None:
+        return None
+
+    scaled = max(0.0, min(1.0, target_raw * ratio))
+    return {
+        "anchor_point": anchor_point,
+        "distance": round(point - anchor_point, 3),
+        "anchor_fair_prob": anchor_fair,
+        "anchor_raw_prob": anchor_raw,
+        "target_raw_prob": target_raw,
+        "ratio": ratio,
+        "scaled_prob": scaled,
+    }
+
+
+def scaled_alternate_prob(
+    bookmakers_data: list[dict],
+    market_key: str,
+    point: float,
+    participant: str,
+) -> tuple[float | None, int, float]:
+    """Thin wrapper around scaled_alternate_diagnostics() for callers that only need
+    the (estimated_prob, book_count, std_dev) shape consensus_stats() returns, not
+    the full calibration chain. See scaled_alternate_diagnostics()'s docstring for
+    the method and why book_count=1 / std_dev=0.04."""
+    diag = scaled_alternate_diagnostics(bookmakers_data, market_key, point, participant)
+    if diag is None:
+        return None, 0, 0.0
+    return diag["scaled_prob"], 1, 0.04

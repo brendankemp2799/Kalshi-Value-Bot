@@ -587,6 +587,66 @@ PROP_MARKETS: dict[str, str] = {
 }
 ENABLE_PROP_MARKETS: bool = os.getenv("ENABLE_PROP_MARKETS", "true").lower() == "true"
 
+# Alternate-ladder lines for the three MLB player props (2026-08-24).
+#
+# Pinnacle populates NO *_alternate player markets -- verified live 2026-08-22 and
+# again 2026-08-24 (queried pitcher_strikeouts_alternate/batter_home_runs_alternate/
+# batter_total_bases_alternate for pinnacle across 8 live games: zero rungs beyond the
+# one featured line, every time). Kalshi lists a ladder per player (a pitcher's
+# strikeout market alone runs 1+ through 11+), so at most one rung in ten had anything
+# to price against -- 224 of 227 no_consensus rows in one scan on 2026-08-24 were this.
+#
+# DraftKings DOES carry the full ladder for all three markets (confirmed same check --
+# e.g. six rungs for one pitcher's strikeouts where Pinnacle has one). Scoped
+# separately from PROP_MARKETS/ODDS_API_BOOKMAKERS on purpose: Pinnacle stays the sole
+# source for h2h/totals/the featured prop line -- that decision, and the KELLY_FRACTION
+# cut that went with it (see test_single_book_panel.py), is not being reopened here.
+# This only adds a second, narrower source to fill in rungs Pinnacle structurally
+# cannot reach, the same way alternate_totals fills the totals ladder.
+#
+# Billing: alternate markets only exist on the per-event endpoint (bulk 422s), so this
+# is 1 credit per game per market, same as PROP_MARKETS above -- 3 more market keys on
+# the same per-event call. Reuses the alternates refresh cadence (own cache key,
+# "prop_alt:<event_id>", so it doesn't collide with or overwrite the featured-line
+# payload cached under "prop:<event_id>").
+PROP_ALTERNATE_MARKETS: dict[str, str] = {
+    "baseball_mlb": "pitcher_strikeouts_alternate,batter_home_runs_alternate,"
+                    "batter_total_bases_alternate",
+}
+PROP_ALTERNATE_BOOKMAKERS: str = os.getenv("PROP_ALTERNATE_BOOKMAKERS", "draftkings")
+
+# Defaults OFF (2026-08-24) -- unlike the alternate-lines/props switches above, this
+# one has NOT been validated against real settled outcomes, only checked for
+# mechanical correctness (real API calls, a plausible monotonic curve, reproduces
+# Pinnacle's own number at the anchor). An adversarial review the same day found
+# real, not-yet-fixed problems with the scaling math itself:
+#   - The anchor ratio is a single calibration point applied uniformly across the
+#     whole ladder. Modeled against a realistic favorite-longshot vig curve, this
+#     systematically manufactures positive "edge" on rungs far from the anchor even
+#     when Kalshi is priced fairly -- a bias, which the std_dev=0.04 Kelly discount
+#     cannot compensate for (that discount is for variance, not a wrong-signed edge).
+#   - scaled_alternate_prob()'s clamp can produce a fabricated 1.0 (or 0.0)
+#     probability if the alternate book's anchor quote is stale relative to
+#     Pinnacle's, and nothing upstream (quality filters, Kelly, execution) checks
+#     an edge or consensus_prob for plausibility before betting it.
+# Turn on only after those are addressed (a ratio sanity band, a distance-from-
+# anchor limit, or an actual backtest/shadow-mode run against real settlements).
+ENABLE_PROP_ALTERNATE_LINES: bool = os.getenv(
+    "ENABLE_PROP_ALTERNATE_LINES", "false").lower() == "true"
+
+# Shadow mode (2026-08-24): even if ENABLE_PROP_ALTERNATE_LINES is ever turned on and
+# a DK-scaled estimate clears every existing gate (quality_check, edge, Kelly), this
+# keeps it from becoming a real ValueOpportunity -- it is logged to
+# storage/db.py's dk_scaled_shadow_log (what it WOULD have bet, and at what edge) and
+# nothing more. This is a SEPARATE switch from ENABLE_PROP_ALTERNATE_LINES on purpose:
+# that one controls whether the DraftKings data is fetched at all (a credit-cost
+# decision); this one controls what happens to an estimate once it exists, and is the
+# actual mechanism for "run it in shadow mode first" from the 2026-08-24 review (see
+# dashboard_server.py's /dk-scaled page for the calibration this collects). Flip to
+# false only once that page shows real settled outcomes with acceptable calibration.
+DK_SCALED_SHADOW_MODE: bool = os.getenv(
+    "DK_SCALED_SHADOW_MODE", "true").lower() == "true"
+
 ALTERNATE_LINE_REFRESH_TIERS: list[tuple[int, int]] = [
     (12, 1),    # inside 12h: hourly
     (24, 3),    # 12-24h: every 3h
