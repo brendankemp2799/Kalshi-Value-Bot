@@ -849,6 +849,30 @@ LIMIT_ORDER_TIMEOUT_PRE_GAME_SECONDS: int = 450  # step 1 — within 1 hour (was
 LIMIT_ORDER_TIMEOUT_NEAR_GAME_SECONDS: int = 120 # step 1 — within 30 minutes (unchanged)
 LIMIT_ORDER_ASK_TIMEOUT_SECONDS: int = 30        # step 2 — GTC at ask (short; ask should fill fast)
 
+# ── Exchange shard collateral ────────────────────────────────────────────────
+# Kalshi sharded its matching engine on 2026-08-24; each shard holds a SEPARATE
+# cash balance and its collateral check runs inside the engine, so cash must be
+# pre-positioned on the shard a market lives on. Shard 3 is "Tennis & Baseball",
+# shard 0 is everything else we trade. See execution/shard_balancer.py.
+#
+# This does NOT change bet sizing, which correctly uses the combined balance —
+# Kelly sizes against total wealth regardless of which shard the cash sits on.
+# It only moves collateral to where orders need it.
+#
+# Defaults to OFF: enabling it lets the bot move real money unattended, so it
+# runs in dry-run (plan-and-log only) until explicitly switched on.
+SHARD_REBALANCE_ENABLED: bool = os.getenv("SHARD_REBALANCE_ENABLED", "false").lower() == "true"
+
+# "shard:percent" pairs; must total 100. Baseball was ~60% of filled volume
+# before the split, but resting orders hold collateral too, so the requirement
+# tracks peak concurrent orders rather than filled positions.
+SHARD_TARGET_ALLOCATION: str = os.getenv("SHARD_TARGET_ALLOCATION", "0:50,3:50")
+
+# Floor stops dust churn; ceiling bounds the blast radius of any single bad move
+# on an endpoint that is explicitly non-atomic and never auto-retried.
+SHARD_MIN_TRANSFER_DOLLARS: float = float(os.getenv("SHARD_MIN_TRANSFER_DOLLARS", "5.0"))
+SHARD_MAX_TRANSFER_DOLLARS: float = float(os.getenv("SHARD_MAX_TRANSFER_DOLLARS", "100.0"))
+
 # While step 1's mid-price order rests, periodically re-check Kalshi's own live
 # price (free — no Odds API cost) instead of blindly waiting out the full timeout.
 # If the live price has moved against the resting order by PASSIVE_ADVERSE_MOVE_CANCEL

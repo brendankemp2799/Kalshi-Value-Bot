@@ -187,6 +187,23 @@ def run_scan(
         except Exception:
             pass  # keep existing bankroll on failure
 
+    # Move collateral to the shards this scan is about to trade on, BEFORE any
+    # order goes out. bm.bankroll above is deliberately the COMBINED balance --
+    # Kelly sizes against total wealth wherever it sits -- but Kalshi's
+    # collateral check runs per shard, so an order on a shard with no cash is
+    # rejected however well-sized it was. See execution/shard_balancer.py.
+    # No-ops when already on target, and plans-without-moving unless
+    # SHARD_REBALANCE_ENABLED is set.
+    if not paper and not dry_run:
+        try:
+            from execution import shard_balancer
+            shard_balancer.rebalance_once()
+        except Exception as e:
+            # Never let a rebalancing problem stop a scan: the worst case without
+            # it is orders rejected on one shard, which is strictly better than
+            # placing none at all.
+            logger.warning("Shard rebalance skipped: %s", e)
+
     logger.info("Starting scan... [%s] (bankroll: $%.2f)", mode, bm.bankroll)
     if not dry_run:
         update_bot_heartbeat()

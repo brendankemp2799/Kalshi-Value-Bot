@@ -103,22 +103,53 @@ def test_cancel_quote_forwards_the_ticker(captured):
     assert captured["delete"]["params"]["market_ticker"] == "KXMLBHR-A-B-1"
 
 
-def test_failed_cancel_returns_false_and_does_not_claim_success(captured, caplog):
-    """A rejected cancel must not read as 'already gone' -- the order may be live."""
-    class _Bad(_Resp):
-        ok = False
-        status_code = 404
-        text = '{"error":{"code":"not_found"}}'
+class _Bad(_Resp):
+    ok = False
+    status_code = 404
+    text = '{"error":{"code":"not_found"}}'
 
+
+@pytest.fixture
+def rejecting_cancel(monkeypatch):
     class _S:
         def delete(self, url, **kw):
             return _Bad()
+    monkeypatch.setattr(ka, "auth_headers", lambda *a, **k: {})
+    monkeypatch.setattr(ka, "session", lambda: _S())
 
-    import data.kalshi_auth as _ka
-    _ka.session = lambda: _S()
-    with caplog.at_level("WARNING"):
-        assert ke._cancel_order("oid-3", "KXMLBTB-X-Y-2") is False
-    assert "LIVE" in caplog.text
+
+def test_rejected_cancel_on_an_already_terminal_order_is_not_alarming(
+        rejecting_cancel, monkeypatch, caplog):
+    """Observed in production: a 900s-old GTC 404s on cancel because Kalshi already
+    terminated it. Nothing leaked, so this must not scream."""
+    monkeypatch.setattr(ke, "_get_order_status",
+                        lambda oid, retries=0: {"status": "canceled",
+                                                "remaining_count_fp": "0.00"})
+    with caplog.at_level("DEBUG"):
+        assert ke._cancel_order("oid-3", "KXMLBTB-X-Y-2") is True
+    assert "CRITICAL" not in caplog.text
+    assert "no exposure" in caplog.text
+
+
+def test_rejected_cancel_on_a_STILL_LIVE_order_screams(
+        rejecting_cancel, monkeypatch, caplog):
+    """The case that actually matters: the order is still resting and can fill."""
+    monkeypatch.setattr(ke, "_get_order_status",
+                        lambda oid, retries=0: {"status": "resting",
+                                                "remaining_count_fp": "3.00"})
+    with caplog.at_level("DEBUG"):
+        assert ke._cancel_order("oid-4", "KXMLBTB-X-Y-2") is False
+    assert "STILL LIVE" in caplog.text
+    assert "UNTRACKED EXPOSURE" in caplog.text
+
+
+def test_rejected_cancel_with_unreadable_status_is_treated_as_live(
+        rejecting_cancel, monkeypatch, caplog):
+    """If we cannot establish the truth, assume exposure rather than assume safety."""
+    monkeypatch.setattr(ke, "_get_order_status", lambda oid, retries=0: None)
+    with caplog.at_level("DEBUG"):
+        assert ke._cancel_order("oid-5", "KXMLBTB-X-Y-2") is False
+    assert "possibly LIVE" in caplog.text
 
 
 # ── static guard: no call site may drop the ticker ───────────────────────────

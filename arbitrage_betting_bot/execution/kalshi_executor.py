@@ -215,16 +215,59 @@ def _cancel_order(order_id: str, ticker: str) -> bool:
             headers=headers,
             timeout=10,
         )
-        if not resp.ok:
-            logger.warning(
-                "Cancel REJECTED for %s on %s — HTTP %s %s. The order may still be "
-                "LIVE; do not assume it is gone.",
-                order_id, ticker, resp.status_code, resp.text[:160],
-            )
-        return resp.ok
+        if resp.ok:
+            return True
+
+        # A rejected cancel is ambiguous, and guessing either way is bad: assume
+        # "gone" and we may leak a live order; assume "live" and we cry wolf on
+        # every already-terminal order, which is how real leak warnings get
+        # ignored. So ask. Observed in production 2026-08-26: three GTC orders
+        # that had rested their full 900s returned 404 not_found on cancel and
+        # were ALREADY `canceled` with 0 filled -- Kalshi had terminated them
+        # first. Nothing leaked, but the blind warning said otherwise.
+        return _confirm_gone(order_id, ticker, resp.status_code, resp.text[:160])
     except Exception as e:
         logger.warning("Could not cancel order %s on %s: %s", order_id, ticker, e)
         return False
+
+
+_TERMINAL_ORDER_STATES = ("canceled", "cancelled", "executed", "closed", "expired")
+
+
+def _confirm_gone(order_id: str, ticker: str, code: int, body: str) -> bool:
+    """After a rejected cancel, read the order back and say what really happened.
+
+    Returns True if the order is confirmed terminal (nothing resting), False if
+    it is still live or could not be established -- the caller should treat False
+    as "there may be real exposure out there".
+    """
+    status = _get_order_status(order_id, retries=1)
+    if status is None:
+        logger.error(
+            "Cancel REJECTED for %s on %s (HTTP %s %s) AND its status could not be "
+            "read back. Treating as possibly LIVE — reconcile by hand.",
+            order_id, ticker, code, body,
+        )
+        return False
+
+    state = str(status.get("status", "")).lower()
+    remaining = float(status.get("remaining_count_fp")
+                      or status.get("remaining_count") or 0)
+    if state in _TERMINAL_ORDER_STATES and remaining <= 0:
+        logger.info(
+            "Cancel for %s on %s returned HTTP %s, but the order is already %s "
+            "with nothing resting — no exposure.",
+            order_id, ticker, code, state,
+        )
+        return True
+
+    logger.critical(
+        "ORDER STILL LIVE after a rejected cancel — %s on %s is %r with %g "
+        "contract(s) remaining (cancel returned HTTP %s %s). REAL UNTRACKED "
+        "EXPOSURE; it can still fill.",
+        order_id, ticker, state, remaining, code, body,
+    )
+    return False
 
 
 # Serialises order POSTs across every thread. See
