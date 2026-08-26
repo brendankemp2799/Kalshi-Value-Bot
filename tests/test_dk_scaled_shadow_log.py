@@ -90,6 +90,98 @@ def test_pending_outcomes_respect_the_retry_cap(fresh_db):
         "must fall off the retry queue once max_attempts is exhausted"
 
 
+# ── deduplication (2026-08-26) ───────────────────────────────────────────────────
+#
+# THE PROBLEM THESE PIN. _detect_player_prop re-evaluates and re-logs every rung on
+# EVERY scan until first pitch, so one real opportunity produces 10-15 near-identical
+# rows. Counted raw, `n` looks validated long before it is, and the Brier score gets
+# weighted toward rungs that merely sat around longer rather than toward independent
+# observations. Reads deduplicate to one row per (kalshi_ticker, kalshi_side).
+
+def test_repeated_scans_of_one_rung_count_as_one_opportunity(fresh_db):
+    for scan in range(12):
+        db.log_dk_scaled_estimates(f"scan{scan}", [_entry(kalshi_ticker="SAME")])
+    summary = db.get_dk_scaled_shadow_summary()
+    assert summary["n"] == 1, "12 re-scans of one rung must count as ONE opportunity"
+    assert summary["n_raw_rows"] == 12, "the raw count stays visible for context"
+    assert len(db.get_dk_scaled_shadow_rows()) == 1
+
+
+def test_the_two_sides_of_one_rung_are_separate_opportunities(fresh_db):
+    db.log_dk_scaled_estimates("scan1", [
+        _entry(kalshi_ticker="SAME", kalshi_side="yes"),
+        _entry(kalshi_ticker="SAME", kalshi_side="no"),
+    ])
+    assert db.get_dk_scaled_shadow_summary()["n"] == 2, \
+        "each side is priced off its own number and is its own bet"
+
+
+def test_distinct_rungs_are_not_collapsed(fresh_db):
+    db.log_dk_scaled_estimates("scan1", [
+        _entry(kalshi_ticker="RUNG-6"), _entry(kalshi_ticker="RUNG-7"),
+    ])
+    assert db.get_dk_scaled_shadow_summary()["n"] == 2
+
+
+def test_a_would_bet_scan_is_the_row_that_survives(fresh_db):
+    """The decision being validated is the one the bot would have ACTED on, so a
+    scan where it would have fired outranks scans where it would not -- regardless
+    of which came first."""
+    db.log_dk_scaled_estimates("scan1", [_entry(kalshi_ticker="T", would_bet=0, scaled_prob=0.11)])
+    db.log_dk_scaled_estimates("scan2", [_entry(kalshi_ticker="T", would_bet=1, scaled_prob=0.99)])
+    db.log_dk_scaled_estimates("scan3", [_entry(kalshi_ticker="T", would_bet=0, scaled_prob=0.22)])
+    rows = db.get_dk_scaled_shadow_rows()
+    assert len(rows) == 1
+    assert rows[0]["would_bet"] == 1 and rows[0]["scaled_prob"] == pytest.approx(0.99)
+
+
+def test_the_earliest_qualifying_scan_wins_not_the_latest(fresh_db):
+    """The bot acts on FIRST qualification and strategies_ever_filled_on then blocks
+    re-entry on that ticker -- so later re-evaluations would never have become
+    trades and must not be the row we score."""
+    db.log_dk_scaled_estimates("scan1", [_entry(kalshi_ticker="T", would_bet=1, scaled_prob=0.31)])
+    db.log_dk_scaled_estimates("scan2", [_entry(kalshi_ticker="T", would_bet=1, scaled_prob=0.77)])
+    rows = db.get_dk_scaled_shadow_rows()
+    assert len(rows) == 1 and rows[0]["scaled_prob"] == pytest.approx(0.31)
+
+
+def test_a_rung_that_never_qualified_keeps_its_first_evaluation(fresh_db):
+    db.log_dk_scaled_estimates("scan1", [_entry(kalshi_ticker="T", would_bet=0, scaled_prob=0.41)])
+    db.log_dk_scaled_estimates("scan2", [_entry(kalshi_ticker="T", would_bet=0, scaled_prob=0.52)])
+    rows = db.get_dk_scaled_shadow_rows()
+    assert len(rows) == 1 and rows[0]["scaled_prob"] == pytest.approx(0.41)
+
+
+def test_brier_is_not_weighted_by_how_long_a_rung_sat_around(fresh_db):
+    """THE BIAS THIS EXISTS TO KILL. A rung rescanned 10x and a rung scanned once
+    must contribute EQUALLY to the Brier score. Raw counting would give the first
+    one 10x the weight purely for appearing earlier in the day."""
+    for scan in range(10):  # perfectly wrong prediction, rescanned 10x
+        db.log_dk_scaled_estimates(f"s{scan}", [_entry(kalshi_ticker="LOUD", scaled_prob=1.0)])
+    db.log_dk_scaled_estimates("s99", [_entry(kalshi_ticker="QUIET", scaled_prob=0.0)])
+    for r in db.get_pending_dk_scaled_outcomes():
+        db.set_dk_scaled_outcome(r["id"], 0.0)  # actual = 0 for both
+
+    summary = db.get_dk_scaled_shadow_summary()
+    assert summary["n_settled"] == 2, "two distinct rungs, not eleven"
+    # LOUD contributes (1-0)^2 = 1.0, QUIET contributes (0-0)^2 = 0.0 -> mean 0.5.
+    # Raw counting would give (10*1.0 + 0.0)/11 = 0.909, hiding QUIET almost entirely.
+    assert summary["brier"] == pytest.approx(0.5)
+
+
+def test_dedup_applies_per_distance_bucket_too(fresh_db):
+    for scan in range(8):
+        db.log_dk_scaled_estimates(f"s{scan}", [_entry(kalshi_ticker="FAR", distance=4.0)])
+    db.log_dk_scaled_estimates("s99", [_entry(kalshi_ticker="NEAR", distance=0.2)])
+    for r in db.get_pending_dk_scaled_outcomes():
+        db.set_dk_scaled_outcome(r["id"], 1.0)
+    summary = db.get_dk_scaled_shadow_summary()
+    far = next(b for b in summary["buckets"] if b["range"] == "3+")
+    near = next(b for b in summary["buckets"] if b["range"] == "0–0.5")
+    assert far["n"] == 1 and near["n"] == 1, \
+        "distance buckets are the validation axis -- they must not be inflated either"
+
+
 # ── summary / calibration aggregation ────────────────────────────────────────────
 
 def test_summary_on_an_empty_table(fresh_db):

@@ -2408,9 +2408,14 @@ DK_SCALED_TEMPLATE = """<!DOCTYPE html>
   {% endif %}
 
   <div class="cards">
-    <div class="card"><div class="n">{{ summary.n }}</div><div class="l">Logged</div></div>
-    <div class="card"><div class="n">{{ summary.n_settled }}</div><div class="l">Settled</div></div>
-    <div class="card"><div class="n" style="color:var(--purple)">{{ summary.n_would_bet }}</div><div class="l">Would bet</div></div>
+    <div class="card"><div class="n">{{ summary.n }}</div><div class="l">Opportunities</div>
+      <div class="h">distinct rungs{% if summary.n_raw_rows and summary.n_raw_rows > summary.n %},
+        deduped from {{ summary.n_raw_rows }} scan rows (each rung is re-evaluated
+        every scan until first pitch){% endif %}</div></div>
+    <div class="card"><div class="n">{{ summary.n_settled }}</div><div class="l">Settled</div>
+      <div class="h">resolved against the real outcome — this is the sample that counts</div></div>
+    <div class="card"><div class="n" style="color:var(--purple)">{{ summary.n_would_bet }}</div><div class="l">Would bet</div>
+      <div class="h">cleared every gate; suppressed by shadow mode</div></div>
     <div class="card">
       <div class="n" style="{% if summary.brier is not none and summary.brier < 0.20 %}color:var(--green){% elif summary.brier is not none %}color:var(--red){% endif %}">
         {{ '%.4f'|format(summary.brier) if summary.brier is not none else '—' }}</div>

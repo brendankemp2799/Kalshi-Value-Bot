@@ -982,6 +982,38 @@ def set_dk_scaled_outcome(log_id: int, actual_outcome: float | None) -> None:
         )
 
 
+# ONE row per distinct opportunity, not per scan.
+#
+# core/value_detector.py::_detect_player_prop re-evaluates and re-logs every rung on
+# EVERY scan from the moment it first appears until first pitch, so a single real
+# opportunity produces 10-15 near-identical rows (measured: 206 rows from one scan
+# on 2026-08-26, covering far fewer distinct rungs). Counting those raw does two bad
+# things: it inflates `n` so the page looks validated long before it is, and it
+# weights the Brier score toward rungs that merely sat around longer rather than
+# toward independent observations.
+#
+# (kalshi_ticker, kalshi_side) is the opportunity key -- a Kalshi ticker names one
+# rung of one player's ladder in one game and never recurs, and each side is a
+# separate bet priced off its own number.
+#
+# Which of the duplicates survives mirrors what the bot would actually have DONE:
+# `would_bet DESC` first (if any scan would have fired, that decision is the one
+# being validated), then `scanned_at ASC` (the EARLIEST such scan -- the bot acts on
+# first qualification, and storage/db.py::strategies_ever_filled_on then blocks
+# re-entry on that ticker, so later re-evaluations would never have become trades).
+# For a rung that never qualified, this keeps its first evaluation, which is the
+# like-for-like comparison.
+_DK_DEDUPED = """
+    SELECT * FROM (
+        SELECT *, ROW_NUMBER() OVER (
+            PARTITION BY kalshi_ticker, kalshi_side
+            ORDER BY would_bet DESC, scanned_at ASC, id ASC
+        ) AS _rn
+        FROM dk_scaled_shadow_log
+    ) WHERE _rn = 1
+"""
+
+
 def get_dk_scaled_shadow_summary(min_distance: float = 0.0) -> dict:
     """Aggregate calibration stats for settled DK-scaled estimates.
 
@@ -990,26 +1022,33 @@ def get_dk_scaled_shadow_summary(min_distance: float = 0.0) -> dict:
     "how does prediction error change with distance from the Pinnacle anchor."
     Buckets on abs(distance) since the direction (above/below the anchor) is not
     itself the hypothesis being tested here.
+
+    Every count here is DEDUPLICATED to one row per (ticker, side) -- see _DK_DEDUPED
+    for why raw row counts would badly overstate the sample.
     """
     with get_connection() as conn:
         try:
             rows = conn.execute(
-                "SELECT scaled_prob, actual_outcome, distance, would_bet, edge "
-                "FROM dk_scaled_shadow_log WHERE actual_outcome IS NOT NULL"
+                f"SELECT scaled_prob, actual_outcome, distance, would_bet, edge "
+                f"FROM ({_DK_DEDUPED}) WHERE actual_outcome IS NOT NULL"
             ).fetchall()
         except sqlite3.OperationalError:
-            return {"n": 0, "n_settled": 0, "brier": None, "buckets": [], "n_would_bet": 0}
+            return {"n": 0, "n_settled": 0, "brier": None, "buckets": [],
+                    "n_would_bet": 0, "n_raw_rows": 0}
 
     n_settled = len(rows)
     with get_connection() as conn:
-        n_total = conn.execute("SELECT COUNT(*) FROM dk_scaled_shadow_log").fetchone()[0]
+        n_total = conn.execute(f"SELECT COUNT(*) FROM ({_DK_DEDUPED})").fetchone()[0]
         n_would_bet = conn.execute(
-            "SELECT COUNT(*) FROM dk_scaled_shadow_log WHERE would_bet = 1"
+            f"SELECT COUNT(*) FROM ({_DK_DEDUPED}) WHERE would_bet = 1"
         ).fetchone()[0]
+        # Kept visible so the page can show how much re-scanning is behind the
+        # deduped figure -- a large gap is normal, not a fault.
+        n_raw_rows = conn.execute("SELECT COUNT(*) FROM dk_scaled_shadow_log").fetchone()[0]
 
     if n_settled == 0:
         return {"n": n_total, "n_settled": 0, "brier": None, "buckets": [],
-                "n_would_bet": n_would_bet}
+                "n_would_bet": n_would_bet, "n_raw_rows": n_raw_rows}
 
     brier = sum((r["scaled_prob"] - r["actual_outcome"]) ** 2 for r in rows) / n_settled
 
@@ -1032,18 +1071,23 @@ def get_dk_scaled_shadow_summary(min_distance: float = 0.0) -> dict:
 
     return {
         "n": n_total, "n_settled": n_settled, "n_would_bet": n_would_bet,
-        "brier": round(brier, 4), "buckets": buckets,
+        "brier": round(brier, 4), "buckets": buckets, "n_raw_rows": n_raw_rows,
     }
 
 
 def get_dk_scaled_shadow_rows(limit: int = 200, settled_only: bool = False) -> list[sqlite3.Row]:
     """Most recent DK-scaled shadow rows, newest first, for the /dk-scaled dashboard
-    table. settled_only restricts to rows with a resolved actual_outcome."""
+    table. settled_only restricts to rows with a resolved actual_outcome.
+
+    Deduplicated to one row per (ticker, side) -- see _DK_DEDUPED. Without this the
+    table shows the same rung 10-15 times in a row and the operator cannot tell how
+    many distinct opportunities are actually behind it.
+    """
     where = "WHERE actual_outcome IS NOT NULL" if settled_only else ""
     with get_connection() as conn:
         try:
             return conn.execute(
-                f"SELECT * FROM dk_scaled_shadow_log {where} "
+                f"SELECT * FROM ({_DK_DEDUPED}) {where} "
                 f"ORDER BY scanned_at DESC LIMIT ?",
                 (limit,),
             ).fetchall()
