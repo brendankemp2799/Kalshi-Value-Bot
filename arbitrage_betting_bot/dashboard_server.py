@@ -2078,9 +2078,6 @@ def main() -> None:
     app.run(host=args.host, port=args.port, debug=False)
 
 
-if __name__ == "__main__":
-    main()
-
 
 # Companion to SCAN_TEMPLATE for the market-making side. Deliberately a separate,
 # self-contained page rather than a tab on /scan: the two strategies answer
@@ -2577,3 +2574,8 @@ CLV_TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>
 """
+
+
+if __name__ == "__main__":
+    main()
+
