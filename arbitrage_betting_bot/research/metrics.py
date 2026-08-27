@@ -24,13 +24,15 @@ import argparse
 import json
 import math
 import os
+import random
 import sys
 from collections import Counter
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from statistics import NormalDist
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from storage.db import get_connection  # noqa: E402  (read-only use only)
+from storage.db import get_connection, get_qualifying_candidates_with_outcomes  # noqa: E402  (read-only use only)
 
 RESEARCH_DIR = Path(__file__).parent
 FINDINGS_DIR = RESEARCH_DIR / "findings"
@@ -86,6 +88,28 @@ def load_positions(
     return out
 
 
+def _parse_entered_at(value: str | None) -> datetime | None:
+    """Same tolerant ISO parsing as core/clv_analytics.py::_parse_dt. `entered_at` is
+    stored as a naive `datetime.utcnow().isoformat()` string (see storage/db.py), so a
+    naive result is treated as already-UTC rather than left ambiguous."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _week_start(dt: datetime) -> str:
+    """ISO date of the Monday starting dt's week -- mirrors the bucketing in
+    core/clv_analytics.py::weekly_clv_series so the two dashboards agree on what
+    "this week" means."""
+    return (dt - timedelta(days=dt.weekday())).date().isoformat()
+
+
 # ── Core stats ───────────────────────────────────────────────────────────────────
 
 def roi(positions: list[dict]) -> tuple[float | None, int]:
@@ -124,6 +148,59 @@ def sharpe_ratio(positions: list[dict]) -> tuple[float | None, int]:
     return round(mean / stdev, 3), n
 
 
+def roi_confidence_interval(positions: list[dict], confidence: float = 0.90) -> dict:
+    """
+    Normal-approximation confidence interval on the mean per-trade return
+    (pnl/stake, same series sharpe_ratio() builds above) via statistics.NormalDist
+    -- stdlib only, no numpy/scipy in this repo. Answers the question a bare ROI
+    number can't: is this result distinguishable from a zero-edge outcome at this
+    sample size, or indistinguishable from noise.
+
+    Two caveats before treating `significant` as a verdict:
+      - It's a normal approximation of the sampling distribution of the mean, most
+        trustworthy at larger n -- treat it as directional, not exact, below
+        roughly the same n~30 threshold sharpe_ratio's docstring already uses.
+      - It treats every settled bet as an independent draw and does NOT correct
+        for autocorrelation across bets placed on the same day/slate (correlated
+        line moves, correlated matchups). That likely understates the true CI
+        width whenever volume clusters into a few slates. Known limitation,
+        flagged rather than fixed here.
+
+    Returns {"n", "mean_roi_pct", "ci_low_pct", "ci_high_pct", "confidence",
+    "significant"} on a computable sample. Mirrors sharpe_ratio's/max_drawdown's
+    (None, n)-style edge-case handling for n < 2 or zero-variance returns, just
+    shaped as a dict since callers need more than one field here: returns
+    {"n": n, "insufficient_data": True} in that case.
+    """
+    settled = [p for p in positions if p.get("pnl") is not None and p.get("stake")]
+    n = len(settled)
+    if n < 2:
+        return {"n": n, "insufficient_data": True}
+    returns = [p["pnl"] / p["stake"] for p in settled]
+    mean = sum(returns) / n
+    variance = sum((x - mean) ** 2 for x in returns) / (n - 1)
+    stdev = math.sqrt(variance)
+    if stdev == 0:
+        return {"n": n, "insufficient_data": True}
+    se = stdev / math.sqrt(n)
+    z = NormalDist().inv_cdf(0.5 + confidence / 2)
+    lo, hi = mean - z * se, mean + z * se
+    return {
+        "n": n,
+        "mean_roi_pct": round(mean * 100, 2),
+        "ci_low_pct": round(lo * 100, 2),
+        "ci_high_pct": round(hi * 100, 2),
+        "confidence": confidence,
+        "significant": lo > 0.0 or hi < 0.0,
+        # In-band, not just in the docstring: `significant=True` at n=5 and
+        # `significant=True` at n=200 look identical unless the reliability
+        # caveat travels with the data itself, not just the source comment.
+        "note": (f"n={n} < 30 — normal approximation is directional only at this "
+                  "sample size, not exact." if n < 30 else
+                  f"n={n} >= 30 — normal approximation should be reasonably reliable."),
+    }
+
+
 def max_drawdown() -> tuple[float | None, int]:
     """Peak-to-trough decline in the bankroll_log history, as a fraction."""
     with get_connection() as conn:
@@ -151,8 +228,93 @@ def edge_calibration(positions: list[dict]) -> list[dict]:
         bucket = [p for p in settled if lo <= p["edge"] < hi]
         r, n = roi(bucket)
         w, _ = win_rate(bucket)
-        out.append({"edge_bucket": label, "n": n, "roi_pct": r, "win_rate_pct": w})
+        out.append({
+            # NB: this "n" (roi()'s settled filter: pnl is not None) and the
+            # nested roi_ci["n"] (also requires a truthy stake) can disagree if
+            # a settled position ever has stake 0/None -- shouldn't happen for
+            # a real placed bet, but noted since nothing enforces it structurally.
+            "edge_bucket": label, "n": n, "roi_pct": r, "win_rate_pct": w,
+            "roi_ci": roi_confidence_interval(bucket),
+        })
     return out
+
+
+def weekly_performance_series(positions: list[dict]) -> list[dict]:
+    """ROI/win-rate per ISO week (Monday start), oldest first -- the trend line an
+    all-time roi()/win_rate() average can't show. At ~1.8 trades/day, an edge that's
+    decaying (model drift, or the market adapting to the bot) would otherwise sit
+    hidden inside a smoothed all-time number until it had moved the average by a lot.
+    Only settled positions (pnl is not None -- same filter roi()/win_rate() already
+    use) contribute; weeks with zero settled positions are omitted rather than
+    fabricated with nulls, matching clv_analytics.weekly_clv_series' convention."""
+    settled = [p for p in positions if p.get("pnl") is not None]
+    buckets: dict[str, list[dict]] = {}
+    for p in settled:
+        entered = _parse_entered_at(p.get("entered_at"))
+        if entered is None:
+            continue
+        buckets.setdefault(_week_start(entered), []).append(p)
+
+    out = []
+    for week in sorted(buckets):
+        group = buckets[week]
+        r, n = roi(group)
+        w, _ = win_rate(group)
+        out.append({"week": week, "n": n, "roi_pct": r, "win_rate_pct": w})
+    return out
+
+
+def weekly_edge_calibration_series(positions: list[dict], recent_weeks: int = 4) -> dict:
+    """Calibration DRIFT check: recent `recent_weeks` weeks of settled positions vs.
+    everything older, each run through the existing edge_calibration() unmodified.
+
+    Deliberately two buckets, not a per-week x per-edge-bucket grid -- at this bot's
+    trade volume a full grid would be mostly empty cells (most edge buckets settle a
+    handful of trades a week at most), which would mislead more than it would reveal.
+    Two buckets is the coarsest split that still isolates "is the edge model's
+    real-world accuracy holding up recently, or has it drifted from its own history."
+    """
+    settled = [p for p in positions if p.get("pnl") is not None]
+    dated = [(dt, p) for p in settled
+             for dt in [_parse_entered_at(p.get("entered_at"))] if dt is not None]
+
+    def _side(group: list[dict], dts: list[datetime]) -> dict:
+        if not group:
+            return {"calibration": edge_calibration([]), "n": 0, "week_range": None}
+        return {
+            "calibration": edge_calibration(group),
+            "n": len(group),
+            "week_range": f"{_week_start(min(dts))} to {_week_start(max(dts))}",
+        }
+
+    if not dated:
+        empty = _side([], [])
+        return {
+            "recent": empty,
+            "older": empty,
+            "note": "No settled positions with a parseable entered_at -- nothing to compare.",
+        }
+
+    latest = max(dt for dt, _ in dated)
+    cutoff = latest - timedelta(weeks=recent_weeks)
+    recent_pairs = [(dt, p) for dt, p in dated if dt > cutoff]
+    older_pairs = [(dt, p) for dt, p in dated if dt <= cutoff]
+
+    recent_side = _side([p for _, p in recent_pairs], [dt for dt, _ in recent_pairs])
+    older_side = _side([p for _, p in older_pairs], [dt for dt, _ in older_pairs])
+
+    # Same "don't over-read a small sample" convention as summary_report()'s and
+    # scanned_candidates_summary()'s sample_size_warning fields, just tightened to
+    # n<20 here since each side is further split into 4 edge buckets internally --
+    # by the time a side's n=20, most of its buckets are still single digits.
+    notes = []
+    if recent_side["n"] < 20:
+        notes.append(f"recent n={recent_side['n']} < 20 -- treat as a first look, not a conclusion")
+    if older_side["n"] < 20:
+        notes.append(f"older n={older_side['n']} < 20 -- treat as a first look, not a conclusion")
+    note = "; ".join(notes) if notes else "Both sides have n>=20 -- a real drift comparison, not just noise."
+
+    return {"recent": recent_side, "older": older_side, "note": note}
 
 
 def breakdown_by(positions: list[dict], key: str) -> list[dict]:
@@ -269,6 +431,128 @@ def fee_and_fill_stats(positions: list[dict]) -> dict:
     }
 
 
+def _hypothetical_positions(candidates: list[dict], unit_stake: float) -> list[dict]:
+    """Turn book_probability_log candidate rows into position-shaped {pnl, stake}
+    dicts at a flat unit_stake, so roi()/win_rate() (which only know how to read
+    `pnl`/`stake`) can be reused unchanged instead of reimplementing that math
+    here a third time.
+
+    P&L formula mirrors storage/db.py::settle_position() exactly (won:
+    stake*(1-price)/price, lost: -stake) with price=kalshi_price and win/loss
+    read off actual_outcome (1.0/0.0 -- see get_qualifying_candidates_with_
+    outcomes()'s docstring for the encoding). Unlike settle_position(), no
+    entry_fee_paid is subtracted: these candidates were never filled, so there
+    is no real fee to read, only the estimate real trades don't rely on
+    elsewhere in this file. Rows with a missing/non-positive kalshi_price or a
+    missing actual_outcome are skipped (can't price a hypothetical bet)."""
+    out = []
+    for c in candidates:
+        price = c.get("kalshi_price")
+        outcome = c.get("actual_outcome")
+        if price is None or price <= 0 or outcome is None:
+            continue
+        pnl = unit_stake * (1.0 - price) / price if outcome else -unit_stake
+        out.append({"pnl": pnl, "stake": unit_stake})
+    return out
+
+
+def counterfactual_backtest(
+    candidates: list[dict],
+    real_positions: list[dict],
+    unit_stake: float = 10.0,
+    seed: int = 42,
+) -> dict:
+    """Would the bot have done just as well betting EVERY qualifying candidate,
+    or a random same-sized subset of them, instead of ranking by composite
+    score (edge x Kelly fraction x book_confidence x agreement) and taking the
+    top 5/day? Compares three legs at the same flat unit_stake so they're
+    apples-to-apples:
+
+      flat_all_qualifiers    -- every row in `candidates` bet at unit_stake.
+      random_n_of_qualifiers -- one random.Random(seed) draw (not resampled or
+        averaged -- a single seeded draw keeps this reproducible) of
+        len([c for c in candidates if c.get("position_id")]) candidates from
+        the full pool, i.e. the same NUMBER of bets the bot actually placed
+        out of this qualifying population, picked without the ranking.
+      actual                 -- the real realized numbers from `real_positions`,
+        via the existing roi()/win_rate() (not reimplemented here).
+
+    Deterministic: candidates/real_positions are plain data (no DB access in
+    this function) and random.Random(seed) is a fresh, locally-scoped
+    generator (not the global `random` module state), so identical inputs
+    always produce identical output regardless of call order or what else in
+    the process has touched the `random` module -- but note this also depends
+    on `candidates` arriving in a stable order (see get_qualifying_candidates_
+    with_outcomes()'s ORDER BY).
+
+    Each of flat_roi/rand_roi can independently be None (not enough priced/
+    settled candidates on that leg specifically -- e.g. a random draw of size
+    0 when nothing has ever been placed yet). The verdict logic below treats
+    "this baseline isn't computable" as its own case, distinct from "actual
+    beat/lagged it" -- conflating a None comparison with a loss would silently
+    misreport "no data" as "the ranking underperformed."
+    """
+    all_hyp = _hypothetical_positions(candidates, unit_stake)
+    flat_roi, flat_n = roi(all_hyp)
+    flat_win, _ = win_rate(all_hyp)
+
+    n_actual_placed = len([c for c in candidates if c.get("position_id")])
+    k = min(n_actual_placed, len(candidates))
+    sampled = random.Random(seed).sample(candidates, k) if k > 0 else []
+    sampled_hyp = _hypothetical_positions(sampled, unit_stake)
+    rand_roi, rand_n = roi(sampled_hyp)
+    rand_win, _ = win_rate(sampled_hyp)
+
+    act_roi, act_n = roi(real_positions)
+    act_win, _ = win_rate(real_positions)
+
+    baselines_available = [b for b in (("flat-all-qualifiers", flat_roi), ("random subset", rand_roi))
+                           if b[1] is not None]
+
+    if act_roi is None or act_n == 0:
+        verdict = "NO DATA — no settled real positions to compare against the baselines."
+    elif not baselines_available:
+        verdict = (f"BASELINES UNAVAILABLE — actual ROI is {act_roi}% (n={act_n}) but "
+                   "neither baseline has enough priced/settled qualifying candidates "
+                   "to compare against yet.")
+    elif len(baselines_available) == 1:
+        name, base_roi = baselines_available[0]
+        missing = "random subset" if name == "flat-all-qualifiers" else "flat-all-qualifiers"
+        beat = act_roi > base_roi
+        verdict = (f"PARTIAL COMPARISON — actual {act_roi}% {'beat' if beat else 'lagged'} "
+                   f"the only available baseline ({name}, {base_roi}%); {missing} isn't "
+                   "computable yet (not enough priced/settled candidates on that leg), "
+                   "so this is not a full verdict.")
+    else:
+        beats_flat = act_roi > flat_roi
+        beats_random = act_roi > rand_roi
+        if beats_flat and beats_random:
+            verdict = (f"RANKING ADDS VALUE — actual {act_roi}% beat both flat-all-"
+                       f"qualifiers ({flat_roi}%) and a random same-sized subset "
+                       f"({rand_roi}%).")
+        elif not beats_flat and not beats_random:
+            verdict = (f"RANKING NOT ADDING VALUE — actual {act_roi}% lagged both "
+                       f"flat-all-qualifiers ({flat_roi}%) and a random same-sized "
+                       f"subset ({rand_roi}%); the composite-score ranking is "
+                       "indistinguishable from (or worse than) not ranking at all.")
+        else:
+            verdict = (f"MIXED — actual {act_roi}% beat one baseline but not the other "
+                       f"(flat-all-qualifiers {flat_roi}%, random subset {rand_roi}%); "
+                       "not enough signal yet to call the ranking a clear net positive.")
+
+    return {
+        "unit_stake": unit_stake,
+        "seed": seed,
+        "flat_all_qualifiers": {"n": flat_n, "roi_pct": flat_roi, "win_rate_pct": flat_win},
+        "random_n_of_qualifiers": {
+            "n": rand_n, "roi_pct": rand_roi, "win_rate_pct": rand_win,
+            "n_sampled": k,
+        },
+        "actual": {"n": act_n, "roi_pct": act_roi, "win_rate_pct": act_win},
+        "verdict": verdict,
+    }
+
+
 # ── Top-level report ─────────────────────────────────────────────────────────────
 
 def mm_health(days: int = 7, is_paper: bool = False) -> dict:
@@ -365,6 +649,7 @@ def summary_report(is_paper: bool = False) -> dict:
         "n_open": open_n,
         "roi_pct": r,
         "win_rate_pct": w,
+        "roi_ci": roi_confidence_interval(positions),
         "sharpe": {"value": sr, "n": sn, "note": "per-trade, not annualized; treat as noise below n~30"},
         "max_drawdown": {"value": dd, "n_snapshots": dd_n},
         "by_sport": breakdown_by(positions, "sport"),
@@ -373,8 +658,12 @@ def summary_report(is_paper: bool = False) -> dict:
         "by_fill_type": breakdown_by(positions, "fill_type"),
         "by_close_reason": breakdown_by([p for p in positions if p.get("close_reason")], "close_reason"),
         "edge_calibration": edge_calibration(positions),
+        "weekly_performance": weekly_performance_series(positions),
+        "calibration_drift": weekly_edge_calibration_series(positions),
         "fees_and_fills": fee_and_fill_stats(positions),
         "scanned_candidates": scanned_candidates_summary(),
+        "counterfactual": counterfactual_backtest(
+            get_qualifying_candidates_with_outcomes(is_paper=is_paper), positions),
         "market_making": mm_health(is_paper=is_paper),
         "ambiguous_matches": ambiguous_match_report(),
         "sample_size_warning": (

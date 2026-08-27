@@ -1127,6 +1127,69 @@ def get_positions_for_clv_analytics(is_paper: bool = False) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def get_qualifying_candidates_with_outcomes(is_paper: bool = False) -> list[dict]:
+    """Every book_probability_log row that qualified as a value bet AND has a
+    resolved real-world outcome -- the population counterfactual_backtest() in
+    research/metrics.py needs to ask "would betting the whole qualifying pool
+    (or a random subset of it) have done as well as the bot's composite-score
+    ranking actually did." WHERE-filtered in SQL, not loaded-then-filtered --
+    see load_scanned_candidates()'s docstring for why an unfiltered read of
+    this table OOM-killed the production cron job.
+
+    Filters: status = 'value' (every edge-allowed candidate gets status='value'
+    regardless of whether it was actually placed -- see
+    core/value_detector.py; position_id is what distinguishes "qualified and
+    placed" from "qualified but skipped", e.g. blocked by the daily order cap,
+    correlation rules, or exposure limits, or just not in that scan's top-5-by-
+    composite-score -- NULL status is a distinct, legacy case: rows written
+    before the 2026-08-11 schema widening, which never got a status at all and
+    are already excluded by the edge IS NOT NULL filter below), actual_outcome
+    IS NOT NULL (resolved -- see encoding note below), edge IS NOT NULL
+    (pre-widening rows have no edge to size a hypothetical bet from).
+
+    actual_outcome encoding (see execution/auto_settle.py::
+    _backfill_book_probability_outcomes()): 1.0 = the side actually recorded
+    in this row (kalshi_side) resolved TRUE, 0.0 = it resolved FALSE. A void
+    market is written back as None (same as "not yet resolved" -- the backfill
+    has no separate void encoding), so void rows are indistinguishable from
+    pending ones and are correctly excluded by the actual_outcome IS NOT NULL
+    filter either way. This lines up directly with storage/db.py::
+    settle_position()'s win/loss formula (won: stake*(1-price)/price, lost:
+    -stake) with price = kalshi_price -- a hypothetical bet on this row would
+    have been a "won" if actual_outcome == 1.0, "lost" if == 0.0. Entry fees
+    are NOT modeled here (these candidates were never filled, so there is no
+    real fee to read, unlike settle_position's entry_fee_paid) -- callers
+    computing hypothetical P&L should treat it as pre-fee.
+
+    is_paper is accepted for interface consistency with get_all_positions() /
+    get_positions_for_clv_analytics() above, but book_probability_log has no
+    is_paper column -- every scan cycle logs candidates regardless of which
+    mode the bot process was started in, and most rows never link to a
+    position (position_id IS NULL) so there is no reliable way to attribute a
+    candidate row to paper vs. live after the fact. It is therefore currently
+    a no-op; left in the signature so a future caller that DOES need the
+    distinction (e.g. by joining position_id to positions.is_paper for the
+    minority of linked rows) has an obvious place to add it rather than
+    silently mixing modes.
+
+    ORDER BY id: not meaningful data, but pins row order so a caller sampling
+    from this list (e.g. counterfactual_backtest()'s seeded random.sample)
+    gets identical results on identical data, rather than relying on SQLite's
+    unspecified default scan order happening to be stable.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT kalshi_price, edge, actual_outcome, position_id, sport,
+                   bet_type, scanned_at
+            FROM book_probability_log
+            WHERE status = 'value' AND actual_outcome IS NOT NULL AND edge IS NOT NULL
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_bankroll_history() -> list[sqlite3.Row]:
     """All bankroll snapshots, oldest first."""
     with get_connection() as conn:
