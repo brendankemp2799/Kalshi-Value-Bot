@@ -1692,6 +1692,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <a href="/mm" style="font-size:12px;color:var(--blue);text-decoration:none;padding:4px 10px;border:1px solid var(--blue);border-radius:6px;white-space:nowrap;">Market Making</a>
     <a href="/dk-scaled" style="font-size:12px;color:var(--blue);text-decoration:none;padding:4px 10px;border:1px solid var(--blue);border-radius:6px;white-space:nowrap;">DK-Scaled Shadow</a>
     <span id="mode-badge" class="mode-badge">—</span>
+    <span class="refresh-info" id="credits-badge">Credits: —</span>
     <span class="refresh-info" id="last-updated">Loading…</span>
   </div>
 </header>
@@ -1968,11 +1969,24 @@ async function refresh() {
     badge.textContent = d.mode;
     badge.className = 'mode-badge ' + (d.mode === 'PAPER' ? 'mode-paper' : 'mode-live');
     renderCalibration(d.calibration);
+    renderCredits(d.api_credits);
     document.getElementById('last-updated').textContent =
       'Updated ' + new Date().toLocaleTimeString();
   } catch (e) {
     document.getElementById('last-updated').textContent = 'Error fetching data';
   }
+}
+
+function renderCredits(c) {
+  const el = document.getElementById('credits-badge');
+  if (!c || c.remaining == null) { el.textContent = 'Credits: —'; return; }
+  // Thresholds carried over from the old removed credits card: <100 remaining
+  // is red (about to run dry), <500 is a caution amber, otherwise green.
+  const remClass = c.remaining < 100 ? 'neg' : c.remaining < 500 ? 'neutral' : 'pos';
+  const remaining = c.remaining.toLocaleString();
+  const usedTotal = c.used_total != null ? c.used_total.toLocaleString() : '—';
+  el.innerHTML = '<span class="' + remClass + '">' + remaining +
+    '</span> credits left · ' + usedTotal + ' used this cycle';
 }
 
 refresh();

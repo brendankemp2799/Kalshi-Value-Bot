@@ -32,7 +32,9 @@ from pathlib import Path
 from statistics import NormalDist
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from storage.db import get_connection, get_qualifying_candidates_with_outcomes  # noqa: E402  (read-only use only)
+from storage.db import (  # noqa: E402  (read-only use only)
+    get_connection, get_qualifying_candidates_with_outcomes,
+)
 
 RESEARCH_DIR = Path(__file__).parent
 FINDINGS_DIR = RESEARCH_DIR / "findings"
@@ -46,6 +48,17 @@ EDGE_CALIBRATION_BUCKETS = [
     (0.03, 0.05, "3-5%"),
     (0.05, 0.08, "5-8%"),
     (0.08, float("inf"), "8%+"),
+]
+
+# Same rung-distance-from-anchor buckets as storage/db.py::get_dk_scaled_shadow_summary,
+# kept in sync deliberately so a profitability breakdown and a calibration breakdown can
+# be read side by side without re-deriving whether "the 1.5-3 bucket" means the same thing
+# in both places.
+DK_DISTANCE_BUCKETS = [
+    (0.0, 0.5, "0-0.5"),
+    (0.5, 1.5, "0.5-1.5"),
+    (1.5, 3.0, "1.5-3"),
+    (3.0, float("inf"), "3+"),
 ]
 
 
@@ -549,6 +562,96 @@ def counterfactual_backtest(
             "n_sampled": k,
         },
         "actual": {"n": act_n, "roi_pct": act_roi, "win_rate_pct": act_win},
+        "verdict": verdict,
+    }
+
+
+def _dk_hypothetical_positions(rows: list[dict], unit_stake: float) -> list[dict]:
+    """Same shape and formula as _hypothetical_positions() above, applied to
+    dk_scaled_shadow_log rows instead of book_probability_log rows: won =
+    stake*(1-price)/price, lost = -stake, price = kalshi_price, win/loss read
+    off actual_outcome (1.0/0.0 -- see storage/db.py's DDL comment on that
+    column). Kept as a separate function rather than reused across both
+    tables because the two source tables have different column sets and
+    different callers reason about them independently; the formula itself is
+    intentionally identical."""
+    out = []
+    for r in rows:
+        price = r.get("kalshi_price")
+        outcome = r.get("actual_outcome")
+        if price is None or price <= 0 or outcome is None:
+            continue
+        pnl = unit_stake * (1.0 - price) / price if outcome else -unit_stake
+        out.append({"pnl": pnl, "stake": unit_stake})
+    return out
+
+
+def dk_scaled_shadow_backtest(rows: list[dict], unit_stake: float = 10.0) -> dict:
+    """Would the DK-scaled player-prop estimator's picks actually have made
+    money, not just been well-calibrated? storage/db.py::
+    get_dk_scaled_shadow_summary()'s Brier score answers "was scaled_prob close
+    to the truth" -- that is necessary but not sufficient for profitability,
+    and it is not the question that decides whether DK_SCALED_SHADOW_MODE gets
+    flipped off. This is.
+
+    Two top-line comparisons, both hypothetical (nothing here was actually
+    filled -- shadow mode never places an order):
+      would_bet   -- ROI/win-rate on only the rows that cleared every real gate
+                     (would_bet=1). This is the EXACT population that becomes
+                     real trades the day this feature goes live -- the number
+                     that matters most.
+      all_settled -- ROI/win-rate on every settled estimate regardless of
+                     would_bet. Comparing the two shows whether the edge/
+                     quality gate is actually selecting the better bets, or
+                     just cutting volume without improving the average.
+
+    Plus a by-distance-bucket profitability breakdown on the would_bet subset,
+    using the same rung buckets as get_dk_scaled_shadow_summary's Brier
+    breakdown (DK_DISTANCE_BUCKETS, kept in sync with it on purpose). This is
+    the direct test for a confound flagged when that Brier breakdown first came
+    back non-monotonic (worse at 1.5-3 rungs than at 0.5-1.5, then BEST of all
+    at 3+): Brier score alone can't distinguish "this bucket is well-calibrated"
+    from "this bucket is full of extreme, easy-to-score long shots" -- ROI can.
+    If the 3+ bucket's ROI is also strong, that's real signal; if it's flat or
+    negative despite the good Brier, the Brier result was a probability-
+    extremity artifact, not evidence the estimator is trustworthy that far out.
+    """
+    would_bet_rows = [r for r in rows if r.get("would_bet")]
+    would_bet_hyp = _dk_hypothetical_positions(would_bet_rows, unit_stake)
+    wb_roi, wb_n = roi(would_bet_hyp)
+    wb_win, _ = win_rate(would_bet_hyp)
+    wb_ci = roi_confidence_interval(would_bet_hyp)
+
+    all_hyp = _dk_hypothetical_positions(rows, unit_stake)
+    all_roi, all_n = roi(all_hyp)
+    all_win, _ = win_rate(all_hyp)
+
+    by_distance = []
+    for lo, hi, label in DK_DISTANCE_BUCKETS:
+        bucket_rows = [r for r in would_bet_rows if lo <= abs(r.get("distance") or 0.0) < hi]
+        bucket_hyp = _dk_hypothetical_positions(bucket_rows, unit_stake)
+        b_roi, b_n = roi(bucket_hyp)
+        b_win, _ = win_rate(bucket_hyp)
+        by_distance.append({
+            "range": label, "n": b_n, "roi_pct": b_roi, "win_rate_pct": b_win,
+            "roi_ci": roi_confidence_interval(bucket_hyp),
+        })
+
+    if wb_roi is None:
+        verdict = ("NO DATA — no would-bet estimate has both a priced kalshi_price "
+                   "and a settled outcome yet.")
+    else:
+        sig = wb_ci.get("significant")
+        sig_text = "significant" if sig else "not yet distinguishable from zero"
+        conf_pct = wb_ci.get("confidence", 0.9) * 100
+        verdict = (f"WOULD-BET ROI {wb_roi}% (n={wb_n}, win rate {wb_win}%) — "
+                   f"{sig_text} at {conf_pct:.0f}% confidence.")
+
+    return {
+        "unit_stake": unit_stake,
+        "would_bet": {"n": wb_n, "roi_pct": wb_roi, "win_rate_pct": wb_win, "roi_ci": wb_ci},
+        "all_settled": {"n": all_n, "roi_pct": all_roi, "win_rate_pct": all_win},
+        "by_distance_bucket": by_distance,
         "verdict": verdict,
     }
 

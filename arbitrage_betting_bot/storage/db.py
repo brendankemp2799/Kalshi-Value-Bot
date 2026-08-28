@@ -1095,6 +1095,30 @@ def get_dk_scaled_shadow_rows(limit: int = 200, settled_only: bool = False) -> l
             return []
 
 
+def get_dk_scaled_settled_rows() -> list[dict]:
+    """Every settled DK-scaled shadow-log estimate, deduplicated to one row per
+    (ticker, side) -- see _DK_DEDUPED. Feeds research/metrics.py::
+    dk_scaled_shadow_backtest(), the "would betting these have been profitable"
+    follow-up to get_dk_scaled_shadow_summary()'s calibration-only Brier score.
+
+    Unlike get_dk_scaled_shadow_rows() (built for a paginated, most-recent-first
+    dashboard table), this has no LIMIT -- a backtest needs the whole settled
+    population, and this table is small enough (four figures as of 2026-08-26)
+    that loading it all is not the book_probability_log OOM risk documented on
+    load_scanned_candidates() above; that table is two orders of magnitude
+    larger and never pruned, this one settles at the bot's trade-evaluation
+    rate, not its raw-scan rate."""
+    with get_connection() as conn:
+        try:
+            rows = conn.execute(
+                f"SELECT kalshi_price, edge, distance, would_bet, actual_outcome, "
+                f"sport, market_key FROM ({_DK_DEDUPED}) WHERE actual_outcome IS NOT NULL"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        return [dict(r) for r in rows]
+
+
 # ── Dashboard Queries ─────────────────────────────────────────────────────────
 
 def get_all_positions(is_paper: bool = False) -> list[sqlite3.Row]:
