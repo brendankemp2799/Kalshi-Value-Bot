@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Callable
 
 import sys
 import os
@@ -250,7 +251,11 @@ def verify_market_identity(opp: ValueOpportunity) -> str | None:
     return None
 
 
-def execute_trade(opp: ValueOpportunity, sizing: BetSizing) -> tuple[str, str, str, str, float, str, float]:
+def execute_trade(
+    opp: ValueOpportunity,
+    sizing: BetSizing,
+    on_order_placed: Callable[[str], None] | None = None,
+) -> tuple[str, str, str, str, float, str, float]:
     """
     Place a live Kalshi order for the given opportunity.
 
@@ -261,6 +266,9 @@ def execute_trade(opp: ValueOpportunity, sizing: BetSizing) -> tuple[str, str, s
     actual_stake: dollars actually filled (0.0 on failure)
     fill_type: "maker" | "taker" on success (derived from fee_paid) | "" on failure
     fee_paid: actual dollars Kalshi charged for this fill (0.0 on failure)
+    on_order_placed: passed straight through to kalshi_executor.place_order() — see
+                      its docstring. Not called at all if verify_market_identity()
+                      refuses the order before any Kalshi call is made.
     """
     from execution import kalshi_executor
 
@@ -301,5 +309,6 @@ def execute_trade(opp: ValueOpportunity, sizing: BetSizing) -> tuple[str, str, s
         commence_time=me.odds_event.commence_time,
         edge=opp.edge,
         maker_only=opp.maker_only,
+        on_order_placed=on_order_placed,
     )
     return order_id, status, side, reason, actual_stake, fill_type, fee_paid

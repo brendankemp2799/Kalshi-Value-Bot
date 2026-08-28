@@ -150,6 +150,35 @@ def test_h2h_no_cross_game_mismatch():
     assert len(matched) == 0
 
 
+def test_h2h_no_cross_game_mismatch_houston_boston_substring_collision():
+    """Regression for the 2026-08-28 incident: two real orders were priced off
+    Houston Astros @ New York Mets but executed on the Yankees @ Red Sox markets.
+
+    "New York Y" (Kalshi's truncated Yankees label) legitimately fuzzy-matches
+    "New York Mets" as a home-team candidate — that part is by design, since the
+    same truncation has to match the real "New York Yankees" too. What's supposed
+    to stop the false positive is _fixture_carries() confirming the OTHER team:
+    Kalshi's own Yankees-game fixture lists ("Boston", "New York Y"), and
+    "Houston Astros" must match one of those. It scored 83.3 against "Boston" via
+    fuzz.partial_ratio (they share the substring "oston"), clearing the 80
+    threshold and defeating the guard. This pins the fix (_fixture_confirm_score
+    drops partial_ratio) by construction, not by asserting an implementation
+    detail — it just requires the wrong game never end up in the match results.
+    """
+    astros_mets = _mlb_event("New York Mets", "Houston Astros")
+    km_yankees = _h2h_km(
+        "KXMLBGAME-26AUG281915BOSNYY-NYY",
+        "KXMLBGAME-26AUG281915BOSNYY",
+        yes_team="New York Y", no_team="Boston",
+    )
+    km_yankees.event_teams = ("Boston", "New York Y")
+
+    matched = match_events([astros_mets], [km_yankees])
+    assert len(matched) == 0, (
+        "Astros @ Mets must not match the Yankees @ Red Sox h2h market"
+    )
+
+
 # ── match_events: MLS totals suffix lookup ────────────────────────────────────
 
 def test_mls_totals_suffix_lookup():

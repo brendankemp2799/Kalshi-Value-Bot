@@ -54,6 +54,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timezone
+from typing import Callable
 
 import requests
 
@@ -393,6 +394,17 @@ def _fetch_ticker_price(ticker: str) -> tuple[float, float] | None:
         return None
 
 
+def _notify_order_placed(callback: Callable[[str], None] | None, order_id: str) -> None:
+    """Invoke place_order()'s on_order_placed callback, if given, without letting a
+    failure in the (storage-layer) callback ever abort a live order placement."""
+    if callback is None:
+        return
+    try:
+        callback(order_id)
+    except Exception as e:
+        logger.warning("on_order_placed callback failed for order_id=%s: %s", order_id, e)
+
+
 def place_order(
     ticker: str,
     side: str,
@@ -402,6 +414,7 @@ def place_order(
     commence_time: datetime | None = None,
     edge: float | None = None,
     maker_only: bool = False,
+    on_order_placed: Callable[[str], None] | None = None,
 ) -> tuple[str, str, str, float, str, float]:
     """
     Place a Kalshi order using GTC limit orders.
@@ -424,6 +437,16 @@ def place_order(
                          step 1 is never skipped regardless of `edge`, and if it
                          goes unfilled, this gives up instead of falling back to
                          step 2 — no bet is better than a fee-negative one.
+        on_order_placed: called with the real Kalshi order_id as soon as an order
+                         is confirmed accepted — BEFORE the poll loop below, which
+                         can block for up to LIMIT_ORDER_TIMEOUT_*_SECONDS (up to
+                         900s). The order rests on Kalshi independently of our
+                         process once accepted; this loop does not. A process
+                         restart mid-poll used to orphan the order completely,
+                         since nothing was recorded until the loop returned — see
+                         storage/db.py::finalize_pending_position() for the other
+                         half of this. Exceptions from the callback are logged and
+                         swallowed, never allowed to abort a live order placement.
 
     Returns:
         (order_id, execution_status, failure_reason, actual_stake, fill_type, fee_paid)
@@ -477,6 +500,7 @@ def place_order(
             data = _place_raw_order(ticker, api_side, yes_price_mid, count, "good_till_canceled", client_order_id)
             order_id = data.get("order_id", client_order_id)
             filled = float(data.get("fill_count", 0) or 0)
+            _notify_order_placed(on_order_placed, order_id)
 
             if filled >= count:
                 actual_stake = round(filled * price, 2)
@@ -571,6 +595,7 @@ def place_order(
         data = _place_raw_order(ticker, api_side, yes_price_ask, count, "good_till_canceled", client_order_id)
         order_id = data.get("order_id", client_order_id)
         filled = float(data.get("fill_count", 0) or 0)
+        _notify_order_placed(on_order_placed, order_id)
 
         if filled >= count:
             actual_stake = round(filled * price, 2)

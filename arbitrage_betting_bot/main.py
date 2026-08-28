@@ -41,7 +41,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 import config
-from storage.db import init_db, log_opportunity, log_alert, add_position, get_daily_stake_total, count_open_positions, log_scan_results, log_book_probabilities, link_book_probability_to_position, mark_scan_start, get_api_credits, update_bot_heartbeat, get_last_fetched_at, set_last_fetched_at, log_dk_scaled_estimates
+from storage.db import init_db, log_opportunity, log_alert, add_position, finalize_pending_position, get_daily_stake_total, count_open_positions, log_scan_results, log_book_probabilities, link_book_probability_to_position, mark_scan_start, get_api_credits, update_bot_heartbeat, get_last_fetched_at, set_last_fetched_at, log_dk_scaled_estimates
 from execution.trade_executor import execute_trade, resolve_side
 from data.odds_fetcher import OddsAPIClient, _in_season
 from data.kalshi_client import KalshiClient
@@ -542,7 +542,33 @@ def run_scan(
     if approved_live:
         def _do_trade(args):
             opp, sizing, _ = args
-            return execute_trade(opp, sizing)
+            event = opp.matched_event.odds_event
+            km = opp.matched_event.kalshi_market
+
+            # Write a 'pending' row the instant Kalshi confirms the order — BEFORE
+            # place_order()'s poll loop, which can block up to 15 minutes. That loop
+            # runs in this worker thread; a process restart while it's still polling
+            # used to orphan the order completely, since nothing was recorded until
+            # the loop returned. See storage/db.py::finalize_pending_position().
+            pending_holder: dict = {}
+            def _on_order_placed(order_id):
+                pending_holder["id"] = add_position(
+                    sport=event.sport_key, home_team=event.home_team,
+                    away_team=event.away_team, team_name=opp.team_name,
+                    platform="Kalshi", stake=sizing.recommended_dollars,
+                    market_price=opp.market_price, is_paper=False,
+                    order_id=order_id, execution_status="pending",
+                    market_ticker=km.ticker, side=resolve_side(opp),
+                    edge=opp.edge, bookmaker_count=opp.bookmaker_count,
+                    consensus_std=opp.consensus_std, kalshi_spread=km.spread,
+                    commence_time=event.commence_time.isoformat(),
+                    bet_type=km.bet_type, threshold=km.threshold,
+                    bookmakers_json=json.dumps(event.bookmakers),
+                    maker_only=opp.maker_only, consensus_prob=opp.consensus_prob,
+                )
+
+            result = execute_trade(opp, sizing, on_order_placed=_on_order_placed)
+            return result + (pending_holder.get("id"),)
 
         with ThreadPoolExecutor(max_workers=len(approved_live)) as pool:
             future_map = {pool.submit(_do_trade, item): item for item in approved_live}
@@ -554,7 +580,8 @@ def run_scan(
                 # even know if a fill happened — isolated per-future so one bad
                 # result can't skip recording for every other order in this batch.
                 try:
-                    order_id, exec_status, side, failure_reason, actual_stake, fill_type, fee_paid = future.result()
+                    (order_id, exec_status, side, failure_reason, actual_stake,
+                     fill_type, fee_paid, pending_id) = future.result()
                 except Exception as e:
                     logger.error(
                         "execute_trade() raised for %s (%s) — order status UNKNOWN, "
@@ -567,41 +594,62 @@ def run_scan(
                 # could throw. This is the one thing that must never be skipped —
                 # if it fails, log everything needed to manually reconcile rather
                 # than silently lose track of a real Kalshi order.
+                #
+                # Usually pending_id is already set — _do_trade()'s on_order_placed
+                # callback wrote the row the moment Kalshi confirmed the order,
+                # before place_order()'s poll loop even started (see
+                # storage/db.py::finalize_pending_position()). Only finalize it
+                # here; re-inserting would double-record a real order. pending_id
+                # is None only when the order never got an order_id at all (e.g.
+                # verify_market_identity() refused it, or KALSHI_API_KEY missing) —
+                # that's a normal "no bet" case, so insert as before.
                 event = opp.matched_event.odds_event
                 try:
-                    position_id = add_position(
-                        sport=event.sport_key,
-                        home_team=event.home_team,
-                        away_team=event.away_team,
-                        team_name=opp.team_name,
-                        platform="Kalshi",
-                        stake=actual_stake,
-                        market_price=opp.market_price,
-                        is_paper=False,
-                        order_id=order_id,
-                        execution_status=exec_status,
-                        market_ticker=ticker,
-                        side=side,
-                        edge=opp.edge,
-                        bookmaker_count=opp.bookmaker_count,
-                        consensus_std=opp.consensus_std,
-                        kalshi_spread=opp.matched_event.kalshi_market.spread,
-                        commence_time=event.commence_time.isoformat(),
-                        bet_type=opp.matched_event.kalshi_market.bet_type,
-                        threshold=opp.matched_event.kalshi_market.threshold,
-                        bookmakers_json=json.dumps(event.bookmakers),
-                        failure_reason=failure_reason or None,
-                        fill_type=fill_type or "taker",
-                        entry_fee_paid=fee_paid,
-                        maker_only=opp.maker_only,
-                        consensus_prob=opp.consensus_prob,
-                    )
+                    if pending_id is not None:
+                        finalize_pending_position(
+                            pending_id,
+                            stake=actual_stake,
+                            execution_status=exec_status,
+                            fill_type=fill_type or "taker",
+                            entry_fee_paid=fee_paid,
+                            failure_reason=failure_reason or None,
+                        )
+                        position_id = pending_id
+                    else:
+                        position_id = add_position(
+                            sport=event.sport_key,
+                            home_team=event.home_team,
+                            away_team=event.away_team,
+                            team_name=opp.team_name,
+                            platform="Kalshi",
+                            stake=actual_stake,
+                            market_price=opp.market_price,
+                            is_paper=False,
+                            order_id=order_id,
+                            execution_status=exec_status,
+                            market_ticker=ticker,
+                            side=side,
+                            edge=opp.edge,
+                            bookmaker_count=opp.bookmaker_count,
+                            consensus_std=opp.consensus_std,
+                            kalshi_spread=opp.matched_event.kalshi_market.spread,
+                            commence_time=event.commence_time.isoformat(),
+                            bet_type=opp.matched_event.kalshi_market.bet_type,
+                            threshold=opp.matched_event.kalshi_market.threshold,
+                            bookmakers_json=json.dumps(event.bookmakers),
+                            failure_reason=failure_reason or None,
+                            fill_type=fill_type or "taker",
+                            entry_fee_paid=fee_paid,
+                            maker_only=opp.maker_only,
+                            consensus_prob=opp.consensus_prob,
+                        )
                 except Exception as e:
                     logger.critical(
-                        "add_position() FAILED after a REAL Kalshi fill — this position "
-                        "is UNTRACKED. order_id=%s ticker=%s exec_status=%s stake=$%.2f — "
-                        "manual reconciliation required: %s",
-                        order_id, ticker, exec_status, actual_stake, e, exc_info=True,
+                        "add_position()/finalize_pending_position() FAILED after a REAL "
+                        "Kalshi fill — this position is UNTRACKED. order_id=%s ticker=%s "
+                        "exec_status=%s stake=$%.2f pending_id=%s — manual reconciliation "
+                        "required: %s",
+                        order_id, ticker, exec_status, actual_stake, pending_id, e, exc_info=True,
                     )
                     continue
 

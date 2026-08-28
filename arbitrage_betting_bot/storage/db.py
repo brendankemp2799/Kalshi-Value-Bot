@@ -506,6 +506,47 @@ def add_position(
         return cur.lastrowid
 
 
+def finalize_pending_position(
+    position_id: int,
+    stake: float,
+    execution_status: str,
+    fill_type: str,
+    entry_fee_paid: float,
+    failure_reason: str | None,
+) -> None:
+    """
+    Resolve a position row that was written eagerly, right after Kalshi confirmed
+    an order but before the final fill amount was known (execution_status=
+    'pending' — see the on_order_placed callback threaded through
+    execution/kalshi_executor.py::place_order()).
+
+    Added 2026-08-28 after a real fill (Cam Schlittler 8+ strikeouts, 3 contracts)
+    landed on Kalshi but was never recorded anywhere in this system: the worker
+    thread placing it was killed by a routine bot restart while still inside
+    place_order()'s poll loop (which can run up to 15 minutes), and the DB write
+    only ever happened AFTER that loop returned. Kalshi does not depend on our
+    process once an order is accepted — the order kept resting and eventually
+    filled — but the thread that would have recorded it was already dead. Writing
+    the pending row immediately means a mid-poll process kill now leaves an
+    accurate, if unresolved, row instead of total silence.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE positions
+            SET stake = ?, execution_status = ?, status = ?, fill_type = ?,
+                entry_fee_paid = ?, failure_reason = ?
+            WHERE id = ?
+            """,
+            (
+                stake, execution_status,
+                "failed" if execution_status == "failed" else "open",
+                fill_type, entry_fee_paid, failure_reason,
+                position_id,
+            ),
+        )
+
+
 def get_position(position_id: int) -> sqlite3.Row | None:
     with get_connection() as conn:
         return conn.execute(

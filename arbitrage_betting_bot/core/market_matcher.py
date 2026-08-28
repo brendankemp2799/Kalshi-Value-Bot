@@ -83,6 +83,28 @@ def _team_score(team: str, candidate: str) -> int:
     )
 
 
+def _fixture_confirm_score(team: str, candidate: str) -> int:
+    """Stricter cousin of _team_score(), for confirming an OPPONENT match only.
+
+    _team_score() takes the max including fuzz.partial_ratio, which finds the best
+    LOCAL substring alignment regardless of the rest of the string — exactly the
+    wrong tool for confirming two full team names denote the same club. On
+    2026-08-28 that scored "Houston Astros" vs "Boston" at 83.3 (they share the
+    substring "oston"), clearing the 80 threshold and defeating this function's own
+    purpose: two real orders were placed pricing Astros @ Mets but executing on the
+    Yankees @ Red Sox markets, because "Boston" satisfied the opponent check for
+    "Houston Astros". token_sort_ratio/token_set_ratio respect whole-token
+    boundaries and score that same pair at 50.0 — comfortably rejected — while
+    every legitimate opponent-confirmation pair checked (Boston Red Sox/Boston,
+    Houston Astros/Houston, Toronto Blue Jays/Toronto, San Diego Padres/San Diego,
+    Chicago White Sox/Chicago W, New York Yankees/New York Y, etc.) still scores
+    >=82 without partial_ratio's help.
+    """
+    t = _normalize(team)
+    c = _normalize(candidate)
+    return max(fuzz.token_sort_ratio(t, c), fuzz.token_set_ratio(t, c))
+
+
 def _fixture_carries(km: KalshiMarket, other_team: str, matched_label: str,
                      threshold: int) -> bool:
     """Does km's own Kalshi fixture also contain the sportsbook event's OTHER team?
@@ -106,12 +128,16 @@ def _fixture_carries(km: KalshiMarket, other_team: str, matched_label: str,
     Returns False when neither source can answer. That is the point: this check was
     previously written as `if km.no_team:`, so the day Kalshi changed the title format
     it stopped running instead of stopping the trade, and nothing failed loudly.
+
+    Uses _fixture_confirm_score(), NOT _team_score() — see that function's docstring
+    for why partial_ratio cannot be trusted here (it let "Boston" pass as evidence for
+    "Houston Astros" on 2026-08-28).
     """
     candidates = [t for t in km.event_teams if t != matched_label]
     if candidates:
-        return any(_team_score(other_team, t) >= threshold for t in candidates)
+        return any(_fixture_confirm_score(other_team, t) >= threshold for t in candidates)
     if km.no_team:
-        return _team_score(other_team, km.no_team) >= threshold
+        return _fixture_confirm_score(other_team, km.no_team) >= threshold
     return False
 
 
