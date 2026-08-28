@@ -72,18 +72,6 @@ cd /opt/arbitrage-bot && git pull && systemctl restart arbitrage-bot arbitrage-d
 
 # Server Deployment (DigitalOcean)
 
-## One-Time Setup — Pushover (phone notifications)
-1. Download **Pushover** app on your iPhone
-2. Create account at https://pushover.net
-3. Note your **User Key** (shown on the main page after login)
-4. Click "Your Applications" → "Create an Application" → name it "Arbitrage Bot"
-5. Note the **App Token**
-6. Add to your `.env`:
-   ```
-   PUSHOVER_USER_KEY=<your-user-key>
-   PUSHOVER_APP_TOKEN=<your-app-token>
-   ```
-
 ## One-Time Setup — Create DigitalOcean Droplet
 - Ubuntu 22.04 LTS, Basic $6/mo (1 vCPU, 1 GB RAM)
 - Add your SSH public key at creation: `cat ~/.ssh/id_rsa.pub`
@@ -112,7 +100,7 @@ cd /opt/arbitrage-bot && bash deploy/setup.sh
 cd /opt/arbitrage-bot/arbitrage_betting_bot
 python3.8 main.py --once
 ```
-Confirm: scan completes with no errors. If an opportunity is found, a Pushover notification should arrive on your phone.
+Confirm: scan completes with no errors. If an opportunity is found, it should appear in the log/dashboard.
 
 ## Start Services
 ```bash

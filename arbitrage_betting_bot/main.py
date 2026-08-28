@@ -218,7 +218,7 @@ def run_scan(
                 "skipping API fetch. Running auto-settle only.",
                 daily_staked, daily_risk_cap,
             )
-            auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=(config.ENABLE_TRAILING_STOP or config.ENABLE_STOP_LOSS))
+            auto_settle_positions(is_paper=paper, capture_closing_lines=True)
             _run_reconciliation_if_live(paper, dry_run)
             bm.snapshot()
             _log_api_credits(logger)
@@ -232,7 +232,7 @@ def run_scan(
             exposure_pct * 100, config.MAX_TOTAL_EXPOSURE_PCT * 100,
         )
         if not dry_run:
-            auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=(config.ENABLE_TRAILING_STOP or config.ENABLE_STOP_LOSS))
+            auto_settle_positions(is_paper=paper, capture_closing_lines=True)
             _run_reconciliation_if_live(paper, dry_run)
             bm.snapshot()
         _log_api_credits(logger)
@@ -246,7 +246,7 @@ def run_scan(
                 "Running auto-settle only.",
                 open_count, config.MAX_OPEN_POSITIONS,
             )
-            auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=(config.ENABLE_TRAILING_STOP or config.ENABLE_STOP_LOSS))
+            auto_settle_positions(is_paper=paper, capture_closing_lines=True)
             _run_reconciliation_if_live(paper, dry_run)
             bm.snapshot()
             _log_api_credits(logger)
@@ -646,7 +646,7 @@ def run_scan(
 
     # Auto-settle any open positions whose Kalshi market has now resolved
     if not dry_run:
-        auto_settle_positions(is_paper=paper, capture_closing_lines=True, manage_open_positions=(config.ENABLE_TRAILING_STOP or config.ENABLE_STOP_LOSS))
+        auto_settle_positions(is_paper=paper, capture_closing_lines=True)
         _run_reconciliation_if_live(paper, dry_run)
 
     _log_api_credits(logger)
@@ -870,16 +870,13 @@ def _run_variable_loop(
             now_ts = time.time()
 
             # Kalshi-only position monitoring — decoupled from the Odds-API `due`
-            # check below so a live position's stop keeps getting checked even when
-            # no sport is due for a full odds-driven scan. Never touches Odds API
+            # check below so a resolved market keeps getting settled even when no
+            # sport is due for a full odds-driven scan. Never touches Odds API
             # credits (capture_closing_lines=False).
             if not dry_run and (now_ts - last_position_check) >= config.POSITION_MONITOR_INTERVAL_SECONDS:
                 last_position_check = now_ts
                 try:
-                    auto_settle_positions(
-                        is_paper=paper, capture_closing_lines=False,
-                        manage_open_positions=(config.ENABLE_TRAILING_STOP or config.ENABLE_STOP_LOSS),
-                    )
+                    auto_settle_positions(is_paper=paper, capture_closing_lines=False)
                     _run_reconciliation_if_live(paper, dry_run)
                 except Exception as e:
                     logger.warning("Position-monitor tick failed: %s", e)

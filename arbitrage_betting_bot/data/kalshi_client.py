@@ -83,18 +83,23 @@ _series_cache: dict[str, tuple[float, list[dict]]] = {}
 _SERIES_CACHE_TTL = 900  # 15 minutes — discard stale cache older than this
 
 # Maps Odds API sport keys → list of Kalshi series tickers (H2H first, then non-H2H)
-# *SPREAD series are deliberately absent: `spread` was removed from
-# config.ENABLED_BET_TYPES on 2026-08-21 (9 bets, -29.8% ROI) and from SPORT_MARKETS,
-# so fetching them only produced markets the detector immediately discarded -- 84 per
-# scan, logging ~2,600 junk rows a day. Re-add here AND in both those settings
-# together, or spread markets get matched with no odds behind them.
+# *SPREAD series re-added 2026-08-28. Removed 2026-08-21 on 9 bets at -29.8% ROI, but
+# most of that sample traces to position #930 (the Chicago White Sox/Cubs team-
+# disambiguation bug) which has since been fixed system-wide (see config.py:312,
+# core/value_detector.py, execution/trade_executor.py) — the underperformance wasn't
+# an inherent property of spread markets. Live tradability checked 2026-08-28 (spread
+# <=0.05, volume>0): KXMLBSPREAD 92/96, KXMLSSPREAD 46/60, KXEPLSPREAD 37/40.
+# KXNBASPREAD/KXNHLSPREAD/KXUCLSPREAD show 0 open markets right now only because
+# those sports are off-season — same seasonal gating every other bet type already
+# gets. Must move together with SPORT_MARKETS and ENABLED_BET_TYPES (config.py) and
+# _SERIES_TO_BET_TYPE below, or spread markets get matched with no odds behind them.
 _SPORT_TO_SERIES: dict[str, list[str]] = {
-    "basketball_nba":            ["KXNBAGAME", "KXNBATOTAL"],
-    "baseball_mlb":              ["KXMLBGAME", "KXMLBTOTAL"],
-    "icehockey_nhl":             ["KXNHLGAME", "KXNHLTOTAL"],
-    "soccer_usa_mls":            ["KXMLSGAME", "KXMLSTOTAL"],
-    "soccer_epl":                ["KXEPLGAME", "KXEPLTOTAL"],
-    "soccer_uefa_champs_league": ["KXUCLGAME", "KXUCLTOTAL"],
+    "basketball_nba":            ["KXNBAGAME", "KXNBATOTAL", "KXNBASPREAD"],
+    "baseball_mlb":              ["KXMLBGAME", "KXMLBTOTAL", "KXMLBSPREAD"],
+    "icehockey_nhl":             ["KXNHLGAME", "KXNHLTOTAL", "KXNHLSPREAD"],
+    "soccer_usa_mls":            ["KXMLSGAME", "KXMLSTOTAL", "KXMLSSPREAD"],
+    "soccer_epl":                ["KXEPLGAME", "KXEPLTOTAL", "KXEPLSPREAD"],
+    "soccer_uefa_champs_league": ["KXUCLGAME", "KXUCLTOTAL", "KXUCLSPREAD"],
     # Added 2026-08-21; every ticker verified live against Kalshi before wiring.
     "americanfootball_nfl":      ["KXNFLGAME", "KXNFLTOTAL"],
     "soccer_spain_la_liga":      ["KXLALIGAGAME", "KXLALIGATOTAL", "KXLALIGABTTS"],
@@ -179,7 +184,12 @@ _SERIES_TO_BET_TYPE: dict[str, str] = {
     "KXSUPERLIGTOTAL":     "totals",
     "KXNPBTOTAL":          "totals",
     "KXKBOTOTAL":          "totals",
-    # SPREAD entries removed alongside the series above -- see _SPORT_TO_SERIES.
+    "KXNBASPREAD":    "spread",
+    "KXMLBSPREAD":    "spread",
+    "KXNHLSPREAD":    "spread",
+    "KXMLSSPREAD":    "spread",
+    "KXEPLSPREAD":    "spread",
+    "KXUCLSPREAD":    "spread",
     # The parsing/detection code still handles bet_type "spread" if it returns.
     "KXEPLBTTS":      "btts",
     "KXMLSBTTS":      "btts",

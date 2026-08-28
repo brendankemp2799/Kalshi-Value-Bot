@@ -28,6 +28,7 @@ import config
 from storage.db import (
     get_open_positions,
     settle_position,
+    settle_position_at_price,
     get_positions_pending_closing_lines,
     set_closing_lines,
     get_pending_book_probability_outcomes,
@@ -61,7 +62,6 @@ def _fetch_market(ticker: str) -> dict | None:
 def auto_settle_positions(
     is_paper: bool = False,
     capture_closing_lines: bool = False,
-    manage_open_positions: bool = False,
 ) -> int:
     """
     Check all open positions and settle any whose Kalshi market has resolved.
@@ -70,12 +70,6 @@ def auto_settle_positions(
     settled positions missing it. The Odds API call this involves is credit-
     metered, so only the main scan loop should pass True here — never the
     dashboard's 60s auto-refresh path (see _capture_closing_lines).
-
-    manage_open_positions: also run the trailing-stop risk manager (see
-    execution/risk_manager.py) against every still-open position using the same
-    market data already fetched here. This can place REAL closing orders — only
-    the main scan loop should ever pass True here, never the dashboard, and only
-    when config.ENABLE_TRAILING_STOP is on.
 
     Returns the number of positions settled in this call.
     """
@@ -100,55 +94,52 @@ def auto_settle_positions(
         if not market:
             continue
 
-        if manage_open_positions:
-            # BOTH switches are checked here, independently and explicitly. This
-            # line has now been the site of the same class of bug twice, in
-            # opposite directions:
-            #   - originally manage_open_positions was itself
-            #     config.ENABLE_TRAILING_STOP, so turning the trailing stop off
-            #     (2026-08-09) silently took the stop-loss down with it, leaving
-            #     the live bot with NO risk management at all (fixed in 5bc403e);
-            #   - that fix decoupled them but removed the only place
-            #     ENABLE_TRAILING_STOP was ever read, so the trailing stop then ran
-            #     for 7 days while its switch said false. Measured cost of that
-            #     window: -$4.99 across 12 positions (8 cut winners short for
-            #     $8.44, 4 avoided losses worth $3.45).
-            # evaluate_trailing_stop() does not check the flag itself, so this is
-            # the only guard. Keep both conditions here, and keep them separate.
-            if config.ENABLE_TRAILING_STOP:
-                try:
-                    if _check_trailing_stop(pos, market, is_paper):
-                        continue  # position just closed early — don't also run natural settlement below
-                except Exception as e:
-                    logger.warning("Trailing stop check failed for position #%d: %s", pos["id"], e)
-
-            if config.ENABLE_STOP_LOSS:
-                try:
-                    if _check_stop_loss(pos, market, is_paper):
-                        continue  # position just closed early — don't also run natural settlement below
-                except Exception as e:
-                    logger.warning("Stop-loss check failed for position #%d: %s", pos["id"], e)
-
         result = (market.get("result") or "").lower()
-        if result not in ("yes", "no", "void"):
-            # Market still open or result not yet published
-            continue
-
         pos_id = pos["id"]
         side = (pos["side"] or "").lower()
-
-        if result == "void":
-            outcome = "void"
-        else:
-            outcome = "won" if side == result else "lost"
-
-        pnl = settle_position(pos_id, outcome)
         mode_tag = "[PAPER]" if is_paper else "[LIVE]"
-        logger.info(
-            "%s Auto-settled position #%d (%s on %s): %s  P&L=$%.2f",
-            mode_tag, pos_id, side.upper(), ticker, outcome.upper(), pnl,
-        )
-        settled_count += 1
+
+        if result in ("yes", "no", "void"):
+            outcome = "void" if result == "void" else ("won" if side == result else "lost")
+            pnl = settle_position(pos_id, outcome)
+            logger.info(
+                "%s Auto-settled position #%d (%s on %s): %s  P&L=$%.2f",
+                mode_tag, pos_id, side.upper(), ticker, outcome.upper(), pnl,
+            )
+            settled_count += 1
+        elif (market.get("status") or "").lower() == "finalized":
+            # Kalshi resolves some binary markets to a "fair market price" instead of
+            # a clean yes/no — e.g. a player-prop market whose underlying condition
+            # can't cleanly resolve (player scratched, no qualifying plate appearance).
+            # `result` reads "scalar" and the payout is in settlement_value_dollars.
+            # Discovered 2026-08-28: this fell through the check above silently,
+            # leaving affected positions 'open' forever with pnl never computed (see
+            # storage/db.py::settle_position_at_price). Only handle the case we've
+            # actually confirmed (binary market_type, scalar result, value present) —
+            # anything else logs loudly for manual review rather than guessing.
+            settlement_value = market.get("settlement_value_dollars")
+            if result == "scalar" and (market.get("market_type") or "").lower() == "binary" \
+                    and settlement_value not in (None, ""):
+                # settlement_value_dollars is YES-denominated, same convention as
+                # yes_bid_dollars/last_price_dollars elsewhere in the market payload —
+                # but positions.market_price (and settle_position()'s formula) is
+                # always "price of the side we actually hold", so a NO position needs
+                # the complement.
+                yes_price = float(settlement_value)
+                price = yes_price if side == "yes" else (1.0 - yes_price)
+                pnl = settle_position_at_price(pos_id, price)
+                logger.info(
+                    "%s Auto-settled position #%d (%s on %s): FAIR_VALUE @ %.4f  P&L=$%.2f",
+                    mode_tag, pos_id, side.upper(), ticker, price, pnl,
+                )
+                settled_count += 1
+            else:
+                logger.error(
+                    "Position #%d (%s) market is finalized with unrecognized result "
+                    "%r — not auto-settled, needs manual review",
+                    pos_id, ticker, market.get("result"),
+                )
+        # else: market still open or result not yet published — skip for now
 
     if settled_count:
         logger.info("Auto-settled %d position(s).", settled_count)
@@ -168,37 +159,6 @@ def auto_settle_positions(
             logger.warning("DK-scaled shadow-log outcome backfill failed: %s", e)
 
     return settled_count
-
-
-def _check_trailing_stop(pos, market: dict, is_paper: bool) -> bool:
-    """
-    Evaluate + apply the trailing-stop decision for one open position.
-    Returns True only if the position was actually closed early this cycle (caller
-    should not also run the natural-settlement check against the same now-stale
-    `pos` row) — this reflects execute_trailing_stop()'s real outcome, not just
-    whether a close was attempted, since a close attempt can fail (e.g. Kalshi's
-    live contract count briefly unavailable) and natural settlement must still run
-    in that case rather than being silently skipped too.
-    """
-    from execution.risk_manager import evaluate_trailing_stop, execute_trailing_stop, ActionKind
-
-    action = evaluate_trailing_stop(pos, market)
-    if action.kind == ActionKind.NONE:
-        return False
-    return execute_trailing_stop(pos, action, is_paper)
-
-
-def _check_stop_loss(pos, market: dict, is_paper: bool) -> bool:
-    """
-    Evaluate + apply the stop-loss decision for one open position. Same
-    True-only-on-actual-close contract as _check_trailing_stop().
-    """
-    from execution.risk_manager import evaluate_stop_loss, execute_stop_loss, ActionKind
-
-    action = evaluate_stop_loss(pos, market)
-    if action.kind == ActionKind.NONE:
-        return False
-    return execute_stop_loss(pos, action, is_paper)
 
 
 # ── Closing Line Value ──────────────────────────────────────────────────────────

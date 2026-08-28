@@ -315,7 +315,6 @@ def _migrate() -> None:
             ("kalshi_close_price",     "ALTER TABLE positions ADD COLUMN kalshi_close_price REAL"),
             ("consensus_close_prob",   "ALTER TABLE positions ADD COLUMN consensus_close_prob REAL"),
             ("closing_line_attempts", "ALTER TABLE positions ADD COLUMN closing_line_attempts INTEGER NOT NULL DEFAULT 0"),
-            ("peak_price",   "ALTER TABLE positions ADD COLUMN peak_price REAL"),
             ("close_reason", "ALTER TABLE positions ADD COLUMN close_reason TEXT"),
             ("entry_fee_paid", "ALTER TABLE positions ADD COLUMN entry_fee_paid REAL NOT NULL DEFAULT 0.0"),
             ("order_verified_at", "ALTER TABLE positions ADD COLUMN order_verified_at TEXT"),
@@ -331,20 +330,6 @@ def _migrate() -> None:
             # substitute: that is the post-fill fee classification, not the pre-trade
             # sizing assumption.
             ("maker_only", "ALTER TABLE positions ADD COLUMN maker_only INTEGER"),
-            # Stop-loss confirmation counter: consecutive checks the price has sat
-            # at/below the stop level. Reset to 0 the moment it recovers. Persisted on
-            # the row (not in memory) for the same reason peak_price is -- the bot
-            # restarts often, and risk state that resets on restart is risk state you
-            # cannot reason about.
-            ("stop_breach_count",
-             "ALTER TABLE positions ADD COLUMN stop_breach_count INTEGER NOT NULL DEFAULT 0"),
-            # Realised exit fill, and the stop level that fired. Until 2026-08-17 the
-            # exit price existed nowhere: it had to be backed out of P&L as
-            # entry*(pnl+stake)/stake, and doing that conflated the totals ramp with
-            # slippage and produced a 15c estimate where the truth was ~3c. Storing
-            # both makes exit slippage (exit_price - trigger_price) a direct read.
-            ("exit_price",    "ALTER TABLE positions ADD COLUMN exit_price REAL"),
-            ("trigger_price", "ALTER TABLE positions ADD COLUMN trigger_price REAL"),
             # Entry-time sportsbook consensus probability for OUR side (2026-08-25).
             # Without this, "book CLV" (did the sharp market itself move toward or
             # away from our side after we bet) can't be computed directly -- edge
@@ -657,47 +642,19 @@ def settle_position(position_id: int, result: str) -> float:
         return pnl
 
 
-# ── Risk Management (trailing stop) ─────────────────────────────────────────────
-
-def set_peak_price(position_id: int, peak_price: float) -> None:
-    """Record a new high-water mark for the trailing stop."""
-    with get_connection() as conn:
-        conn.execute(
-            "UPDATE positions SET peak_price = ? WHERE id = ?",
-            (peak_price, position_id),
-        )
-
-
-def set_stop_breach_count(position_id: int, count: int) -> None:
+def settle_position_at_price(position_id: int, settlement_price: float) -> float:
     """
-    Record how many consecutive checks this position has sat at/below its stop level.
-    Counterpart to set_peak_price() for the stop-loss's confirmation counter; see
-    execution/risk_manager.py::evaluate_stop_loss().
-    """
-    with get_connection() as conn:
-        conn.execute(
-            "UPDATE positions SET stop_breach_count = ? WHERE id = ?",
-            (int(count or 0), position_id),
-        )
-
-
-def close_position_early(
-    position_id: int,
-    exit_price: float,
-    reason: str = "trailing_stop",
-    exit_fee: float = 0.0,
-    trigger_price: float | None = None,
-) -> float:
-    """
-    Close a position via our own trade (not a natural Kalshi settlement) — e.g. a
-    trailing-stop trigger. Independent of settle_position() by design: touching that
-    function's tested win/lost/void math isn't worth the risk for this new path.
-
-    pnl = contracts * (exit_price - entry_price) - entry_fee_paid - exit_fee, same
-    underlying formula as a natural settlement (won = exit_price 1.0, lost = exit_price
-    0.0, void = exit_price == entry_price), just computed for an arbitrary exit price.
-    Both the fee paid to enter and the fee paid to exit (each read from Kalshi's own
-    order records, not estimated) are real costs regardless of how the trade turns out.
+    Mark a position as closed at an arbitrary settlement price — for Kalshi markets
+    that resolve to something other than a clean win/loss/void. Discovered 2026-08-28:
+    a binary player-prop market whose underlying condition can't cleanly resolve (e.g.
+    the player is scratched or gets no qualifying plate appearance) settles at Kalshi's
+    "fair market price" instead — the market's `result` field reads "scalar" and the
+    payout lives in `settlement_value_dollars`, not in yes/no. settle_position() only
+    recognized won/lost/void, so these positions sat 'open' forever with pnl never
+    computed — see execution/reconciliation.py, which is what caught this (Kalshi's
+    portfolio showed 0 contracts against 4 positions we still tracked as open, one for
+    5+ days). Generalizes the same formula settle_position() uses (won = price 1.0,
+    lost = price 0.0, void = price == entry_price) to an arbitrary settlement value.
     """
     with get_connection() as conn:
         row = conn.execute(
@@ -710,16 +667,14 @@ def close_position_early(
         entry_price: float = row["market_price"]
         entry_fee_paid: float = row["entry_fee_paid"] or 0.0
         contracts = stake / entry_price
-        pnl = contracts * (exit_price - entry_price) - entry_fee_paid - exit_fee
+        pnl = contracts * (settlement_price - entry_price) - entry_fee_paid
         conn.execute(
             """
             UPDATE positions
-            SET status = 'closed', pnl = ?, settled_at = ?, close_reason = ?,
-                exit_price = ?, trigger_price = ?
+            SET status = 'closed', pnl = ?, settled_at = ?
             WHERE id = ?
             """,
-            (pnl, datetime.utcnow().isoformat(), reason, exit_price, trigger_price,
-             position_id),
+            (pnl, datetime.utcnow().isoformat(), position_id),
         )
         return pnl
 

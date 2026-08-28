@@ -92,161 +92,17 @@ MAX_OPEN_POSITIONS: int = 40          # Backstop circuit-breaker only (e.g. a bu
                                        # detect_value() entirely, not just new bets.
 MAX_DAILY_CAPITAL_RISK_PCT: float = 0.30  # Max % of bankroll staked in new positions per calendar day (UTC)
 
-# ── Trailing Stop (mid-position exit risk management) ──────────────────────────
-# Kalshi has no native stop/conditional order type — this is simulated by polling
-# price each scan (piggybacked on auto_settle's existing per-position market fetch)
-# and placing a real closing order once price retraces to the trailing level.
-# DISABLED in production (.env) as of 2026-08-09 — see
-# research/experiments/2026-08-09-trailing-stop-vs-stoploss-only.md. Replaying all
-# 38 settled live positions' real intraday price paths through trailing-stop + the
-# still-enabled stop-loss showed EVERY threshold tested (flat 0.10, flat 0.15,
-# today's dynamic ramp) net-negative (-$1.83 to -$4.59), while stop-loss ALONE (no
-# trailing stop) netted +$18.70 over the same trades — trailing stop was cutting
-# real winners short more than it was preventing losses, at every threshold tried.
-# The tuning params below are kept for the record / in case this is re-enabled and
-# re-tested later, not because they're currently in effect.
-# Master switch — defaults off. Validate in paper mode before enabling live.
-ENABLE_TRAILING_STOP: bool = os.getenv("ENABLE_TRAILING_STOP", "false").lower() == "true"
-# Arm threshold is time-into-game dependent, not a flat constant (see
-# _dynamic_arm_move() in execution/risk_manager.py) — linearly interpolated between
-# these two bounds by elapsed fraction of the sport's expected game duration below.
-TRAILING_STOP_ARM_MOVE_EARLY: float = 0.20  # min favorable move to arm, at/near game start
-TRAILING_STOP_ARM_MOVE_LATE: float = 0.08   # min favorable move to arm, at/after expected game end
-TRAILING_STOP_LOCK_FRACTION: float = 0.35   # fraction of the move-from-entry protected once armed
-# Made dynamic on 2026-08-09 (research/experiments/2026-08-09-trailing-stop-arm-
-# threshold.md addendum): a flat threshold treats an early-game move and a late-game
-# move as the same signal, but they aren't — a swing minutes after a game starts has
-# far more time (and far more remaining plays) to revert than the same swing with the
-# game nearly over. EARLY=0.20 is more tolerant than the flat 0.15 this replaced,
-# specifically to survive the single-play whipsaw that motivated that fix (position
-# #262, Baltimore/Texas Over 8.5, armed on a 1-minute spike to 54c only 8 minutes into
-# the game, then got stopped out for $0.01 three minutes before the market ran to
-# 96-99c). LATE=0.08 arms more eagerly than the original flat 0.10 — with little game
-# time left for a real trend to keep developing, and genuine reversal risk (a
-# walk-off, a last-minute goal) still on the table, banking gains sooner is the safer
-# trade. Reasoned starting points, not fit to the n=10 trailing-stop-close sample by
-# search/optimization — revisit once more closes accumulate under this logic.
-# Flat-threshold history (0.10 -> 0.15 on 2026-08-09) kept for context: of the 10 live
-# trailing-stop closes to date, the 5 that armed on a <0.16 move netted -$0.41 combined
-# (3 of 5 net losses despite the "protection"); the 5 that armed on a >=0.16 move
-# netted +$0.27. STOP_LOSS_MOVE below is unaffected either way and still backstops
-# genuine reversals regardless of whether the trailing stop ever arms.
-# Raised from 0.20 on 2026-08-08 (LOCK_FRACTION, not ARM_MOVE): real trailing-stop
-# closes showed 0.20 protecting so little of a typical ~16c move that Kalshi's fee
-# (peaking ~30-60c, right where these positions trade) consumed 80-100% of the
-# captured slice — several genuine wins closed at breakeven or a small net loss. 0.35
-# leaves more room to run while still resistant to the fee eating the whole locked-in
-# gain.
-
-# Expected real-world game duration per sport (minutes), used only to compute the
-# dynamic trailing-stop arm move above — not used for scheduling/polling elsewhere.
-SPORT_EXPECTED_DURATION_MINUTES: dict[str, int] = {
-    "basketball_nba":            150,
-    "baseball_mlb":               190,
-    "icehockey_nhl":               150,
-    "soccer_usa_mls":              120,
-    "soccer_epl":                   120,
-    "soccer_uefa_champs_league":    120,
-    "americanfootball_nfl":         210,   # ~3.5h including stoppages/overtime
-    "soccer_spain_la_liga":         120,
-    "soccer_italy_serie_a":         120,
-    "soccer_france_ligue_one":      120,
-}
-SPORT_EXPECTED_DURATION_DEFAULT_MINUTES: int = 150  # fallback for an unrecognized sport key
+# Trailing-stop and stop-loss mid-position exit risk management were removed
+# 2026-08-28. Both had already been individually backtested off (trailing stop:
+# every threshold net-negative vs. holding; stop-loss: -$8.46 net across 70 settled
+# exits) — see git history (execution/risk_manager.py) for the full analysis. Open
+# positions now always ride to natural Kalshi settlement.
+#
 # How often open positions are checked against Kalshi, independent of the Odds-API scan
 # cadence above. Kalshi's own APIs (market quotes, portfolio positions/fills) aren't
 # credit-metered, so this can run much faster than the Odds-API-driven scan without any
-# cost — see POSITION_MONITOR_INTERVAL_SECONDS below and _run_variable_loop().
+# cost — see _run_variable_loop() in main.py.
 POSITION_MONITOR_INTERVAL_SECONDS: int = int(os.getenv("POSITION_MONITOR_INTERVAL_SECONDS", "30"))
-
-# ── Stop Loss (mid-position adverse-move exit) ──────────────────────────────────
-# Symmetric counterpart to the trailing stop above: the trailing stop only protects
-# positions that first move favorably — this cuts a position that's moving against
-# entry, before it rides all the way to a full loss. Added 2026-08-08 after real bet
-# history showed positions with no risk management applied at all (never armed the
-# trailing stop) had a -51% ROI vs -1% for trailing-stop-managed exits. Confirmed
-# against real candlestick history that these losses decline gradually (20-185 min),
-# not in a single tick, so a polling check has time to catch them.
-# ── TURNED OFF LIVE 2026-08-23 ────────────────────────────────────────────────
-#
-# Set ENABLE_STOP_LOSS=false on the droplet. The machinery below is retained and
-# fully functional -- flip the env var back to `true` and restart to re-enable.
-#
-# WHY. Every stop-loss close was replayed against its market's actual settlement, so
-# the counterfactual ("what if we had just held?") is observed rather than modelled.
-# Across 70 settled stop-loss exits, stopping realised $8.46 LESS than holding would
-# have. The mechanism is clearer than the P&L: bucketed by the price we exited at,
-#
-#     exit <0.05   n=32   22% of them went on to WIN
-#     exit 0.05-15 n=15   13%
-#     exit 0.15-25 n=8    50%
-#     exit >=0.25  n=9    33%
-#
-# In every bucket the exit price sits BELOW the realised win rate. The break-even rule
-# is "stop only if exit proceeds exceed the probability of winning if held", and it
-# never held -- we were systematically selling below fair value, partly because the
-# exit crosses to the bid on a thin book.
-#
-# THE EVIDENCE WAS NOT UNIFORM, and this switch is deliberately blunter than the data.
-# By segment (spread excluded as a disabled bet type):
-#     stop_loss h2h     n=29  -$14.30  95% CI [-26.0, -3.8]   <- the real result
-#     trailing  h2h     n=11   -$7.17     CI [-17.7, +1.9]
-#     stop_loss totals  n=30   +$2.59     CI [ -5.3, +9.1]   <- stop was EARNING here
-#     stop_loss btts    n=4    +$3.55     CI [ +2.9,  +3.9]
-# h2h alone accounted for -$21.47 while every other segment combined was +$7.01.
-# Disabling h2h only would have returned +$6.35; disabling everything, -$0.65. The
-# blanket switch-off was chosen by the operator with that $7.00 difference known.
-#
-# WHAT IS GIVEN UP. Open positions now always ride to settlement, so a bet that is
-# wrong for a reason we cannot see (injury news, a lineup change, or a bug in our own
-# pricing) runs to zero. The stop-loss recovered $2.06 of the wrong-side prop bug on
-# 2026-08-22 -- its value is insurance against OUR errors, not against market moves.
-# Capital lock-up is not a cost here: zero scans have ever been blocked by an exposure
-# cap, peak utilisation 27.3% against the 30% limit.
-#
-# BEFORE RE-ENABLING, re-run the replay rather than trusting the numbers above -- they
-# rest on one month in which holding happened to pay, and the totals/props segments
-# were never significant in either direction.
-ENABLE_STOP_LOSS: bool = os.getenv("ENABLE_STOP_LOSS", "false").lower() == "true"
-# The threshold is PER BET TYPE, because the two books behave nothing alike after an
-# adverse move. Measured 2026-08-17 (research/experiments/2026-08-17-stop-loss-by-bet-
-# type.md) by replaying every settled position's real 1-minute candlestick path:
-#
-#   of positions that fell 20c below entry, how many still WON?
-#     totals   3/28 = 10.7%   (base rate 44.9%)
-#     h2h      7/22 = 31.8%   (base rate 47.4%)
-#
-# Stopping is correct iff the exit proceeds exceed the win probability of holding
-# (s > p; see _stop_loss_move()). At a 20c drop that is +0.123 for totals and -0.099
-# for h2h — i.e. the SAME threshold is strongly right on one book and wrong on the
-# other. There is a mechanism: a totals market resolves by accumulation (runs/goals
-# only ever get added, the clock runs one way), so once it is 20c underwater the
-# innings needed to rescue it have physically been spent. An h2h market has no such
-# ratchet — a 20c move means a lead changed hands, and leads change hands again.
-STOP_LOSS_MOVE: float = 0.30   # h2h/spread, and the default for any unlisted bet type
-STOP_LOSS_MOVE_BY_BET_TYPE: dict[str, float] = {
-    "totals": 0.20,
-}
-# 0.30 for h2h is also the MINIMUM-REGRET choice, not just the best point estimate:
-# across thresholds the h2h s-p margin runs -0.082 (0.10), -0.099 (0.20), -0.041
-# (0.25), +0.011 (0.30), -0.053 (0.35). 0.30 is where s ~= p, so it is the threshold
-# least sensitive to the recovery rate being mis-measured — which matters, because
-# that rate rests on n=22.
-#
-# Replaced STOP_LOSS_MOVE_TOTALS_EARLY (a 0.35 -> 0.20 time ramp, 2026-08-12 .. 08-17).
-# The ramp was added after position #315 (Baltimore/Minnesota Under 8.5), where a thin
-# ~24c-wide quote spike at the end of the 1st inning triggered the flat 0.20 stop on a
-# game that finished well over. That incident was real, but the ramp was the wrong fix
-# for it: it widened the stop for the ENTIRE early game to defend against a
-# single-tick quote artifact, and measured out at -5.4pp of equal-weighted ROI on
-# totals (P(ramp better) = 9%). STOP_LOSS_CONFIRM_CHECKS below defends against the
-# artifact directly instead, letting totals keep the tight stop the data supports.
-#
-# Number of CONSECUTIVE checks the price must sit at/below the stop level before the
-# position is cut. At POSITION_MONITOR_INTERVAL_SECONDS=30 this costs at most ~30s of
-# extra adverse exposure; in exchange, no single bad quote can close a position. This
-# is what makes the tight totals stop safe — #315 was one spike, not a trend.
-STOP_LOSS_CONFIRM_CHECKS: int = 2
 
 # ── Market Making (passive two-sided quoting) ───────────────────────────────────
 # Unified with the directional strategy, not a separate bot: for any matched market
@@ -258,9 +114,8 @@ STOP_LOSS_CONFIRM_CHECKS: int = 2
 # charged across 139 filled orders (2026-08-15) implied 0.0178, vs the 0.0175 assumed
 # here. But it was charged on 1 of 139 — MM_MIN_NET_PER_PAIR below deliberately
 # assumes it is ALWAYS charged, which makes MM quote less, never more. Fills flow
-# into the same `positions` table
-# (positions.strategy='market_making') and are covered by the existing trailing-stop/
-# stop-loss risk management with no separate exit-risk code.
+# into the same `positions` table (positions.strategy='market_making') and ride to
+# natural Kalshi settlement like every other position, with no separate exit-risk code.
 #
 # Calibrated 2026-08-08 via mm_backtest.py against real Kalshi candlestick history
 # for 40 live matched wide-spread markets (~3 days of trading each, hourly candles):
@@ -660,18 +515,18 @@ ALTERNATE_LINE_REFRESH_TIERS: list[tuple[int, int]] = [
 
 # Which Odds API market types to fetch per sport.
 # Multiple types can be comma-separated (one API call per sport).
-# `spreads` removed 2026-08-20. It cost a full third of every bulk request (cost is
-# markets x units) and produced 9 bets at -29.8% ROI (-$4.93) -- our worst bet type by
-# a wide margin, the one the #930 wrong-team bug landed on, and the only one with no
-# stop-loss evidence behind its threshold. Re-add by putting "spreads" back here; the
-# matcher and detector still handle it.
+# `spreads` re-added 2026-08-28 for the sports with a Kalshi spread series (see
+# data/kalshi_client.py::_SPORT_TO_SERIES). Removed 2026-08-20 on 9 bets at -29.8%
+# ROI, but most of that sample traces to position #930 (the Chicago White Sox/Cubs
+# team-disambiguation bug), fixed system-wide since — see the note in
+# _SPORT_TO_SERIES for the live-tradability check behind this re-add.
 SPORT_MARKETS: dict[str, str] = {
-    "basketball_nba":              "h2h,totals",
-    "baseball_mlb":                "h2h,totals",
-    "icehockey_nhl":               "h2h,totals",
-    "soccer_usa_mls":              "h2h,totals",
-    "soccer_epl":                  "h2h,totals",
-    "soccer_uefa_champs_league":   "h2h,totals",
+    "basketball_nba":              "h2h,totals,spreads",
+    "baseball_mlb":                "h2h,totals,spreads",
+    "icehockey_nhl":               "h2h,totals,spreads",
+    "soccer_usa_mls":              "h2h,totals,spreads",
+    "soccer_epl":                  "h2h,totals,spreads",
+    "soccer_uefa_champs_league":   "h2h,totals,spreads",
     "americanfootball_nfl":        "h2h,totals",
     "soccer_spain_la_liga":        "h2h,totals",
     "soccer_italy_serie_a":        "h2h,totals",
@@ -793,15 +648,17 @@ def quality_filters(bet_type: str, is_draw: bool = False) -> dict:
 # maps to it -- otherwise wiring up the BTTS series later would silently do nothing.
 # Note the soccer TIE market is bet_type "h2h" (it is distinguished by
 # kalshi_outcome == "tie", not by bet_type), so "draw" is deliberately NOT a value here.
-# "spread" removed from the default on 2026-08-21, alongside dropping `spreads` from
-# SPORT_MARKETS. The two must move together: without spread ODDS there is nothing to
-# build a consensus from, so every matched spread market logged `no_consensus` -- 82
-# per scan, ~2,600 rows/day of pure noise into book_probability_log, the table that
-# OOM-killed the daily cron once already. Gating here skips them before they are
-# evaluated at all. Re-enable BOTH to bring spreads back.
+# "spread" re-added to the default 2026-08-28, alongside adding `spreads` back to
+# SPORT_MARKETS and the spread series back to data/kalshi_client.py::_SPORT_TO_SERIES.
+# The three must move together: without spread ODDS there is nothing to build a
+# consensus from, so a matched spread market with no odds behind it just logs
+# `no_consensus` noise. Removed 2026-08-21 on -20.6% ROI (n=3) plus that noise
+# concern; re-added after the noise root cause (position #930's team-disambiguation
+# bug, most of the bad sample) was fixed system-wide, and live tradability was
+# reconfirmed on the series that still have one (see _SPORT_TO_SERIES).
 ENABLED_BET_TYPES: set[str] = {
     t.strip().lower()
-    for t in os.getenv("ENABLED_BET_TYPES", "h2h,totals,btts,rfi,player_prop").split(",")
+    for t in os.getenv("ENABLED_BET_TYPES", "h2h,totals,spread,btts,rfi,player_prop").split(",")
     if t.strip()
 }
 
@@ -899,11 +756,6 @@ MIN_EDGE: float = float(os.getenv("MIN_EDGE", "0.01"))  # Minimum NET edge after
 # per-fill (see execution/kalshi_executor.py::_actual_fee_dollars).
 KALSHI_TAKER_FEE_RATE_ESTIMATE: float = 0.07
 
-# ── Notifications ─────────────────────────────────────────────────────────────
-PUSHOVER_USER_KEY: str  = os.getenv("PUSHOVER_USER_KEY", "")   # From pushover.net account page
-PUSHOVER_APP_TOKEN: str = os.getenv("PUSHOVER_APP_TOKEN", "")  # From pushover.net app creation
-
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 DASHBOARD_USERNAME: str = os.getenv("DASHBOARD_USERNAME", "")  # Required username; empty = any username accepted
 DASHBOARD_PASSWORD: str = os.getenv("DASHBOARD_PASSWORD", "")  # HTTP Basic Auth; empty = no auth (local dev)
-DASHBOARD_URL: str = os.getenv("DASHBOARD_URL", "")            # e.g. http://167.172.148.64:5000 — shown as link in Pushover
