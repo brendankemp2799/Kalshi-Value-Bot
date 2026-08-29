@@ -65,6 +65,26 @@ def _fee_adjusted_b_and_l(
     return b_net, l_net
 
 
+def estimated_fee_per_contract(
+    price: float, fee_rate: float = config.KALSHI_TAKER_FEE_RATE_ESTIMATE,
+) -> float:
+    """
+    Worst-case (taker) fee in dollars for ONE contract at `price`, on the same
+    RATE*(1-price)-per-$1-staked estimate _fee_adjusted_b_and_l() uses for sizing —
+    one contract costs `price` dollars, so per-contract fee = price * RATE*(1-price).
+    Peaks at price=0.50 (1.75 cents/contract at the default 7% rate), symmetric
+    toward either extreme.
+
+    Used outside Kelly sizing wherever a pre-trade decision needs a real dollar fee
+    estimate rather than a fee-adjusted probability -- e.g. main.py's true-arbitrage
+    detection, which must confirm the price-sum margin actually exceeds what both
+    legs' fees would cost before treating it as risk-free (a thin-margin "arb" can
+    otherwise be a guaranteed small LOSS once real fees land, if either leg fills as
+    taker rather than resting to a maker fill).
+    """
+    return price * fee_rate * (1.0 - price)
+
+
 def fee_adjusted_breakeven_prob(price: float) -> float:
     """
     The true probability at which a contract at `price` has exactly zero net EV after

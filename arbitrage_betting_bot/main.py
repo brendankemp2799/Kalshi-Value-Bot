@@ -47,7 +47,7 @@ from data.odds_fetcher import OddsAPIClient, _in_season
 from data.kalshi_client import KalshiClient
 from core.market_matcher import match_events
 from core.value_detector import detect_value, Outcome
-from core.kelly_calculator import calculate_kelly
+from core.kelly_calculator import calculate_kelly, estimated_fee_per_contract
 from core.bankroll_manager import BankrollManager
 from core.correlation_tracker import CorrelationTracker
 from alerts.alert_manager import send_alert
@@ -155,6 +155,70 @@ def _record_pending(pending: dict, opp, event, stake: float) -> None:
         "side": resolve_side(opp),
         "stake": stake,
     })
+
+
+def _detect_arb_game_keys(scored: list[tuple]) -> set[tuple[str, str]]:
+    """
+    True arb pairs: both HOME and AWAY of the same non-soccer 2-way game appear in
+    `scored` with positive edge, AND the combined ask price leaves a margin that
+    exceeds what both legs' fees would cost. Games qualifying here bypass Rules 1-2
+    in CorrelationTracker.is_allowed() (core/correlation_tracker.py) — both legs can
+    be bet simultaneously for a near-guaranteed profit.
+
+    The fee check is necessary, not just the raw price-sum: a margin below what both
+    legs' fees would cost is a guaranteed small LOSS dressed up as risk-free profit.
+    Discovered 2026-08-29 — one real detection (2026-08-21/22, New York Yankees/
+    Toronto Blue Jays) had only a 2-cent margin, well inside the ~3.5 cents a single
+    taker-filled leg at that price could cost; neither leg ended up filling that
+    time, so nothing was lost, but the gap was real. Worst case (both legs taker) is
+    the honest comparison here, matching KALSHI_TAKER_FEE_RATE_ESTIMATE's use
+    everywhere else pre-trade.
+    """
+    logger = logging.getLogger(__name__)
+    arb_game_keys: set[tuple[str, str]] = set()
+    game_outcomes: dict[tuple[str, str], set] = {}
+    for _, opp, _ in scored:
+        ev = opp.matched_event.odds_event
+        if "soccer" in ev.sport_key:
+            continue  # soccer is 3-way; can't guarantee payout on both YES sides
+        game_key = (ev.home_team, ev.away_team)
+        game_outcomes.setdefault(game_key, set()).add(opp.outcome)
+
+    for game_key, outcomes in game_outcomes.items():
+        if Outcome.HOME not in outcomes or Outcome.AWAY not in outcomes:
+            continue
+        home_ask = next(
+            (opp.market_price for _, opp, _ in scored
+             if opp.matched_event.odds_event.home_team == game_key[0]
+             and opp.outcome == Outcome.HOME), None
+        )
+        away_ask = next(
+            (opp.market_price for _, opp, _ in scored
+             if opp.matched_event.odds_event.home_team == game_key[0]
+             and opp.outcome == Outcome.AWAY), None
+        )
+        if home_ask is None or away_ask is None:
+            continue
+
+        margin = 1.0 - (home_ask + away_ask)
+        worst_case_fee = (estimated_fee_per_contract(home_ask)
+                          + estimated_fee_per_contract(away_ask))
+        if margin > worst_case_fee:
+            arb_game_keys.add(game_key)
+            logger.info(
+                "[ARB] True arbitrage detected: %s vs %s "
+                "(HOME ask=%.3f + AWAY ask=%.3f = %.3f, margin=%.4f > "
+                "worst-case fee %.4f, guaranteed profit)",
+                game_key[0], game_key[1], home_ask, away_ask,
+                home_ask + away_ask, margin, worst_case_fee,
+            )
+        elif margin > 0:
+            logger.info(
+                "[ARB] Skipped %s vs %s — price-sum margin %.4f does not "
+                "clear worst-case fee %.4f, not treating as risk-free",
+                game_key[0], game_key[1], margin, worst_case_fee,
+            )
+    return arb_game_keys
 
 
 def run_scan(
@@ -400,36 +464,7 @@ def run_scan(
     # Sort by composite score descending — best opportunities first
     scored.sort(key=lambda t: t[0], reverse=True)
 
-    # Detect true arb pairs: both HOME and AWAY of the same non-soccer 2-way game
-    # appear in scored with positive edge. Both sides can be bet simultaneously for
-    # a near-guaranteed profit (YES_home_ask + YES_away_ask < 1.0).
-    arb_game_keys: set[tuple[str, str]] = set()
-    _game_outcomes: dict[tuple[str, str], set] = {}
-    for _, opp, _ in scored:
-        ev = opp.matched_event.odds_event
-        if "soccer" in ev.sport_key:
-            continue  # soccer is 3-way; can't guarantee payout on both YES sides
-        game_key = (ev.home_team, ev.away_team)
-        _game_outcomes.setdefault(game_key, set()).add(opp.outcome)
-    for game_key, outcomes in _game_outcomes.items():
-        if Outcome.HOME in outcomes and Outcome.AWAY in outcomes:
-            home_ask = next(
-                (opp.market_price for _, opp, _ in scored
-                 if opp.matched_event.odds_event.home_team == game_key[0]
-                 and opp.outcome == Outcome.HOME), None
-            )
-            away_ask = next(
-                (opp.market_price for _, opp, _ in scored
-                 if opp.matched_event.odds_event.home_team == game_key[0]
-                 and opp.outcome == Outcome.AWAY), None
-            )
-            if home_ask is not None and away_ask is not None and (home_ask + away_ask) < 1.0:
-                arb_game_keys.add(game_key)
-                logger.info(
-                    "[ARB] True arbitrage detected: %s vs %s "
-                    "(HOME ask=%.3f + AWAY ask=%.3f = %.3f < 1.0, guaranteed profit)",
-                    game_key[0], game_key[1], home_ask, away_ask, home_ask + away_ask,
-                )
+    arb_game_keys = _detect_arb_game_keys(scored)
 
     if not scored:
         if not dry_run:
