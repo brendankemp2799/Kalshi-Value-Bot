@@ -100,6 +100,19 @@ def test_empty_kalshi_name_is_refused():
     assert _sb_team_match("", home="Minnesota Twins", away="Detroit Tigers") is None
 
 
+# ── the A's incident (2026-08-29) ────────────────────────────────────────────────
+# Kalshi's spread subtitle for the Athletics is "A's wins by X.Y runs or more".
+# Stripping the apostrophe before splitting on whitespace turned "A's" into the
+# two single-letter tokens "A" and "s", both filtered out by the word-overlap
+# scorer's len > 1 check -- so "A's" scored 0 against BOTH sides of every one of
+# its own games, not just a same-city collision, and was refused as "ambiguous"
+# every single time. See _NICKNAME_ALIASES in core/odds_converter.py.
+
+def test_as_resolves_to_athletics_not_refused_as_ambiguous():
+    assert _sb_team_match("A's", home="Athletics", away="Baltimore Orioles") == "Athletics"
+    assert _sb_team_match("A's", home="Baltimore Orioles", away="Athletics") == "Athletics"
+
+
 # ── the caller must skip, not crash, on None ────────────────────────────────────
 
 def test_detect_spread_skips_an_ambiguous_market_without_placing_anything():

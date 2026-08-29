@@ -81,6 +81,18 @@ _ABBREV: dict[str, str] = {
 import re as _re
 import unicodedata as _unicodedata
 
+# Whole-name nicknames that the punctuation strip below would otherwise mangle
+# into unusable single-letter tokens. Kalshi spread subtitles write the Oakland/
+# Sacramento Athletics as "A's wins by X.Y runs or more" -- stripping the
+# apostrophe splits that into ["A", "s"], and _sb_team_scores filters out
+# single-character words entirely, so the team scored 0 against BOTH sides of
+# every matchup (not just a same-city collision) and every A's spread market
+# was silently skipped as "ambiguous". Checked as a whole string before the
+# punctuation strip, since splitting on the apostrophe is exactly what breaks it.
+_NICKNAME_ALIASES: dict[str, str] = {
+    "a's": "athletics",
+}
+
 
 def _norm_team(name: str) -> str:
     """
@@ -97,6 +109,9 @@ def _norm_team(name: str) -> str:
     # so the punctuation strip on the next line does not do this for us.
     name = "".join(c for c in _unicodedata.normalize("NFKD", name or "")
                    if not _unicodedata.combining(c))
+    nickname = _NICKNAME_ALIASES.get(name.strip().lower())
+    if nickname is not None:
+        return nickname
     # Remove punctuation except hyphens inside words
     cleaned = _re.sub(r"[^\w\s-]", " ", name)
     words = cleaned.strip().split()
