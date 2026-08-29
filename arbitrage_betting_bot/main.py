@@ -41,7 +41,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 import config
-from storage.db import init_db, log_opportunity, log_alert, add_position, finalize_pending_position, get_daily_stake_total, count_open_positions, log_scan_results, log_book_probabilities, link_book_probability_to_position, mark_scan_start, get_api_credits, update_bot_heartbeat, get_last_fetched_at, set_last_fetched_at, log_dk_scaled_estimates
+from storage.db import init_db, log_opportunity, log_alert, add_position, finalize_pending_position, update_pending_order_id, get_daily_stake_total, count_open_positions, log_scan_results, log_book_probabilities, link_book_probability_to_position, mark_scan_start, get_api_credits, update_bot_heartbeat, get_last_fetched_at, set_last_fetched_at, log_dk_scaled_estimates
 from execution.trade_executor import execute_trade, resolve_side
 from data.odds_fetcher import OddsAPIClient, _in_season
 from data.kalshi_client import KalshiClient
@@ -608,8 +608,19 @@ def run_scan(
             # runs in this worker thread; a process restart while it's still polling
             # used to orphan the order completely, since nothing was recorded until
             # the loop returned. See storage/db.py::finalize_pending_position().
+            #
+            # place_order() can place TWO real orders for one trade attempt (step 1
+            # at mid times out and gets cancelled, step 2 at ask places a fresh
+            # order) -- on_order_placed fires once per ORDER, not once per attempt.
+            # Update the existing pending row's order_id on a second call rather
+            # than inserting another one, or the first row (a real order that was
+            # genuinely cancelled with $0 filled) never gets finalized and sits as
+            # phantom exposure forever. See storage/db.py::update_pending_order_id().
             pending_holder: dict = {}
             def _on_order_placed(order_id):
+                if "id" in pending_holder:
+                    update_pending_order_id(pending_holder["id"], order_id)
+                    return
                 pending_holder["id"] = add_position(
                     sport=event.sport_key, home_team=event.home_team,
                     away_team=event.away_team, team_name=opp.team_name,

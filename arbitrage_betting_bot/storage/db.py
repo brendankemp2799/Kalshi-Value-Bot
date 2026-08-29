@@ -506,6 +506,30 @@ def add_position(
         return cur.lastrowid
 
 
+def update_pending_order_id(position_id: int, order_id: str) -> None:
+    """
+    Repoint an existing pending position row at a NEW order_id, in place.
+
+    place_order() (execution/kalshi_executor.py) can place TWO real orders for one
+    logical trade attempt: step 1 (GTC at mid) times out and is cancelled, then step
+    2 (GTC at ask) places a fresh order. on_order_placed fires once per real order,
+    not once per trade attempt. Added 2026-08-29 after step 1's callback wrote a
+    pending row, step 2's callback then wrote a SECOND pending row for the same
+    trade (main.py's pending_holder only remembered the second one), and the first
+    row -- for an order that was genuinely cancelled with $0 filled -- was never
+    finalized. It sat as phantom 'pending' exposure (counted in count_open_positions
+    and total_at_risk) until a reconciliation mismatch surfaced it. Callers now
+    check whether a pending row already exists for this trade attempt and update
+    its order_id in place instead of inserting a second row -- see main.py's
+    on_order_placed closure.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE positions SET order_id = ? WHERE id = ?",
+            (order_id, position_id),
+        )
+
+
 def finalize_pending_position(
     position_id: int,
     stake: float,

@@ -88,6 +88,48 @@ def test_callback_fires_before_poll_loop_resolves(monkeypatch, kalshi_key):
     assert call_order.index(("callback", "order-456")) < call_order.index(("poll",))
 
 
+def test_callback_fires_twice_on_the_real_step1_timeout_step2_path(monkeypatch, kalshi_key):
+    """Exercises place_order()'s actual step-1-times-out-then-step-2 fallthrough
+    (not a DB-layer simulation): step 1 places an order that never fills and gets
+    cancelled once the poll deadline passes, step 2 places a NEW order that fills
+    immediately. on_order_placed must fire once per real order (twice total), with
+    DIFFERENT order_ids -- this is the exact sequence that produced the phantom
+    pending row on 2026-08-29."""
+    calls = {"n": 0}
+
+    def _fake_place_raw_order(ticker, api_side, price, count, tif, client_order_id):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"order_id": "step1-order", "fill_count": 0}  # step 1: unfilled
+        return {"order_id": "step2-order", "fill_count": count}   # step 2: fills
+
+    monkeypatch.setattr(ke, "_place_raw_order", _fake_place_raw_order)
+    monkeypatch.setattr(ke, "_classify_fill", lambda *a, **kw: ("taker", 0.03))
+    monkeypatch.setattr(ke, "_cancel_order", lambda *a, **kw: True)
+    monkeypatch.setattr(ke, "_get_order_status", lambda *a, **kw: {"fill_count_fp": 0})
+    monkeypatch.setattr(time_module, "sleep", lambda *_: None)
+
+    # Fast-forward time.time() so the poll loop's deadline passes after one check,
+    # instead of a real (up to 900s) wait.
+    fake_clock = {"t": 1000.0}
+    def _fake_time():
+        fake_clock["t"] += 1000.0
+        return fake_clock["t"]
+    monkeypatch.setattr(time_module, "time", _fake_time)
+
+    seen_order_ids = []
+    order_id, status, reason, stake, fill_type, fee = ke.place_order(
+        ticker="KXTEST-6", side="yes", stake_dollars=4.0, market_price=0.40,
+        commence_time=None, on_order_placed=seen_order_ids.append,
+    )
+
+    assert status == "submitted"
+    assert seen_order_ids == ["step1-order", "step2-order"], (
+        "expected exactly one callback per real order, step 1 then step 2"
+    )
+    assert order_id == "step2-order"
+
+
 def test_callback_not_called_when_no_order_placed(kalshi_key):
     """KALSHI_API_KEY missing (or any early-return before an order exists) must
     never invoke the callback — there is nothing to write a pending row for."""
@@ -179,3 +221,50 @@ def test_a_pending_row_counts_toward_open_positions(fresh_db):
     tracking, not silently invisible the way it was before this fix."""
     _add_pending(fresh_db)
     assert fresh_db.count_open_positions(is_paper=False) == 1
+
+
+# ── update_pending_order_id: the step-1-then-step-2 phantom-row regression ──────
+#
+# Discovered 2026-08-29: place_order() can place TWO real orders for one logical
+# trade attempt -- step 1 (GTC at mid) times out and is cancelled ($0 filled), then
+# step 2 (GTC at ask) places a fresh order that actually fills. on_order_placed
+# fired once per real order, so main.py's pending_holder wrote a SECOND row for
+# step 2 and forgot about the first -- which sat as phantom 'pending' exposure
+# forever, since nothing ever finalized it. A real instance: id was never
+# finalized, Kalshi showed the true 2-contract position while the bot's own
+# count_open_positions/total_at_risk double-counted an extra ~2.1 contracts that
+# were never actually bought.
+
+def test_update_pending_order_id_repoints_without_a_second_row(fresh_db):
+    pos_id = _add_pending(fresh_db, order_id="step1-order-id")
+    fresh_db.update_pending_order_id(pos_id, "step2-order-id")
+
+    rows = fresh_db.get_connection().execute(
+        "SELECT id, order_id, execution_status FROM positions"
+    ).fetchall()
+    assert len(rows) == 1, "step 2 must not create a second row for the same trade"
+    assert rows[0]["order_id"] == "step2-order-id"
+    assert rows[0]["execution_status"] == "pending"
+
+
+def test_the_step1_cancel_then_step2_fill_sequence_ends_with_one_finalized_row(fresh_db):
+    """Reproduces the exact 2026-08-29 sequence: step 1 gets a pending row, times
+    out and is cancelled with $0 filled, step 2 places a new order that fills --
+    the SAME row must end up finalized with step 2's real numbers, no orphan."""
+    pos_id = _add_pending(fresh_db, order_id="step1-order-id", stake=0.90)
+    # step 2 places a fresh order for the same trade attempt
+    fresh_db.update_pending_order_id(pos_id, "step2-order-id")
+    # step 2 fills for less than originally requested (2 contracts @ 0.42, not 2.14)
+    fresh_db.finalize_pending_position(
+        pos_id, stake=0.84, execution_status="submitted", fill_type="taker",
+        entry_fee_paid=0.0342, failure_reason=None,
+    )
+
+    rows = fresh_db.get_connection().execute("SELECT * FROM positions").fetchall()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["order_id"] == "step2-order-id"
+    assert row["execution_status"] == "submitted"
+    assert row["stake"] == 0.84
+    # Exposure tracking must reflect the real $0.84, not the stale $0.90 request
+    assert fresh_db.get_open_positions(is_paper=False)[0]["stake"] == 0.84
