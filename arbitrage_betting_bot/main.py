@@ -452,12 +452,28 @@ def run_scan(
     # Position-shaped records, not bare dollars: Rule 1 buckets by factor and needs
     # each pending bet's type and side to do that.
     pending_game_stakes: dict[tuple[str, str], list[dict]] = {}
+    # Same blind spot again, for Rule 3's account-wide caps (MAX_TOTAL_EXPOSURE_PCT,
+    # MAX_SPORT_EXPOSURE_PCT) and the daily capital-risk cap below. Discovered
+    # 2026-08-28: a single scan approved a large simultaneous batch that pushed real
+    # exposure to ~79% of account value against a coded 30% cap, because every
+    # opportunity in that batch was checked against the same stale pre-scan total.
+    pending_exposure_total = 0.0
+    pending_exposure_by_sport: dict[str, float] = {}
 
     for _score, opp, sizing in scored:
         ticker = opp.matched_event.kalshi_market.ticker
+
         allowed, reason = tracker.is_allowed(opp, sizing.recommended_dollars,
                                              arb_game_keys=arb_game_keys,
-                                             pending_game_stakes=pending_game_stakes)
+                                             pending_game_stakes=pending_game_stakes,
+                                             pending_exposure_total=pending_exposure_total,
+                                             pending_exposure_by_sport=pending_exposure_by_sport)
+        if allowed and not dry_run:
+            daily_cap_now = daily_staked + pending_exposure_total + sizing.recommended_dollars
+            if daily_cap_now > daily_risk_cap:
+                allowed, reason = False, (
+                    f"Daily capital risk cap would reach ${daily_cap_now:.2f} "
+                    f"(max ${daily_risk_cap:.2f})")
         if allowed and not dry_run and not paper and ticker in approved_tickers_this_scan:
             allowed, reason = False, f"Already queued an entry on {ticker} earlier this scan"
 
@@ -531,11 +547,18 @@ def run_scan(
             logger.info("[PAPER] Position logged: %s $%.2f on Kalshi",
                         opp.team_name, sizing.recommended_dollars)
             _record_pending(pending_game_stakes, opp, event, actual_stake)
+            pending_exposure_total += actual_stake
+            pending_exposure_by_sport[event.sport_key] = (
+                pending_exposure_by_sport.get(event.sport_key, 0.0) + actual_stake)
         elif opp_id:
             # Live mode: queue for parallel execution below
             approved_tickers_this_scan.add(ticker)
             _record_pending(pending_game_stakes, opp, event,
                             sizing.recommended_dollars)
+            pending_exposure_total += sizing.recommended_dollars
+            pending_exposure_by_sport[event.sport_key] = (
+                pending_exposure_by_sport.get(event.sport_key, 0.0)
+                + sizing.recommended_dollars)
             approved_live.append((opp, sizing, opp_id))
 
     # 4c. Live mode — place all approved orders in parallel (GTC timeouts run concurrently)

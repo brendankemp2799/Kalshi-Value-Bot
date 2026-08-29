@@ -91,7 +91,8 @@ def tracker(monkeypatch, request):
         monkeypatch.setattr(ct.db, "strategies_ever_filled_on",
                             lambda tk, paper=False: ever.get(tk, set()))
         bm = SimpleNamespace(bankroll=bankroll, is_paper=False,
-                             can_add_exposure=lambda d, s, is_mm=False: (True, "OK"))
+                             can_add_exposure=lambda d, s, is_mm=False, pending_total=0.0,
+                                                     pending_sport=0.0: (True, "OK"))
         return CorrelationTracker(bm)
     return _make
 
@@ -295,7 +296,8 @@ def test_bankroll_exposure_is_still_enforced_for_everyone(monkeypatch):
     import core.correlation_tracker as ct
     monkeypatch.setattr(ct.db, "get_open_positions", lambda paper: [])
     bm = SimpleNamespace(bankroll=BANKROLL, is_paper=False,
-                         can_add_exposure=lambda d, s, is_mm=False: (False, "too much"))
+                         can_add_exposure=lambda d, s, is_mm=False, pending_total=0.0,
+                                                 pending_sport=0.0: (False, "too much"))
     t = CorrelationTracker(bm)
     allowed, reason = t.is_allowed(opp(), 1.0,
                                    arb_game_keys={("Newcastle United", "Liverpool")})

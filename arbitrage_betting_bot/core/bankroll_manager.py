@@ -34,7 +34,14 @@ class BankrollManager:
         positions = db.get_open_positions(self.is_paper)
         return sum(float(p["stake"]) for p in positions if p["strategy"] == "market_making")
 
-    def can_add_exposure(self, additional: float, sport: str, is_mm: bool = False) -> tuple[bool, str]:
+    def can_add_exposure(
+        self,
+        additional: float,
+        sport: str,
+        is_mm: bool = False,
+        pending_total: float = 0.0,
+        pending_sport: float = 0.0,
+    ) -> tuple[bool, str]:
         """
         Check whether adding `additional` dollars more exposure is allowed.
         Returns (allowed, reason).
@@ -43,8 +50,19 @@ class BankrollManager:
         total/sport caps below, not a separate bankroll. Market making shares every
         other exposure limit with the directional strategy; this just stops the new,
         unvalidated execution mode from occupying too much of that shared pool at once.
+
+        pending_total / pending_sport: dollars already approved earlier in the SAME
+        scan but not yet in the positions table (live orders aren't recorded until
+        the parallel-execution block runs, after the whole approval loop finishes —
+        see main.py). self.total_at_risk/sport_exposure() only reflect PRIOR scans,
+        so without this, every opportunity in one scan is checked against the same
+        stale baseline and none of them see each other. On 2026-08-28 a single scan
+        approved enough simultaneous bets to push real total exposure to ~79% of
+        account value against this 30% cap -- Rule 1 (core/correlation_tracker.py's
+        per-game cap) already had an equivalent fix (pending_game_stakes); this was
+        the same class of gap, just missing here.
         """
-        new_total = self.total_at_risk + additional
+        new_total = self.total_at_risk + pending_total + additional
         if new_total / self.bankroll > config.MAX_TOTAL_EXPOSURE_PCT:
             return (
                 False,
@@ -52,7 +70,7 @@ class BankrollManager:
                 f"(max {config.MAX_TOTAL_EXPOSURE_PCT * 100:.0f}%)",
             )
 
-        new_sport_exp = self.sport_exposure(sport) + additional
+        new_sport_exp = self.sport_exposure(sport) + pending_sport + additional
         if new_sport_exp / self.bankroll > config.MAX_SPORT_EXPOSURE_PCT:
             return (
                 False,

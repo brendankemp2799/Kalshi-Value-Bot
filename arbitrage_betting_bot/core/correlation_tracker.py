@@ -85,6 +85,8 @@ class CorrelationTracker:
         arb_game_keys: set[tuple[str, str]] | None = None,
         is_mm: bool = False,
         pending_game_stakes: dict[tuple[str, str], float] | None = None,
+        pending_exposure_total: float = 0.0,
+        pending_exposure_by_sport: dict[str, float] | None = None,
     ) -> tuple[bool, str]:
         """
         Returns (allowed, reason).
@@ -104,6 +106,10 @@ class CorrelationTracker:
         blocks if the existing position is a directional value_edge bet, so market
         making never quotes on top of a market the directional strategy already has
         a stake in.
+
+        pending_exposure_total / pending_exposure_by_sport: same blind spot as
+        pending_game_stakes above, but for Rule 3's account-wide caps. Passed
+        straight through to BankrollManager.can_add_exposure().
         """
         event = opp.matched_event.odds_event
         home = event.home_team
@@ -231,7 +237,11 @@ class CorrelationTracker:
                     )
 
         # Rule 3: bankroll exposure (always enforced, even for arb/MM)
-        allowed, reason = self.bm.can_add_exposure(recommended_dollars, sport, is_mm=is_mm)
+        allowed, reason = self.bm.can_add_exposure(
+            recommended_dollars, sport, is_mm=is_mm,
+            pending_total=pending_exposure_total,
+            pending_sport=(pending_exposure_by_sport or {}).get(sport, 0.0),
+        )
         if not allowed:
             return False, reason
 
