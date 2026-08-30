@@ -1663,13 +1663,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
   /* Summary cards */
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  /* min-width:0 overrides the grid item's implicit min-width:auto, which
+     otherwise sizes to its content's intrinsic width -- a <canvas> defaults to
+     300px wide before Chart.js gets a chance to resize it, and without this
+     that alone blows the card (and the whole row) past the viewport. Classic
+     CSS Grid overflow gotcha, not a Chart.js bug. */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-width: 0; }
   .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
   .card-value { font-size: 22px; font-weight: 700; }
   .card-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
   /* In-card sparkline (2026-08-30) -- fixed height so Chart.js's
-     maintainAspectRatio:false has a stable box to size into. */
-  .card-chart { position: relative; height: 34px; margin-top: 8px; }
+     maintainAspectRatio:false has a stable box to size into. overflow:hidden
+     is a second line of defense against the same canvas-intrinsic-width issue
+     above (clips instead of forcing the card wide if it ever recurs). */
+  .card-chart { position: relative; height: 34px; margin-top: 8px; overflow: hidden; }
+  .card-chart canvas { max-width: 100%; display: block; }
   .spark-tooltip {
     position: fixed; opacity: 0; pointer-events: none; z-index: 9999;
     background: #0b0d13; border: 1px solid var(--border); border-radius: 6px;
