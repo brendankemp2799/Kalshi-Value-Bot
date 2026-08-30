@@ -864,6 +864,19 @@ def _timeframe_cutoff(key: str) -> datetime | None:
     return None
 
 
+# Trend-chart bucket granularity per timeframe -- fine enough to show real
+# movement within the window without so many points the chart is unreadable
+# (24 hourly points for Today, ~7/~30 daily points for 7D/30D, weekly points
+# for the longer windows).
+_TREND_GRANULARITY: dict[str, tuple[str, str]] = {
+    "today": ("hour", "Hourly"),
+    "week": ("day", "Daily"),
+    "month": ("day", "Daily"),
+    "ytd": ("week", "Weekly"),
+    "all": ("week", "Weekly"),
+}
+
+
 def _clv_context(timeframe: str = "all") -> dict:
     """CLV (closing-line value) and TTE (time-to-event) analytics context.
 
@@ -878,9 +891,13 @@ def _clv_context(timeframe: str = "all") -> dict:
     `timeframe` (added 2026-08-30) scopes EVERYTHING below -- summary cards, every
     breakdown table, every chart, the recent-bets list -- to bets ENTERED within
     that window (not settled within it; CLV/EV are properties of the entry itself,
-    matching how weekly_clv_series and TTE bucketing already anchor on entered_at).
+    matching how bucket_series() and TTE bucketing already anchor on entered_at).
     Filtering once here, up front, is what keeps every consumer in sync instead of
-    each re-implementing its own window logic.
+    each re-implementing its own window logic. The trend charts (bucket_series)
+    additionally pick a bucket granularity from `timeframe` via
+    _TREND_GRANULARITY -- hourly/daily/weekly depending on the window, so a short
+    window doesn't collapse to a single point and a long one doesn't render
+    hundreds of unreadable hourly bars.
     """
     if timeframe not in _TIMEFRAME_KEYS:
         timeframe = "all"
@@ -893,10 +910,11 @@ def _clv_context(timeframe: str = "all") -> dict:
     by_sport = [{**g, "key": _short_sport(g["key"])} for g in clv.group_by_field(rows, "sport")]
     by_bet_type = [{**g, "key": _bet_type_label(g["key"])} for g in clv.group_by_field(rows, "bet_type")]
     tte_buckets = clv.bucket_by_tte(rows)
-    weekly = clv.weekly_clv_series(rows)
+    granularity, granularity_label = _TREND_GRANULARITY.get(timeframe, ("week", "Weekly"))
+    trend = clv.bucket_series(rows, granularity)
 
     # Recent rows table, newest first (rows arrive oldest-first from the DB layer
-    # so weekly_clv_series doesn't need to re-sort).
+    # so bucket_series doesn't need to re-sort).
     recent = []
     for r in reversed(rows[-200:]):
         recent.append({
@@ -918,9 +936,9 @@ def _clv_context(timeframe: str = "all") -> dict:
 
     return dict(
         summary=summary, by_sport=by_sport, by_bet_type=by_bet_type,
-        tte_buckets=tte_buckets, weekly=weekly, recent=recent,
+        tte_buckets=tte_buckets, recent=recent,
         scatter_json=json.dumps(scatter),
-        weekly_json=json.dumps(weekly),
+        trend_json=json.dumps(trend), granularity_label=granularity_label,
         min_sample=MIN_CALIBRATION_SAMPLE,
         timeframe=timeframe, timeframes=TIMEFRAMES,
     )
@@ -1834,11 +1852,37 @@ HTML_TEMPLATE = """<!DOCTYPE html>
        verdict, until the sample is large.</p>
   </div>
 
-  <!-- CLV charts -->
+  <!-- KPI trend — same KPIs as the cards above, broken out over time within the
+       selected timeframe. Bucket granularity adapts to the timeframe (hourly for
+       Today, daily for 7D/30D, weekly for YTD/All) -- see
+       dashboard_server.py::_TREND_GRANULARITY and core/clv_analytics.py::
+       bucket_series(). Tap or hover any point for its exact value (see
+       commonScales/trendTooltip below for the touch-friendly Chart.js config). -->
+  <div class="section-title">KPI Trend ({{ granularity_label }})</div>
   <div class="charts">
-    <div class="chart-box wide">
-      <h2>Weekly Kalshi CLV Trend</h2>
-      <canvas id="weeklyChart"></canvas>
+    <div class="chart-box">
+      <h2>Settled Bets</h2>
+      <canvas id="trendCountChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <h2>Win Rate</h2>
+      <canvas id="trendWinRateChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <h2>Mean Kalshi CLV</h2>
+      <canvas id="trendKalshiClvChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <h2>Mean Book CLV</h2>
+      <canvas id="trendBookClvChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <h2>Positive CLV Rate</h2>
+      <canvas id="trendPositiveClvChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <h2>Mean EV%</h2>
+      <canvas id="trendEvChart"></canvas>
     </div>
   </div>
   <div class="charts">
@@ -2071,7 +2115,7 @@ setInterval(refresh, 60000);  // auto-refresh every 60s -- calibration only; CLV
                                // below is rendered server-side once per page load.
 
 // ── CLV & TTE charts (server-rendered data, static per page load) ─────────────
-const clvWeekly = {{ weekly_json|safe }};
+const kpiTrend = {{ trend_json|safe }};
 const clvScatterData = {{ scatter_json|safe }};
 const clvBySport = {{ by_sport|tojson }};
 const clvByBetType = {{ by_bet_type|tojson }};
@@ -2085,18 +2129,70 @@ const clvTteBuckets = {{ tte_buckets|tojson }};
          title: yLabel ? { display: true, text: yLabel, color: textColor } : undefined },
   });
 
-  new Chart(document.getElementById('weeklyChart'), {
-    type: 'line',
-    data: {
-      labels: clvWeekly.map(w => w.week),
-      datasets: [{
-        label: 'Mean Kalshi CLV', data: clvWeekly.map(w => w.mean_kalshi_clv != null ? w.mean_kalshi_clv * 100 : null),
-        borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.15)',
-        tension: 0.25, spanGaps: true, fill: true,
-      }],
+  // Touch AND mouse: 'nearest'+intersect:false means the tooltip fires from
+  // anywhere near a point along the x-axis, not just an exact hit -- pixel-
+  // perfect taps are unreliable on a phone. Point radius/hitRadius are bumped
+  // up for the same reason (a bare Chart.js default point is too small to
+  // reliably tap). Chart.js listens for touchstart/touchmove natively, so this
+  // needs no extra wiring beyond these options to work on iPhone.
+  const trendInteraction = { mode: 'nearest', axis: 'x', intersect: false };
+  const trendPoint = { radius: 3, hoverRadius: 7, hitRadius: 14 };
+
+  function bucketAfterLabel(ctx) {
+    const b = kpiTrend[ctx.dataIndex];
+    return b ? b.n + (b.n === 1 ? ' bet' : ' bets') : '';
+  }
+
+  function trendLineChart(canvasId, color, values, suffix, yBounds) {
+    new Chart(document.getElementById(canvasId), {
+      type: 'line',
+      data: {
+        labels: kpiTrend.map(b => b.label),
+        datasets: [{
+          data: values, borderColor: color, backgroundColor: color + '26',
+          tension: 0.25, spanGaps: true, fill: true, ...trendPoint,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, interaction: trendInteraction,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            mode: 'nearest', intersect: false,
+            callbacks: {
+              label: (ctx) => ctx.parsed.y == null ? 'No data' : ctx.parsed.y.toFixed(1) + suffix,
+              afterLabel: bucketAfterLabel,
+            },
+          },
+        },
+        scales: { x: commonScales().x,
+                  y: { grid: { color: gridColor }, ticks: { color: textColor }, ...yBounds } },
+      },
+    });
+  }
+
+  trendLineChart('trendWinRateChart', '#a855f7', kpiTrend.map(b => b.win_rate), '%', { min: 0, max: 100 });
+  trendLineChart('trendKalshiClvChart', '#3b82f6',
+    kpiTrend.map(b => b.mean_kalshi_clv != null ? b.mean_kalshi_clv * 100 : null), '%');
+  trendLineChart('trendBookClvChart', '#f59e0b',
+    kpiTrend.map(b => b.mean_consensus_clv != null ? b.mean_consensus_clv * 100 : null), '%');
+  trendLineChart('trendPositiveClvChart', '#22c55e', kpiTrend.map(b => b.pct_positive_kalshi_clv), '%', { min: 0, max: 100 });
+  trendLineChart('trendEvChart', '#22c55e',
+    kpiTrend.map(b => b.mean_ev_pct != null ? b.mean_ev_pct * 100 : null), '%');
+
+  new Chart(document.getElementById('trendCountChart'), {
+    type: 'bar',
+    data: { labels: kpiTrend.map(b => b.label),
+      datasets: [{ data: kpiTrend.map(b => b.n), backgroundColor: '#3b82f6' }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: trendInteraction,
+      plugins: {
+        legend: { display: false },
+        tooltip: { mode: 'nearest', intersect: false,
+          callbacks: { label: (ctx) => ctx.parsed.y + (ctx.parsed.y === 1 ? ' bet' : ' bets') } },
+      },
+      scales: commonScales(),
     },
-    options: { responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } }, scales: commonScales('CLV %') },
   });
 
   new Chart(document.getElementById('sportChart'), {

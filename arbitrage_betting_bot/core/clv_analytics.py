@@ -176,12 +176,14 @@ def overall_summary(rows: list[dict]) -> dict:
 
 
 def _group_stats(rows: list[dict]) -> dict:
+    kalshi_clvs = [r["kalshi_clv"] for r in rows]
     return {
         "n": len(rows),
         "win_rate": _pct(lambda v: v is True, [r["won"] for r in rows]),
-        "mean_kalshi_clv": _mean([r["kalshi_clv"] for r in rows]),
+        "mean_kalshi_clv": _mean(kalshi_clvs),
         "mean_consensus_clv": _mean([r["consensus_clv"] for r in rows]),
         "mean_ev_pct": _mean([r["ev_pct"] for r in rows]),
+        "pct_positive_kalshi_clv": _pct(lambda v: v > 0, kalshi_clvs),
     }
 
 
@@ -209,22 +211,46 @@ def bucket_by_tte(rows: list[dict], buckets: list[tuple[float, float]] = TTE_BUC
     return out
 
 
-def weekly_clv_series(rows: list[dict]) -> list[dict]:
-    """Mean kalshi_clv per ISO week (Monday start), oldest first -- the CLV-over-
-    time trend line. Only rows with a resolved kalshi_clv contribute."""
-    buckets: dict[str, list[float]] = defaultdict(list)
-    counts: dict[str, int] = defaultdict(int)
+_BUCKET_TRUNCATE: dict[str, str] = {"hour": "%m/%d %H:00", "day": "%m/%d", "week": "%m/%d"}
+
+
+def bucket_series(rows: list[dict], granularity: str = "week") -> list[dict]:
+    """
+    Every KPI the dashboard's summary cards show (n, win_rate, mean_kalshi_clv,
+    mean_consensus_clv, mean_ev_pct, pct_positive_kalshi_clv), broken out over
+    time by entered_at, oldest first -- the trend-chart data behind the
+    timeframe selector. Generalizes what used to be a CLV-only, weekly-only
+    weekly_clv_series(): once the timeframe selector needed daily and hourly
+    granularity too, every KPI needed the same kind of over-time breakdown, so
+    this bucketing logic lives in ONE place rather than once per metric.
+
+    granularity: "hour" truncates to the top of the hour, "day" to UTC midnight,
+    "week" to the ISO Monday (default). Bucket boundaries are fixed to the
+    calendar/clock, NOT anchored to whatever timeframe cutoff the caller applied
+    upstream (see filter_rows_since) -- which bucket a row falls into is the same
+    regardless of which window is currently selected; only the SET of rows
+    passed in changes per window.
+
+    Each entry: {"bucket_start": <ISO datetime, for sorting/joining>,
+    "label": <short string for a chart x-axis>, **_group_stats(bucket_rows)}.
+    A bucket only exists if at least one row fell into it (no zero-filled gaps).
+    """
+    buckets: dict[datetime, list[dict]] = defaultdict(list)
     for r in rows:
         entered = _parse_dt(r.get("entered_at"))
         if entered is None:
             continue
-        week_start = (entered - timedelta(days=entered.weekday())).date().isoformat()
-        counts[week_start] += 1
-        if r["kalshi_clv"] is not None:
-            buckets[week_start].append(r["kalshi_clv"])
-    weeks = sorted(set(counts) | set(buckets))
+        if granularity == "hour":
+            key = entered.replace(minute=0, second=0, microsecond=0)
+        elif granularity == "week":
+            day = entered.replace(hour=0, minute=0, second=0, microsecond=0)
+            key = day - timedelta(days=day.weekday())
+        else:  # "day"
+            key = entered.replace(hour=0, minute=0, second=0, microsecond=0)
+        buckets[key].append(r)
+
+    fmt = _BUCKET_TRUNCATE.get(granularity, _BUCKET_TRUNCATE["day"])
     return [
-        {"week": w, "n": counts.get(w, 0),
-         "mean_kalshi_clv": _mean(buckets.get(w, []))}
-        for w in weeks
+        {"bucket_start": key.isoformat(), "label": key.strftime(fmt), **_group_stats(buckets[key])}
+        for key in sorted(buckets)
     ]

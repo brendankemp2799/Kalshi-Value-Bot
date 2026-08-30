@@ -14,7 +14,7 @@ import pytest
 
 from core.clv_analytics import (
     compute_row, compute_rows, overall_summary, group_by_field, bucket_by_tte,
-    weekly_clv_series, pearson_correlation, filter_rows_since,
+    bucket_series, pearson_correlation, filter_rows_since,
 )
 
 
@@ -240,6 +240,15 @@ def test_group_by_sport_splits_correctly():
     assert groups["soccer_epl"]["n"] == 1
 
 
+def test_group_stats_includes_pct_positive_kalshi_clv():
+    rows = compute_rows([
+        _pos(sport="baseball_mlb", market_price=0.40, kalshi_close_price=0.50),  # +clv
+        _pos(sport="baseball_mlb", market_price=0.40, kalshi_close_price=0.30),  # -clv
+    ])
+    groups = {g["key"]: g for g in group_by_field(rows, "sport")}
+    assert groups["baseball_mlb"]["pct_positive_kalshi_clv"] == pytest.approx(50.0)
+
+
 def test_groups_are_sorted_largest_first():
     rows = compute_rows([_pos(sport="a")] + [_pos(sport="b")] * 3)
     groups = group_by_field(rows, "sport")
@@ -286,34 +295,80 @@ def test_bucket_win_rate_and_clv_are_computed_per_bucket():
     assert bucket["mean_kalshi_clv"] == pytest.approx(0.10)
 
 
-# ── weekly_clv_series ─────────────────────────────────────────────────────────────
+# ── bucket_series ─────────────────────────────────────────────────────────────────
 
-def test_weekly_series_groups_by_iso_week_monday_start():
+def test_bucket_series_week_groups_by_iso_week_monday_start():
     rows = compute_rows([
         _pos(entered_at="2026-08-17T12:00:00"),  # Monday
         _pos(entered_at="2026-08-19T12:00:00"),  # Wednesday, same week
         _pos(entered_at="2026-08-24T12:00:00"),  # next Monday
     ])
-    series = weekly_clv_series(rows)
-    weeks = {w["week"]: w["n"] for w in series}
-    assert weeks["2026-08-17"] == 2
-    assert weeks["2026-08-24"] == 1
+    series = bucket_series(rows, "week")
+    by_start = {b["bucket_start"][:10]: b["n"] for b in series}
+    assert by_start["2026-08-17"] == 2
+    assert by_start["2026-08-24"] == 1
 
 
-def test_weekly_series_is_ordered_oldest_first():
+def test_bucket_series_is_ordered_oldest_first():
     rows = compute_rows([
         _pos(entered_at="2026-08-24T12:00:00"),
         _pos(entered_at="2026-08-10T12:00:00"),
     ])
-    series = weekly_clv_series(rows)
-    assert series[0]["week"] < series[-1]["week"]
+    series = bucket_series(rows, "week")
+    assert series[0]["bucket_start"] < series[-1]["bucket_start"]
 
 
-def test_weekly_series_mean_clv_ignores_rows_without_a_settled_clv():
+def test_bucket_series_mean_clv_ignores_rows_without_a_settled_clv():
     rows = compute_rows([
         _pos(entered_at="2026-08-17T12:00:00", kalshi_close_price=0.60, market_price=0.50),
         _pos(entered_at="2026-08-18T12:00:00", kalshi_close_price=None),
     ])
-    series = weekly_clv_series(rows)
+    series = bucket_series(rows, "week")
     assert series[0]["n"] == 2  # both rows counted
     assert series[0]["mean_kalshi_clv"] == pytest.approx(0.10)  # only the settled one
+
+
+def test_bucket_series_day_groups_by_calendar_day():
+    rows = compute_rows([
+        _pos(entered_at="2026-08-20T01:00:00"),
+        _pos(entered_at="2026-08-20T23:00:00"),  # same day, different hour
+        _pos(entered_at="2026-08-21T00:00:00"),  # next day
+    ])
+    series = bucket_series(rows, "day")
+    by_start = {b["bucket_start"][:10]: b["n"] for b in series}
+    assert by_start["2026-08-20"] == 2
+    assert by_start["2026-08-21"] == 1
+
+
+def test_bucket_series_hour_groups_by_the_top_of_the_hour():
+    rows = compute_rows([
+        _pos(entered_at="2026-08-20T14:05:00"),
+        _pos(entered_at="2026-08-20T14:55:00"),  # same hour
+        _pos(entered_at="2026-08-20T15:00:00"),  # next hour
+    ])
+    series = bucket_series(rows, "hour")
+    assert [b["n"] for b in series] == [2, 1]
+
+
+def test_bucket_series_default_granularity_is_week():
+    rows = compute_rows([_pos(entered_at="2026-08-17T12:00:00")])
+    assert bucket_series(rows) == bucket_series(rows, "week")
+
+
+def test_bucket_series_carries_every_kpi_the_summary_cards_show():
+    rows = compute_rows([_pos(entered_at="2026-08-17T12:00:00", pnl=1.0)])
+    bucket = bucket_series(rows, "week")[0]
+    for field in ("win_rate", "mean_kalshi_clv", "mean_consensus_clv",
+                  "mean_ev_pct", "pct_positive_kalshi_clv"):
+        assert field in bucket
+
+
+def test_bucket_series_has_no_empty_gaps_between_buckets():
+    """No zero-filled buckets for weeks/days/hours with zero bets -- only buckets
+    that actually contain a row exist."""
+    rows = compute_rows([
+        _pos(entered_at="2026-08-03T12:00:00"),  # week 1
+        _pos(entered_at="2026-08-24T12:00:00"),  # week 4 -- weeks 2-3 have nothing
+    ])
+    series = bucket_series(rows, "week")
+    assert len(series) == 2
