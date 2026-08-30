@@ -1667,13 +1667,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
   .card-value { font-size: 22px; font-weight: 700; }
   .card-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  /* In-card sparkline (2026-08-30) -- fixed height so Chart.js's
+     maintainAspectRatio:false has a stable box to size into. */
+  .card-chart { position: relative; height: 34px; margin-top: 8px; }
+  .spark-tooltip {
+    position: fixed; opacity: 0; pointer-events: none; z-index: 9999;
+    background: #0b0d13; border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 9px; font-size: 11px; color: var(--text); white-space: nowrap;
+    transition: opacity 0.08s ease-out; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
 
   /* Timeframe selector (2026-08-30) */
-  .timeframe-nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .timeframe-nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
   .timeframe-btn { font-size: 12px; font-weight: 600; color: var(--muted); text-decoration: none;
     padding: 6px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
     white-space: nowrap; }
   .timeframe-btn.active { color: var(--bg); background: var(--blue); border-color: var(--blue); }
+  .trend-caption { font-size: 11px; color: var(--muted); margin-bottom: 16px; }
   .pos { color: var(--green); }
   .neg { color: var(--red); }
   .neutral { color: var(--text); }
@@ -1730,6 +1740,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .card { padding: 10px 12px; }
     .card-value { font-size: 18px; }
     .card-sub { font-size: 10px; word-break: break-word; }
+    .card-chart { height: 28px; margin-top: 6px; }
     .chart-box { padding: 10px; }
     .chart-box canvas { max-height: 150px; }
     .section-header { padding: 10px 12px; }
@@ -1751,6 +1762,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
+
+<!-- Shared tooltip for the card sparklines (2026-08-30) -- a sparkline canvas
+     is too short (28-34px) for Chart.js's default on-canvas tooltip to have
+     room to draw itself without being clipped, so the sparklines use Chart.js's
+     "external tooltip" hook to position THIS div instead, which isn't bounded
+     by the tiny canvas. See the sparkline() JS function below. -->
+<div id="sparkTooltip" class="spark-tooltip"></div>
 
 <header>
   <h1>Kalshi Arb Bot</h1>
@@ -1783,6 +1801,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
        href="{{ url_for('index', timeframe=key) }}">{{ label }}</a>
     {% endfor %}
   </div>
+  <div class="trend-caption">Card sparklines: {{ granularity_label }} — tap or hover a point for its value</div>
 
   {% if summary.n < min_sample %}
   <div class="why">
@@ -1795,27 +1814,38 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   </div>
   {% endif %}
 
-  <!-- CLV summary cards -->
+  <!-- CLV summary cards. Each carries its own inline trend sparkline (added
+       2026-08-30, see the "Sparklines" JS section below) -- bucket granularity
+       adapts to the selected timeframe (hourly/daily/weekly), and tapping or
+       hovering any point on a sparkline shows its exact value, same touch-
+       friendly Chart.js config as the rest of the dashboard's charts. -->
   <div class="cards">
-    <div class="card"><div class="card-label">Settled Bets</div><div class="card-value">{{ summary.n }}</div></div>
+    <div class="card"><div class="card-label">Settled Bets</div><div class="card-value">{{ summary.n }}</div>
+      <div class="card-chart"><canvas id="sparkCount"></canvas></div>
+    </div>
     <div class="card"><div class="card-label">Win Rate</div>
       <div class="card-value">{% if summary.win_rate is not none %}<span class="{{ 'pos' if summary.win_rate >= 50 else 'neg' }}">{{ '%.1f'|format(summary.win_rate) }}%</span>{% else %}<span class="neutral">—</span>{% endif %}</div>
+      <div class="card-chart"><canvas id="sparkWinRate"></canvas></div>
     </div>
     <div class="card"><div class="card-label">Mean Kalshi CLV</div>
       <div class="card-value">{% if summary.mean_kalshi_clv is not none %}<span class="{{ 'pos' if summary.mean_kalshi_clv > 0 else ('neg' if summary.mean_kalshi_clv < 0 else 'neutral') }}">{{ '%+.1f'|format(summary.mean_kalshi_clv * 100) }}%</span>{% else %}<span class="neutral">—</span>{% endif %}</div>
       <div class="card-sub">Entry price vs. Kalshi's own closing price</div>
+      <div class="card-chart"><canvas id="sparkKalshiClv"></canvas></div>
     </div>
     <div class="card"><div class="card-label">Mean Book CLV</div>
       <div class="card-value">{% if summary.mean_consensus_clv is not none %}<span class="{{ 'pos' if summary.mean_consensus_clv > 0 else ('neg' if summary.mean_consensus_clv < 0 else 'neutral') }}">{{ '%+.1f'|format(summary.mean_consensus_clv * 100) }}%</span>{% else %}<span class="neutral">—</span>{% endif %}</div>
       <div class="card-sub">Entry consensus vs. sportsbook's closing consensus</div>
+      <div class="card-chart"><canvas id="sparkBookClv"></canvas></div>
     </div>
     <div class="card"><div class="card-label">Positive CLV Rate</div>
       <div class="card-value">{{ '%.1f'|format(summary.pct_positive_kalshi_clv) + '%' if summary.pct_positive_kalshi_clv is not none else '—' }}</div>
       <div class="card-sub">of {{ summary.n_with_kalshi_clv }} with a captured closing line</div>
+      <div class="card-chart"><canvas id="sparkPositiveClv"></canvas></div>
     </div>
     <div class="card"><div class="card-label">Mean EV%</div>
       <div class="card-value">{% if summary.mean_ev_pct is not none %}<span class="{{ 'pos' if summary.mean_ev_pct > 0 else ('neg' if summary.mean_ev_pct < 0 else 'neutral') }}">{{ '%+.1f'|format(summary.mean_ev_pct * 100) }}%</span>{% else %}<span class="neutral">—</span>{% endif %}</div>
       <div class="card-sub">Expected profit per dollar staked, AT ENTRY — a forecast, not an outcome</div>
+      <div class="card-chart"><canvas id="sparkEv"></canvas></div>
     </div>
   </div>
   <div class="why">
@@ -1852,39 +1882,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
        verdict, until the sample is large.</p>
   </div>
 
-  <!-- KPI trend — same KPIs as the cards above, broken out over time within the
-       selected timeframe. Bucket granularity adapts to the timeframe (hourly for
-       Today, daily for 7D/30D, weekly for YTD/All) -- see
-       dashboard_server.py::_TREND_GRANULARITY and core/clv_analytics.py::
-       bucket_series(). Tap or hover any point for its exact value (see
-       commonScales/trendTooltip below for the touch-friendly Chart.js config). -->
-  <div class="section-title">KPI Trend ({{ granularity_label }})</div>
-  <div class="charts">
-    <div class="chart-box">
-      <h2>Settled Bets</h2>
-      <canvas id="trendCountChart"></canvas>
-    </div>
-    <div class="chart-box">
-      <h2>Win Rate</h2>
-      <canvas id="trendWinRateChart"></canvas>
-    </div>
-    <div class="chart-box">
-      <h2>Mean Kalshi CLV</h2>
-      <canvas id="trendKalshiClvChart"></canvas>
-    </div>
-    <div class="chart-box">
-      <h2>Mean Book CLV</h2>
-      <canvas id="trendBookClvChart"></canvas>
-    </div>
-    <div class="chart-box">
-      <h2>Positive CLV Rate</h2>
-      <canvas id="trendPositiveClvChart"></canvas>
-    </div>
-    <div class="chart-box">
-      <h2>Mean EV%</h2>
-      <canvas id="trendEvChart"></canvas>
-    </div>
-  </div>
   <div class="charts">
     <div class="chart-box">
       <h2>Mean Kalshi CLV by Sport</h2>
@@ -2136,64 +2133,79 @@ const clvTteBuckets = {{ tte_buckets|tojson }};
   // reliably tap). Chart.js listens for touchstart/touchmove natively, so this
   // needs no extra wiring beyond these options to work on iPhone.
   const trendInteraction = { mode: 'nearest', axis: 'x', intersect: false };
-  const trendPoint = { radius: 3, hoverRadius: 7, hitRadius: 14 };
+  const trendPoint = { radius: 2, hoverRadius: 5, hitRadius: 10 };
 
-  function bucketAfterLabel(ctx) {
-    const b = kpiTrend[ctx.dataIndex];
-    return b ? b.n + (b.n === 1 ? ' bet' : ' bets') : '';
-  }
+  // Sparklines: axes/gridlines hidden entirely (no room for them at card
+  // size) -- the point of a sparkline is the shape plus a tap-for-value
+  // tooltip, not readable axis ticks. `bounds` (min/max) is still passed
+  // through for 0-100% metrics (win rate, positive CLV rate) so they don't
+  // autoscale to whatever narrow range this particular window happened to hit.
+  const hiddenAxis = { display: false };
 
-  function trendLineChart(canvasId, color, values, suffix, yBounds) {
+  // A sparkline canvas is only 28-34px tall -- Chart.js's default tooltip is
+  // drawn ON the canvas itself and would have nowhere to fit without being
+  // clipped. The "external" tooltip hook hands us the raw position/data
+  // instead and we position the shared #sparkTooltip div (see CSS/HTML above)
+  // relative to the page, which isn't bounded by the tiny canvas.
+  const tooltipEl = document.getElementById('sparkTooltip');
+
+  function hideSparkTooltip() { tooltipEl.style.opacity = '0'; }
+
+  function sparkline(canvasId, color, values, suffix, bounds) {
+    function externalTooltip(context) {
+      const tt = context.tooltip;
+      const dp = tt.opacity !== 0 && tt.dataPoints && tt.dataPoints[0];
+      if (!dp) { hideSparkTooltip(); return; }
+      const b = kpiTrend[dp.dataIndex];
+      const v = dp.parsed.y;
+      const valueText = v == null ? 'No data' : (suffix === ' bets' ? Math.round(v) : v.toFixed(1)) + suffix;
+      const countText = (suffix !== ' bets' && b) ? ' (' + b.n + (b.n === 1 ? ' bet' : ' bets') + ')' : '';
+      tooltipEl.textContent = (b ? b.label + ': ' : '') + valueText + countText;
+      const rect = context.chart.canvas.getBoundingClientRect();
+      tooltipEl.style.opacity = '1';
+      // Measure AFTER setting text/opacity so offsetWidth/Height reflect the
+      // current content, then clamp so it can't run off either edge.
+      const left = rect.left + tt.caretX - tooltipEl.offsetWidth / 2;
+      tooltipEl.style.left = Math.min(window.innerWidth - tooltipEl.offsetWidth - 4, Math.max(4, left)) + 'px';
+      tooltipEl.style.top = Math.max(4, rect.top - tooltipEl.offsetHeight - 8) + 'px';
+    }
+
     new Chart(document.getElementById(canvasId), {
       type: 'line',
       data: {
         labels: kpiTrend.map(b => b.label),
         datasets: [{
           data: values, borderColor: color, backgroundColor: color + '26',
-          tension: 0.25, spanGaps: true, fill: true, ...trendPoint,
+          borderWidth: 1.5, tension: 0.25, spanGaps: true, fill: true, ...trendPoint,
         }],
       },
       options: {
         responsive: true, maintainAspectRatio: false, interaction: trendInteraction,
+        layout: { padding: 4 },
         plugins: {
           legend: { display: false },
-          tooltip: {
-            mode: 'nearest', intersect: false,
-            callbacks: {
-              label: (ctx) => ctx.parsed.y == null ? 'No data' : ctx.parsed.y.toFixed(1) + suffix,
-              afterLabel: bucketAfterLabel,
-            },
-          },
+          tooltip: { enabled: false, external: externalTooltip },
         },
-        scales: { x: commonScales().x,
-                  y: { grid: { color: gridColor }, ticks: { color: textColor }, ...yBounds } },
+        scales: { x: hiddenAxis, y: { display: false, ...bounds } },
       },
     });
   }
 
-  trendLineChart('trendWinRateChart', '#a855f7', kpiTrend.map(b => b.win_rate), '%', { min: 0, max: 100 });
-  trendLineChart('trendKalshiClvChart', '#3b82f6',
+  sparkline('sparkCount', '#3b82f6', kpiTrend.map(b => b.n), ' bets');
+  sparkline('sparkWinRate', '#a855f7', kpiTrend.map(b => b.win_rate), '%', { min: 0, max: 100 });
+  sparkline('sparkKalshiClv', '#3b82f6',
     kpiTrend.map(b => b.mean_kalshi_clv != null ? b.mean_kalshi_clv * 100 : null), '%');
-  trendLineChart('trendBookClvChart', '#f59e0b',
+  sparkline('sparkBookClv', '#f59e0b',
     kpiTrend.map(b => b.mean_consensus_clv != null ? b.mean_consensus_clv * 100 : null), '%');
-  trendLineChart('trendPositiveClvChart', '#22c55e', kpiTrend.map(b => b.pct_positive_kalshi_clv), '%', { min: 0, max: 100 });
-  trendLineChart('trendEvChart', '#22c55e',
+  sparkline('sparkPositiveClv', '#22c55e', kpiTrend.map(b => b.pct_positive_kalshi_clv), '%', { min: 0, max: 100 });
+  sparkline('sparkEv', '#22c55e',
     kpiTrend.map(b => b.mean_ev_pct != null ? b.mean_ev_pct * 100 : null), '%');
 
-  new Chart(document.getElementById('trendCountChart'), {
-    type: 'bar',
-    data: { labels: kpiTrend.map(b => b.label),
-      datasets: [{ data: kpiTrend.map(b => b.n), backgroundColor: '#3b82f6' }] },
-    options: {
-      responsive: true, maintainAspectRatio: false, interaction: trendInteraction,
-      plugins: {
-        legend: { display: false },
-        tooltip: { mode: 'nearest', intersect: false,
-          callbacks: { label: (ctx) => ctx.parsed.y + (ctx.parsed.y === 1 ? ' bet' : ' bets') } },
-      },
-      scales: commonScales(),
-    },
-  });
+  // Touch devices have no "mouseout" -- hide the tooltip on the next tap
+  // anywhere outside a sparkline, so it doesn't linger after the finger lifts.
+  document.addEventListener('touchstart', (e) => {
+    if (!e.target.closest('.card-chart')) hideSparkTooltip();
+  }, { passive: true });
 
   new Chart(document.getElementById('sportChart'), {
     type: 'bar',
