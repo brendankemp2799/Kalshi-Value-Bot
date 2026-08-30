@@ -8,11 +8,13 @@ DB layer (see test_clv_dashboard.py for the DB + dashboard integration).
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from core.clv_analytics import (
     compute_row, compute_rows, overall_summary, group_by_field, bucket_by_tte,
-    weekly_clv_series, pearson_correlation,
+    weekly_clv_series, pearson_correlation, filter_rows_since,
 )
 
 
@@ -74,6 +76,29 @@ def test_ev_pct_is_none_without_consensus_prob():
 def test_ev_pct_is_none_without_market_price():
     row = compute_row(_pos(market_price=None))
     assert row["ev_pct"] is None
+
+
+# ── filter_rows_since ────────────────────────────────────────────────────────────
+
+def test_filter_rows_since_none_cutoff_returns_everything_unchanged():
+    rows = compute_rows([_pos(entered_at="2020-01-01T00:00:00")])
+    assert filter_rows_since(rows, None) == rows
+
+
+def test_filter_rows_since_keeps_rows_at_or_after_cutoff():
+    rows = compute_rows([
+        _pos(entered_at="2026-08-20T12:00:00", team_name="before"),
+        _pos(entered_at="2026-08-25T00:00:00", team_name="exactly_at_cutoff"),
+        _pos(entered_at="2026-08-28T12:00:00", team_name="after"),
+    ])
+    cutoff = datetime(2026, 8, 25, tzinfo=timezone.utc)
+    kept = {r["team_name"] for r in filter_rows_since(rows, cutoff)}
+    assert kept == {"exactly_at_cutoff", "after"}
+
+
+def test_filter_rows_since_drops_rows_with_no_entered_at():
+    rows = compute_rows([_pos(entered_at=None)])
+    assert filter_rows_since(rows, datetime(2020, 1, 1, tzinfo=timezone.utc)) == []
 
 
 def test_tte_hours_is_commence_minus_entered_in_hours():

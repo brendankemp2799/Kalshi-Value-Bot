@@ -105,3 +105,65 @@ def test_homepage_renders_clv_content_with_real_data(fresh_db):
         r = c.get("/")
         assert r.status_code == 200
         assert b"Dodgers" in r.data
+
+
+# ── Timeframe selector (2026-08-30) ────────────────────────────────────────────────
+
+def _backdate(fresh_db, pos_id: int, entered_at: str) -> None:
+    with fresh_db.get_connection() as conn:
+        conn.execute("UPDATE positions SET entered_at = ? WHERE id = ?", (entered_at, pos_id))
+
+
+def test_default_timeframe_is_all_and_unfiltered(fresh_db):
+    pos_id = _add(fresh_db, status_via_settle="won")
+    _backdate(fresh_db, pos_id, "2020-01-01T00:00:00")
+    import dashboard_server as ds
+    ds.app.config["TESTING"] = True
+    with ds.app.test_client() as c:
+        r = c.get("/")
+        assert b"Dodgers" in r.data
+
+
+def test_today_timeframe_excludes_a_bet_entered_long_ago(fresh_db):
+    pos_id = _add(fresh_db, status_via_settle="won")
+    _backdate(fresh_db, pos_id, "2020-01-01T00:00:00")
+    import dashboard_server as ds
+    ds.app.config["TESTING"] = True
+    with ds.app.test_client() as c:
+        r = c.get("/?timeframe=today")
+        assert r.status_code == 200
+        assert b"Dodgers" not in r.data
+
+
+def test_today_timeframe_keeps_a_bet_entered_just_now(fresh_db):
+    _add(fresh_db, status_via_settle="won")  # entered_at defaults to now
+    import dashboard_server as ds
+    ds.app.config["TESTING"] = True
+    with ds.app.test_client() as c:
+        r = c.get("/?timeframe=today")
+        assert b"Dodgers" in r.data
+
+
+def test_unrecognized_timeframe_falls_back_to_all_time(fresh_db):
+    pos_id = _add(fresh_db, status_via_settle="won")
+    _backdate(fresh_db, pos_id, "2020-01-01T00:00:00")
+    import dashboard_server as ds
+    ds.app.config["TESTING"] = True
+    with ds.app.test_client() as c:
+        r = c.get("/?timeframe=nonsense")
+        assert r.status_code == 200
+        assert b"Dodgers" in r.data  # not silently filtered out by a bad param
+
+
+def test_selected_timeframe_button_is_marked_active(fresh_db):
+    import re
+
+    _add(fresh_db, status_via_settle="won")
+    import dashboard_server as ds
+    ds.app.config["TESTING"] = True
+    with ds.app.test_client() as c:
+        r = c.get("/?timeframe=week")
+        html = r.get_data(as_text=True)
+        # The "7D" button must carry the active class; the others must not.
+        assert re.search(r'class="timeframe-btn active"\s+href="/\?timeframe=week">7D</a>', html)
+        assert re.search(r'class="timeframe-btn"\s+href="/\?timeframe=today">Today</a>', html)

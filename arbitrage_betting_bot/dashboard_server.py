@@ -21,7 +21,7 @@ import json
 import os
 import sys
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -33,7 +33,7 @@ except ImportError:
     _PT = pytz.timezone("America/Los_Angeles")
 from functools import wraps
 
-from flask import Flask, jsonify, render_template_string, abort, request, Response
+from flask import Flask, jsonify, render_template_string, abort, request, Response, url_for
 import storage.db as db
 from core.odds_converter import american_to_prob, _devig, _norm_team, _names_match
 import core.clv_analytics as clv
@@ -836,7 +836,35 @@ def mm_decisions():
     )
 
 
-def _clv_context() -> dict:
+# (key, label) pairs for the timeframe selector, in display order. "today"/"week"/
+# "month" are ROLLING windows (last 24h/7d/30d from now), not calendar-aligned --
+# chosen so the numbers don't jump discontinuously the instant a week or month
+# boundary ticks over. "ytd" is the one deliberately calendar-anchored (Jan 1),
+# matching how "year to date" is understood everywhere else. "all" applies no
+# filter at all.
+TIMEFRAMES: list[tuple[str, str]] = [
+    ("today", "Today"), ("week", "7D"), ("month", "30D"),
+    ("ytd", "YTD"), ("all", "All Time"),
+]
+_TIMEFRAME_KEYS = {k for k, _ in TIMEFRAMES}
+
+
+def _timeframe_cutoff(key: str) -> datetime | None:
+    """UTC cutoff for a timeframe key -- rows with entered_at >= this are kept.
+    None means no filter (the "all time" / default / unrecognized-key case)."""
+    now = datetime.now(timezone.utc)
+    if key == "today":
+        return now - timedelta(hours=24)
+    if key == "week":
+        return now - timedelta(days=7)
+    if key == "month":
+        return now - timedelta(days=30)
+    if key == "ytd":
+        return datetime(now.year, 1, 1, tzinfo=timezone.utc)
+    return None
+
+
+def _clv_context(timeframe: str = "all") -> dict:
     """CLV (closing-line value) and TTE (time-to-event) analytics context.
 
     Added 2026-08-25: P&L is now tracked externally via Pikkit (synced directly to
@@ -846,9 +874,20 @@ def _clv_context() -> dict:
     ahead of game time a bet was placed (TTE) correlates with CLV or win rate. See
     core/clv_analytics.py for the math. Shared by index() -- moved onto the
     homepage 2026-08-25, replacing the old P&L-focused cards/charts/tables there.
+
+    `timeframe` (added 2026-08-30) scopes EVERYTHING below -- summary cards, every
+    breakdown table, every chart, the recent-bets list -- to bets ENTERED within
+    that window (not settled within it; CLV/EV are properties of the entry itself,
+    matching how weekly_clv_series and TTE bucketing already anchor on entered_at).
+    Filtering once here, up front, is what keeps every consumer in sync instead of
+    each re-implementing its own window logic.
     """
+    if timeframe not in _TIMEFRAME_KEYS:
+        timeframe = "all"
+
     raw = db.get_positions_for_clv_analytics(is_paper=IS_PAPER)
     rows = clv.compute_rows(raw)
+    rows = clv.filter_rows_since(rows, _timeframe_cutoff(timeframe))
 
     summary = clv.overall_summary(rows)
     by_sport = [{**g, "key": _short_sport(g["key"])} for g in clv.group_by_field(rows, "sport")]
@@ -883,6 +922,7 @@ def _clv_context() -> dict:
         scatter_json=json.dumps(scatter),
         weekly_json=json.dumps(weekly),
         min_sample=MIN_CALIBRATION_SAMPLE,
+        timeframe=timeframe, timeframes=TIMEFRAMES,
     )
 
 
@@ -890,7 +930,7 @@ def _clv_context() -> dict:
 @_requires_auth
 def clv_page():
     """Moved onto the homepage 2026-08-25 -- kept as a redirect for old links/bookmarks."""
-    from flask import redirect, url_for
+    from flask import redirect
     return redirect(url_for("index"))
 
 
@@ -960,7 +1000,8 @@ def dk_scaled_shadow():
 @app.route("/")
 @_requires_auth
 def index():
-    return render_template_string(HTML_TEMPLATE, **_clv_context())
+    timeframe = request.args.get("timeframe", "all")
+    return render_template_string(HTML_TEMPLATE, **_clv_context(timeframe))
 
 
 # ── Shared mobile CSS snippet (injected into each template) ───────────────────
@@ -1608,6 +1649,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
   .card-value { font-size: 22px; font-weight: 700; }
   .card-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* Timeframe selector (2026-08-30) */
+  .timeframe-nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .timeframe-btn { font-size: 12px; font-weight: 600; color: var(--muted); text-decoration: none;
+    padding: 6px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+    white-space: nowrap; }
+  .timeframe-btn.active { color: var(--bg); background: var(--blue); border-color: var(--blue); }
   .pos { color: var(--green); }
   .neg { color: var(--red); }
   .neutral { color: var(--text); }
@@ -1711,12 +1759,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
        at bet placement correlates with CLV or win rate.</p>
   </div>
 
+  <div class="timeframe-nav">
+    {% for key, label in timeframes %}
+    <a class="timeframe-btn{{ ' active' if key == timeframe else '' }}"
+       href="{{ url_for('index', timeframe=key) }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+
   {% if summary.n < min_sample %}
   <div class="why">
-    <p><strong style="color:var(--text)">Only {{ summary.n }} settled bet(s) so
-       far</strong> (of {{ min_sample }} wanted for the numbers below to mean much).
-       History was reset 2026-08-25 to start clean from current strategy code —
-       this builds up as new bets settle.</p>
+    <p><strong style="color:var(--text)">Only {{ summary.n }} settled bet(s)
+       {{ 'so far' if timeframe == 'all' else 'in this window' }}</strong>
+       (of {{ min_sample }} wanted for the numbers below to mean much).
+       {% if timeframe == 'all' %}History was reset 2026-08-25 to start clean from
+       current strategy code — this builds up as new bets settle.
+       {% else %}Try a wider timeframe for a fuller picture.{% endif %}</p>
   </div>
   {% endif %}
 

@@ -129,6 +129,27 @@ def compute_rows(positions: list[dict]) -> list[dict]:
     return [compute_row(p) for p in positions]
 
 
+def filter_rows_since(rows: list[dict], cutoff: datetime | None) -> list[dict]:
+    """Keep only rows whose entered_at is at or after `cutoff` -- the shared
+    building block for the dashboard's timeframe selector (today/week/month/YTD/
+    all time), so every downstream table/chart/summary is scoped consistently by
+    filtering once, up front, rather than each consumer re-filtering its own way.
+
+    cutoff=None means no filter -- returns rows unchanged (the "all time" case),
+    so callers don't need a separate branch. A row with a missing/unparseable
+    entered_at is dropped once an actual cutoff is given, since "unknown when this
+    was placed" can't be judged to fall inside a specific window.
+    """
+    if cutoff is None:
+        return rows
+    kept = []
+    for r in rows:
+        entered = _parse_dt(r.get("entered_at"))
+        if entered is not None and entered >= cutoff:
+            kept.append(r)
+    return kept
+
+
 def overall_summary(rows: list[dict]) -> dict:
     kalshi_clvs = [r["kalshi_clv"] for r in rows]
     consensus_clvs = [r["consensus_clv"] for r in rows]
