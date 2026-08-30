@@ -85,6 +85,30 @@ def estimated_fee_per_contract(
     return price * fee_rate * (1.0 - price)
 
 
+def expected_value_pct(
+    consensus_prob: float, market_price: float,
+    fee_rate: float = config.KALSHI_TAKER_FEE_RATE_ESTIMATE,
+) -> float:
+    """
+    Fee-adjusted expected value as a fraction of stake: p*b_net - q*l_net -- the
+    same numerator calculate_kelly() divides by (b_net*l_net) to get a bet
+    fraction, returned here on its own. "For every dollar staked at entry, how
+    much did the model expect to make (or lose), net of the estimated fee" --
+    independent of bankroll or position sizing. A forecast made AT ENTRY, from
+    consensus_prob and market_price as they stood then -- not a measurement of
+    what actually happened (that's realized P&L/win rate). Used for post-hoc
+    calibration checks (see core/clv_analytics.py's EV% metric): if mean EV%
+    tracks realized ROI over enough settled bets, the probability estimates feeding
+    it are calibrated; if realized ROI runs persistently below mean EV%, they're
+    optimistic.
+    """
+    p = consensus_prob
+    q = 1.0 - p
+    effective_price = max(0.01, min(0.99, market_price))
+    b_net, l_net = _fee_adjusted_b_and_l(effective_price, fee_rate)
+    return p * b_net - q * l_net
+
+
 def fee_adjusted_breakeven_prob(price: float) -> float:
     """
     The true probability at which a contract at `price` has exactly zero net EV after

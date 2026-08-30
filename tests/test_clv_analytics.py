@@ -46,6 +46,36 @@ def test_negative_clv_when_the_market_moved_against_us():
     assert row["kalshi_clv"] == pytest.approx(-0.15)
 
 
+# ── ev_pct ────────────────────────────────────────────────────────────────────
+
+def test_ev_pct_matches_kelly_calculators_taker_estimate_by_default():
+    from core.kelly_calculator import expected_value_pct
+    import config
+    row = compute_row(_pos(consensus_prob=0.47, market_price=0.45, maker_only=0))
+    expected = round(expected_value_pct(0.47, 0.45, config.KALSHI_TAKER_FEE_RATE_ESTIMATE), 4)
+    assert row["ev_pct"] == pytest.approx(expected)
+
+
+def test_ev_pct_uses_zero_fee_when_maker_only():
+    from core.kelly_calculator import expected_value_pct
+    row = compute_row(_pos(consensus_prob=0.47, market_price=0.45, maker_only=1))
+    expected = round(expected_value_pct(0.47, 0.45, 0.0), 4)
+    assert row["ev_pct"] == pytest.approx(expected)
+    # maker_only must actually change the number, not silently no-op the fee arg
+    taker_row = compute_row(_pos(consensus_prob=0.47, market_price=0.45, maker_only=0))
+    assert row["ev_pct"] != taker_row["ev_pct"]
+
+
+def test_ev_pct_is_none_without_consensus_prob():
+    row = compute_row(_pos(consensus_prob=None))
+    assert row["ev_pct"] is None
+
+
+def test_ev_pct_is_none_without_market_price():
+    row = compute_row(_pos(market_price=None))
+    assert row["ev_pct"] is None
+
+
 def test_tte_hours_is_commence_minus_entered_in_hours():
     row = compute_row(_pos(entered_at="2026-08-20T18:00:00",
                            commence_time="2026-08-20T20:30:00+00:00"))
@@ -160,6 +190,16 @@ def test_overall_summary_excludes_unsettled_clv_from_the_denominator():
     s = overall_summary(rows)
     assert s["n"] == 2
     assert s["n_with_kalshi_clv"] == 1
+
+
+def test_overall_summary_mean_ev_pct():
+    rows = compute_rows([
+        _pos(consensus_prob=0.47, market_price=0.45),
+        _pos(consensus_prob=None, market_price=0.45),  # excluded, not averaged as 0
+    ])
+    s = overall_summary(rows)
+    assert s["n_with_ev_pct"] == 1
+    assert s["mean_ev_pct"] == pytest.approx(rows[0]["ev_pct"])
 
 
 # ── group_by_field ────────────────────────────────────────────────────────────────

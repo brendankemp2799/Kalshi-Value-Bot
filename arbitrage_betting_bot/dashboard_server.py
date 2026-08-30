@@ -869,11 +869,12 @@ def _clv_context() -> dict:
             "tte_hours":    r["tte_hours"],
             "kalshi_clv":   r["kalshi_clv"],
             "consensus_clv": r["consensus_clv"],
+            "ev_pct":       r["ev_pct"],
             "won":          r["won"],
             "pnl":          r.get("pnl"),
         })
 
-    scatter = [{"x": r["tte_hours"], "y": r["kalshi_clv"]} for r in rows
+    scatter = [{"x": r["tte_hours"], "y": r["kalshi_clv"] * 100} for r in rows
                if r["tte_hours"] is not None and r["kalshi_clv"] is not None]
 
     return dict(
@@ -1726,17 +1727,32 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <div class="card-value">{% if summary.win_rate is not none %}<span class="{{ 'pos' if summary.win_rate >= 50 else 'neg' }}">{{ '%.1f'|format(summary.win_rate) }}%</span>{% else %}<span class="neutral">—</span>{% endif %}</div>
     </div>
     <div class="card"><div class="card-label">Mean Kalshi CLV</div>
-      <div class="card-value">{% if summary.mean_kalshi_clv is not none %}<span class="{{ 'pos' if summary.mean_kalshi_clv > 0 else ('neg' if summary.mean_kalshi_clv < 0 else 'neutral') }}">{{ '%+.3f'|format(summary.mean_kalshi_clv) }}</span>{% else %}<span class="neutral">—</span>{% endif %}</div>
+      <div class="card-value">{% if summary.mean_kalshi_clv is not none %}<span class="{{ 'pos' if summary.mean_kalshi_clv > 0 else ('neg' if summary.mean_kalshi_clv < 0 else 'neutral') }}">{{ '%+.1f'|format(summary.mean_kalshi_clv * 100) }}%</span>{% else %}<span class="neutral">—</span>{% endif %}</div>
       <div class="card-sub">Entry price vs. Kalshi's own closing price</div>
     </div>
     <div class="card"><div class="card-label">Mean Book CLV</div>
-      <div class="card-value">{% if summary.mean_consensus_clv is not none %}<span class="{{ 'pos' if summary.mean_consensus_clv > 0 else ('neg' if summary.mean_consensus_clv < 0 else 'neutral') }}">{{ '%+.3f'|format(summary.mean_consensus_clv) }}</span>{% else %}<span class="neutral">—</span>{% endif %}</div>
+      <div class="card-value">{% if summary.mean_consensus_clv is not none %}<span class="{{ 'pos' if summary.mean_consensus_clv > 0 else ('neg' if summary.mean_consensus_clv < 0 else 'neutral') }}">{{ '%+.1f'|format(summary.mean_consensus_clv * 100) }}%</span>{% else %}<span class="neutral">—</span>{% endif %}</div>
       <div class="card-sub">Entry consensus vs. sportsbook's closing consensus</div>
     </div>
     <div class="card"><div class="card-label">Positive CLV Rate</div>
       <div class="card-value">{{ '%.1f'|format(summary.pct_positive_kalshi_clv) + '%' if summary.pct_positive_kalshi_clv is not none else '—' }}</div>
       <div class="card-sub">of {{ summary.n_with_kalshi_clv }} with a captured closing line</div>
     </div>
+    <div class="card"><div class="card-label">Mean EV%</div>
+      <div class="card-value">{% if summary.mean_ev_pct is not none %}<span class="{{ 'pos' if summary.mean_ev_pct > 0 else ('neg' if summary.mean_ev_pct < 0 else 'neutral') }}">{{ '%+.1f'|format(summary.mean_ev_pct * 100) }}%</span>{% else %}<span class="neutral">—</span>{% endif %}</div>
+      <div class="card-sub">Expected profit per dollar staked, AT ENTRY — a forecast, not an outcome</div>
+    </div>
+  </div>
+  <div class="why">
+    <p><strong style="color:var(--text)">EV%</strong> is <code>consensus_prob</code> vs.
+       the price we actually paid, run through the same fee-adjusted Kelly formula used
+       for sizing (<code>core/kelly_calculator.py::expected_value_pct</code>) — "for every
+       dollar staked here, how much did the model expect to make, net of Kalshi's fee."
+       It's computed at entry from what the model believed then, before the outcome was
+       known, so it is NOT the same thing as realized P&amp;L or win rate above. The
+       calibration check is comparing the two over enough settled bets: if mean EV%
+       tracks realized ROI, <code>consensus_prob</code> is a trustworthy probability
+       estimate; if realized ROI runs persistently below mean EV%, it's optimistic.</p>
   </div>
 
   <div class="section-title">Does time-to-event correlate with anything?</div>
@@ -1793,16 +1809,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <div class="section">
     <div class="section-header"><h2>CLV — By Sport</h2></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Sport</th><th>Bets</th><th>Win Rate</th><th>Mean Kalshi CLV</th><th>Mean Book CLV</th></tr></thead>
+      <thead><tr><th>Sport</th><th>Bets</th><th>Win Rate</th><th>Mean Kalshi CLV</th><th>Mean Book CLV</th><th>Mean EV%</th></tr></thead>
       <tbody>
-        {% if not by_sport %}<tr><td colspan="5" class="empty-state">No settled bets yet.</td></tr>{% endif %}
+        {% if not by_sport %}<tr><td colspan="6" class="empty-state">No settled bets yet.</td></tr>{% endif %}
         {% for g in by_sport %}
         <tr>
           <td data-label="Sport"><strong>{{ g.key }}</strong></td>
           <td data-label="Bets">{{ g.n }}</td>
           <td data-label="Win Rate">{{ '%.1f'|format(g.win_rate) + '%' if g.win_rate is not none else '—' }}</td>
-          <td data-label="Kalshi CLV">{% if g.mean_kalshi_clv is not none %}<span class="{{ 'pos' if g.mean_kalshi_clv > 0 else ('neg' if g.mean_kalshi_clv < 0 else 'neutral') }}">{{ '%+.3f'|format(g.mean_kalshi_clv) }}</span>{% else %}—{% endif %}</td>
-          <td data-label="Book CLV">{% if g.mean_consensus_clv is not none %}<span class="{{ 'pos' if g.mean_consensus_clv > 0 else ('neg' if g.mean_consensus_clv < 0 else 'neutral') }}">{{ '%+.3f'|format(g.mean_consensus_clv) }}</span>{% else %}—{% endif %}</td>
+          <td data-label="Kalshi CLV">{% if g.mean_kalshi_clv is not none %}<span class="{{ 'pos' if g.mean_kalshi_clv > 0 else ('neg' if g.mean_kalshi_clv < 0 else 'neutral') }}">{{ '%+.1f'|format(g.mean_kalshi_clv * 100) }}%</span>{% else %}—{% endif %}</td>
+          <td data-label="Book CLV">{% if g.mean_consensus_clv is not none %}<span class="{{ 'pos' if g.mean_consensus_clv > 0 else ('neg' if g.mean_consensus_clv < 0 else 'neutral') }}">{{ '%+.1f'|format(g.mean_consensus_clv * 100) }}%</span>{% else %}—{% endif %}</td>
+          <td data-label="Mean EV%">{% if g.mean_ev_pct is not none %}<span class="{{ 'pos' if g.mean_ev_pct > 0 else ('neg' if g.mean_ev_pct < 0 else 'neutral') }}">{{ '%+.1f'|format(g.mean_ev_pct * 100) }}%</span>{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -1813,16 +1830,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <div class="section">
     <div class="section-header"><h2>CLV — By Bet Type</h2></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Bet Type</th><th>Bets</th><th>Win Rate</th><th>Mean Kalshi CLV</th><th>Mean Book CLV</th></tr></thead>
+      <thead><tr><th>Bet Type</th><th>Bets</th><th>Win Rate</th><th>Mean Kalshi CLV</th><th>Mean Book CLV</th><th>Mean EV%</th></tr></thead>
       <tbody>
-        {% if not by_bet_type %}<tr><td colspan="5" class="empty-state">No settled bets yet.</td></tr>{% endif %}
+        {% if not by_bet_type %}<tr><td colspan="6" class="empty-state">No settled bets yet.</td></tr>{% endif %}
         {% for g in by_bet_type %}
         <tr>
           <td data-label="Bet Type"><strong>{{ g.key }}</strong></td>
           <td data-label="Bets">{{ g.n }}</td>
           <td data-label="Win Rate">{{ '%.1f'|format(g.win_rate) + '%' if g.win_rate is not none else '—' }}</td>
-          <td data-label="Kalshi CLV">{% if g.mean_kalshi_clv is not none %}<span class="{{ 'pos' if g.mean_kalshi_clv > 0 else ('neg' if g.mean_kalshi_clv < 0 else 'neutral') }}">{{ '%+.3f'|format(g.mean_kalshi_clv) }}</span>{% else %}—{% endif %}</td>
-          <td data-label="Book CLV">{% if g.mean_consensus_clv is not none %}<span class="{{ 'pos' if g.mean_consensus_clv > 0 else ('neg' if g.mean_consensus_clv < 0 else 'neutral') }}">{{ '%+.3f'|format(g.mean_consensus_clv) }}</span>{% else %}—{% endif %}</td>
+          <td data-label="Kalshi CLV">{% if g.mean_kalshi_clv is not none %}<span class="{{ 'pos' if g.mean_kalshi_clv > 0 else ('neg' if g.mean_kalshi_clv < 0 else 'neutral') }}">{{ '%+.1f'|format(g.mean_kalshi_clv * 100) }}%</span>{% else %}—{% endif %}</td>
+          <td data-label="Book CLV">{% if g.mean_consensus_clv is not none %}<span class="{{ 'pos' if g.mean_consensus_clv > 0 else ('neg' if g.mean_consensus_clv < 0 else 'neutral') }}">{{ '%+.1f'|format(g.mean_consensus_clv * 100) }}%</span>{% else %}—{% endif %}</td>
+          <td data-label="Mean EV%">{% if g.mean_ev_pct is not none %}<span class="{{ 'pos' if g.mean_ev_pct > 0 else ('neg' if g.mean_ev_pct < 0 else 'neutral') }}">{{ '%+.1f'|format(g.mean_ev_pct * 100) }}%</span>{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -1833,15 +1851,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <div class="section">
     <div class="section-header"><h2>CLV — By Time-to-Event</h2></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Hours Before Game</th><th>Bets</th><th>Win Rate</th><th>Mean Kalshi CLV</th><th>Mean Book CLV</th></tr></thead>
+      <thead><tr><th>Hours Before Game</th><th>Bets</th><th>Win Rate</th><th>Mean Kalshi CLV</th><th>Mean Book CLV</th><th>Mean EV%</th></tr></thead>
       <tbody>
         {% for b in tte_buckets %}
         <tr>
           <td data-label="Hours Before"><strong>{{ b.range }}</strong></td>
           <td data-label="Bets">{{ b.n }}</td>
           <td data-label="Win Rate">{{ '%.1f'|format(b.win_rate) + '%' if b.win_rate is not none else '—' }}</td>
-          <td data-label="Kalshi CLV">{% if b.mean_kalshi_clv is not none %}<span class="{{ 'pos' if b.mean_kalshi_clv > 0 else ('neg' if b.mean_kalshi_clv < 0 else 'neutral') }}">{{ '%+.3f'|format(b.mean_kalshi_clv) }}</span>{% else %}—{% endif %}</td>
-          <td data-label="Book CLV">{% if b.mean_consensus_clv is not none %}<span class="{{ 'pos' if b.mean_consensus_clv > 0 else ('neg' if b.mean_consensus_clv < 0 else 'neutral') }}">{{ '%+.3f'|format(b.mean_consensus_clv) }}</span>{% else %}—{% endif %}</td>
+          <td data-label="Kalshi CLV">{% if b.mean_kalshi_clv is not none %}<span class="{{ 'pos' if b.mean_kalshi_clv > 0 else ('neg' if b.mean_kalshi_clv < 0 else 'neutral') }}">{{ '%+.1f'|format(b.mean_kalshi_clv * 100) }}%</span>{% else %}—{% endif %}</td>
+          <td data-label="Book CLV">{% if b.mean_consensus_clv is not none %}<span class="{{ 'pos' if b.mean_consensus_clv > 0 else ('neg' if b.mean_consensus_clv < 0 else 'neutral') }}">{{ '%+.1f'|format(b.mean_consensus_clv * 100) }}%</span>{% else %}—{% endif %}</td>
+          <td data-label="Mean EV%">{% if b.mean_ev_pct is not none %}<span class="{{ 'pos' if b.mean_ev_pct > 0 else ('neg' if b.mean_ev_pct < 0 else 'neutral') }}">{{ '%+.1f'|format(b.mean_ev_pct * 100) }}%</span>{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -1856,17 +1875,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
     <div class="table-wrap"><table>
       <thead><tr><th>Sport</th><th>Type</th><th>Bet</th><th>TTE (h)</th>
-        <th>Kalshi CLV</th><th>Book CLV</th><th>Outcome</th><th>Entered</th></tr></thead>
+        <th>Kalshi CLV</th><th>Book CLV</th><th>EV%</th><th>Outcome</th><th>Entered</th></tr></thead>
       <tbody>
-        {% if not recent %}<tr><td colspan="8" class="empty-state">No settled bets yet.</td></tr>{% endif %}
+        {% if not recent %}<tr><td colspan="9" class="empty-state">No settled bets yet.</td></tr>{% endif %}
         {% for r in recent %}
         <tr>
           <td data-label="Sport">{{ r.sport }}</td>
           <td data-label="Type">{{ r.bet_type }}</td>
           <td data-label="Bet"><a href="{{ r.url }}" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none"><strong>{{ r.team_name }}</strong></a></td>
           <td data-label="TTE">{{ r.tte_hours if r.tte_hours is not none else '—' }}</td>
-          <td data-label="Kalshi CLV">{% if r.kalshi_clv is not none %}<span class="{{ 'pos' if r.kalshi_clv > 0 else ('neg' if r.kalshi_clv < 0 else 'neutral') }}">{{ '%+.3f'|format(r.kalshi_clv) }}</span>{% else %}—{% endif %}</td>
-          <td data-label="Book CLV">{% if r.consensus_clv is not none %}<span class="{{ 'pos' if r.consensus_clv > 0 else ('neg' if r.consensus_clv < 0 else 'neutral') }}">{{ '%+.3f'|format(r.consensus_clv) }}</span>{% else %}—{% endif %}</td>
+          <td data-label="Kalshi CLV">{% if r.kalshi_clv is not none %}<span class="{{ 'pos' if r.kalshi_clv > 0 else ('neg' if r.kalshi_clv < 0 else 'neutral') }}">{{ '%+.1f'|format(r.kalshi_clv * 100) }}%</span>{% else %}—{% endif %}</td>
+          <td data-label="Book CLV">{% if r.consensus_clv is not none %}<span class="{{ 'pos' if r.consensus_clv > 0 else ('neg' if r.consensus_clv < 0 else 'neutral') }}">{{ '%+.1f'|format(r.consensus_clv * 100) }}%</span>{% else %}—{% endif %}</td>
+          <td data-label="EV%">{% if r.ev_pct is not none %}<span class="{{ 'pos' if r.ev_pct > 0 else ('neg' if r.ev_pct < 0 else 'neutral') }}">{{ '%+.1f'|format(r.ev_pct * 100) }}%</span>{% else %}—{% endif %}</td>
           <td data-label="Outcome">
             {% if r.won is none %}<span class="tag tag-void">Void</span>
             {% elif r.won %}<span class="tag tag-win">Won</span>
@@ -2013,31 +2033,31 @@ const clvTteBuckets = {{ tte_buckets|tojson }};
     data: {
       labels: clvWeekly.map(w => w.week),
       datasets: [{
-        label: 'Mean Kalshi CLV', data: clvWeekly.map(w => w.mean_kalshi_clv),
+        label: 'Mean Kalshi CLV', data: clvWeekly.map(w => w.mean_kalshi_clv != null ? w.mean_kalshi_clv * 100 : null),
         borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.15)',
         tension: 0.25, spanGaps: true, fill: true,
       }],
     },
     options: { responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } }, scales: commonScales('CLV') },
+      plugins: { legend: { display: false } }, scales: commonScales('CLV %') },
   });
 
   new Chart(document.getElementById('sportChart'), {
     type: 'bar',
     data: { labels: clvBySport.map(g => g.key),
-      datasets: [{ label: 'Mean Kalshi CLV', data: clvBySport.map(g => g.mean_kalshi_clv),
+      datasets: [{ label: 'Mean Kalshi CLV', data: clvBySport.map(g => (g.mean_kalshi_clv || 0) * 100),
         backgroundColor: clvBySport.map(g => (g.mean_kalshi_clv || 0) >= 0 ? '#22c55e' : '#ef4444') }] },
     options: { responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } }, scales: commonScales('CLV') },
+      plugins: { legend: { display: false } }, scales: commonScales('CLV %') },
   });
 
   new Chart(document.getElementById('betTypeChart'), {
     type: 'bar',
     data: { labels: clvByBetType.map(g => g.key),
-      datasets: [{ label: 'Mean Kalshi CLV', data: clvByBetType.map(g => g.mean_kalshi_clv),
+      datasets: [{ label: 'Mean Kalshi CLV', data: clvByBetType.map(g => (g.mean_kalshi_clv || 0) * 100),
         backgroundColor: clvByBetType.map(g => (g.mean_kalshi_clv || 0) >= 0 ? '#22c55e' : '#ef4444') }] },
     options: { responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } }, scales: commonScales('CLV') },
+      plugins: { legend: { display: false } }, scales: commonScales('CLV %') },
   });
 
   new Chart(document.getElementById('tteWinChart'), {
@@ -2062,7 +2082,7 @@ const clvTteBuckets = {{ tte_buckets|tojson }};
       scales: {
         x: { title: { display: true, text: 'Hours before game', color: textColor },
              grid: { color: gridColor }, ticks: { color: textColor } },
-        y: { title: { display: true, text: 'Kalshi CLV', color: textColor },
+        y: { title: { display: true, text: 'Kalshi CLV %', color: textColor },
              grid: { color: gridColor }, ticks: { color: textColor } },
       } },
   });

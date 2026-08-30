@@ -23,11 +23,26 @@ Both are already side-adjusted at the source (market_price, kalshi_close_price,
 consensus_prob, consensus_close_prob are all "for the side we actually bought" --
 see execution/auto_settle.py::_fetch_kalshi_closing_price's docstring), so no sign
 flipping is needed here for NO-side positions.
+
+A THIRD METRIC, added 2026-08-29, answers a different question from either CLV:
+  ev_pct = core.kelly_calculator.expected_value_pct(consensus_prob, market_price)
+           What did the model expect to make per dollar staked, AT ENTRY, net of
+           the estimated fee? This is a forecast, not an outcome -- it doesn't
+           know whether the bet won. Comparing mean ev_pct against realized
+           win rate/ROI over enough settled bets is a calibration check: if they
+           track, consensus_prob is a trustworthy probability estimate; if
+           realized ROI runs persistently below mean ev_pct, it's optimistic.
 """
 from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import config
+from core.kelly_calculator import expected_value_pct
 
 TTE_BUCKETS: list[tuple[float, float]] = [
     (0, 1), (1, 3), (3, 6), (6, 12), (12, 24), (24, 48), (48, float("inf")),
@@ -100,8 +115,14 @@ def compute_row(pos: dict) -> dict:
     pnl = pos.get("pnl")
     won = None if pnl is None else pnl > 0
 
+    ev_pct = None
+    if pos.get("consensus_prob") is not None and pos.get("market_price") is not None:
+        fee_rate = 0.0 if pos.get("maker_only") else config.KALSHI_TAKER_FEE_RATE_ESTIMATE
+        ev_pct = round(
+            expected_value_pct(pos["consensus_prob"], pos["market_price"], fee_rate), 4)
+
     return {**pos, "tte_hours": tte_hours, "kalshi_clv": kalshi_clv,
-            "consensus_clv": consensus_clv, "won": won}
+            "consensus_clv": consensus_clv, "won": won, "ev_pct": ev_pct}
 
 
 def compute_rows(positions: list[dict]) -> list[dict]:
@@ -111,6 +132,7 @@ def compute_rows(positions: list[dict]) -> list[dict]:
 def overall_summary(rows: list[dict]) -> dict:
     kalshi_clvs = [r["kalshi_clv"] for r in rows]
     consensus_clvs = [r["consensus_clv"] for r in rows]
+    ev_pcts = [r["ev_pct"] for r in rows]
     wins = [r["won"] for r in rows]
     won_numeric = [None if r["won"] is None else (1.0 if r["won"] else 0.0) for r in rows]
     tte = [r["tte_hours"] for r in rows]
@@ -118,9 +140,11 @@ def overall_summary(rows: list[dict]) -> dict:
         "n": len(rows),
         "n_with_kalshi_clv": sum(1 for v in kalshi_clvs if v is not None),
         "n_with_consensus_clv": sum(1 for v in consensus_clvs if v is not None),
+        "n_with_ev_pct": sum(1 for v in ev_pcts if v is not None),
         "n_with_outcome": sum(1 for v in wins if v is not None),
         "mean_kalshi_clv": _mean(kalshi_clvs),
         "mean_consensus_clv": _mean(consensus_clvs),
+        "mean_ev_pct": _mean(ev_pcts),
         "pct_positive_kalshi_clv": _pct(lambda v: v > 0, kalshi_clvs),
         "pct_positive_consensus_clv": _pct(lambda v: v > 0, consensus_clvs),
         "win_rate": _pct(lambda v: v is True, wins),
@@ -136,6 +160,7 @@ def _group_stats(rows: list[dict]) -> dict:
         "win_rate": _pct(lambda v: v is True, [r["won"] for r in rows]),
         "mean_kalshi_clv": _mean([r["kalshi_clv"] for r in rows]),
         "mean_consensus_clv": _mean([r["consensus_clv"] for r in rows]),
+        "mean_ev_pct": _mean([r["ev_pct"] for r in rows]),
     }
 
 
