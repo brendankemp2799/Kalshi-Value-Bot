@@ -158,9 +158,12 @@ def test_an_unparseable_market_is_skipped():
 
 def test_only_markets_pinnacle_quotes_are_wired():
     """Measured: Pinnacle carries no batter_hits / batter_rbis / hits_runs_rbis /
-    stolen_bases. Wiring one would fetch per-event credits for nothing."""
+    stolen_bases (MLB) or completions/attempts/interceptions/rush-attempts (NFL).
+    Wiring one would fetch per-event credits for nothing."""
     assert set(PLAYER_PROP_MARKET.values()) == {
-        "pitcher_strikeouts", "batter_home_runs", "batter_total_bases"}
+        "pitcher_strikeouts", "batter_home_runs", "batter_total_bases",
+        "player_pass_yds", "player_rush_yds", "player_reception_yds",
+        "player_receptions", "player_pass_tds"}
 
 
 def test_player_prop_is_enabled_with_a_quality_tier():

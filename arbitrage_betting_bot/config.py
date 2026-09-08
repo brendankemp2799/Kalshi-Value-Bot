@@ -431,9 +431,9 @@ ENABLE_ALTERNATE_LINES: bool = os.getenv("ENABLE_ALTERNATE_LINES", "true").lower
 #                         KXMLSBTTS 47%, KXLIGUE1BTTS 40%
 #   totals_1st_1_innings  KXMLBRFI 50%   (Over 0.5 == "a run scores in the 1st")
 #
-# Everything first-half measured 0-5% tradable and is excluded. Player props are
-# excluded too: Kalshi has no per-game player series, only season-long ones quoted
-# 0.00/0.99.
+# Everything first-half measured 0-5% tradable and is excluded. Player props for most
+# other leagues are excluded too: Kalshi has no per-game player series for them, only
+# season-long ones quoted 0.00/0.99. NFL is the exception -- see below.
 PROP_MARKETS: dict[str, str] = {
     # MLB fetches the first-inning total AND the three player markets Pinnacle
     # actually quotes, in one per-event call (cost = markets x 1 unit).
@@ -444,6 +444,16 @@ PROP_MARKETS: dict[str, str] = {
     "soccer_spain_la_liga":    "btts",
     "soccer_italy_serie_a":    "btts",
     "soccer_france_ligue_one": "btts",
+    # NFL player props (2026-09-08). Kalshi lists real per-game markets here (unlike
+    # most other leagues), confirmed live: 5 series measured at 18-47% tradable
+    # (spread<=0.05, volume>0) -- KXNFLPASSTDS 47%, KXNFLPASSYDS 40%, KXNFLRSHYDS 30%,
+    # KXNFLRECYDS 28%, KXNFLREC 18%. Pinnacle confirmed quoting the matching market
+    # for all 5 via a live per-event test call. Completions/attempts/interceptions/
+    # rush-attempts measured 0-4% tradable and excluded, same bar that excluded thin
+    # MLB markets.
+    "americanfootball_nfl":   "player_pass_yds,player_rush_yds,"
+                               "player_reception_yds,player_receptions,"
+                               "player_pass_tds",
 }
 ENABLE_PROP_MARKETS: bool = os.getenv("ENABLE_PROP_MARKETS", "true").lower() == "true"
 
@@ -527,7 +537,7 @@ SPORT_MARKETS: dict[str, str] = {
     "soccer_usa_mls":              "h2h,totals,spreads",
     "soccer_epl":                  "h2h,totals,spreads",
     "soccer_uefa_champs_league":   "h2h,totals,spreads",
-    "americanfootball_nfl":        "h2h,totals",
+    "americanfootball_nfl":        "h2h,totals,spreads",
     "soccer_spain_la_liga":        "h2h,totals",
     "soccer_italy_serie_a":        "h2h,totals",
     "soccer_france_ligue_one":     "h2h,totals",

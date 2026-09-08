@@ -101,7 +101,17 @@ _SPORT_TO_SERIES: dict[str, list[str]] = {
     "soccer_epl":                ["KXEPLGAME", "KXEPLTOTAL", "KXEPLSPREAD"],
     "soccer_uefa_champs_league": ["KXUCLGAME", "KXUCLTOTAL", "KXUCLSPREAD"],
     # Added 2026-08-21; every ticker verified live against Kalshi before wiring.
-    "americanfootball_nfl":      ["KXNFLGAME", "KXNFLTOTAL"],
+    # KXNFLSPREAD + 5 player-prop series added 2026-09-08, ahead of Week 1 kickoff --
+    # not included at launch only because NFL's nearest game was 19 days out then.
+    # Live tradability (spread<=0.05, volume>0): KXNFLSPREAD 396/404 (98%, the best of
+    # any spread series measured), KXNFLPASSTDS 55/118 (47%), KXNFLPASSYDS 103/259
+    # (40%), KXNFLRSHYDS 159/527 (30%), KXNFLRECYDS 265/956 (28%), KXNFLREC 147/824
+    # (18%). Completions/attempts/interceptions/rush-attempts measured 2-4% and
+    # excluded. Must move together with SPORT_MARKETS/PROP_MARKETS (config.py) and
+    # _SERIES_TO_BET_TYPE/PLAYER_PROP_MARKET/_SERIES_NEEDS_EVENT_TITLE below.
+    "americanfootball_nfl":      ["KXNFLGAME", "KXNFLTOTAL", "KXNFLSPREAD",
+                                   "KXNFLPASSYDS", "KXNFLRSHYDS", "KXNFLRECYDS",
+                                   "KXNFLREC", "KXNFLPASSTDS"],
     "soccer_spain_la_liga":      ["KXLALIGAGAME", "KXLALIGATOTAL", "KXLALIGABTTS"],
     "soccer_italy_serie_a":      ["KXSERIEAGAME", "KXSERIEATOTAL", "KXSERIEABTTS"],
     "soccer_france_ligue_one":   ["KXLIGUE1GAME", "KXLIGUE1TOTAL", "KXLIGUE1BTTS"],
@@ -190,6 +200,7 @@ _SERIES_TO_BET_TYPE: dict[str, str] = {
     "KXMLSSPREAD":    "spread",
     "KXEPLSPREAD":    "spread",
     "KXUCLSPREAD":    "spread",
+    "KXNFLSPREAD":    "spread",
     # The parsing/detection code still handles bet_type "spread" if it returns.
     "KXEPLBTTS":      "btts",
     "KXMLSBTTS":      "btts",
@@ -204,6 +215,13 @@ _SERIES_TO_BET_TYPE: dict[str, str] = {
     "KXMLBKS":        "player_prop",   # pitcher strikeouts
     "KXMLBHR":        "player_prop",   # batter home runs
     "KXMLBTB":        "player_prop",   # batter total bases
+    # NFL player props (2026-09-08) -- see _SPORT_TO_SERIES for the live-tradability
+    # measurements behind these five.
+    "KXNFLPASSYDS":   "player_prop",   # passing yards
+    "KXNFLRSHYDS":    "player_prop",   # rushing yards
+    "KXNFLRECYDS":    "player_prop",   # receiving yards
+    "KXNFLREC":       "player_prop",   # receptions
+    "KXNFLPASSTDS":   "player_prop",   # passing touchdowns
 }
 
 # Kalshi series -> the Odds API market that prices it, for player props.
@@ -211,6 +229,11 @@ PLAYER_PROP_MARKET: dict[str, str] = {
     "KXMLBKS": "pitcher_strikeouts",
     "KXMLBHR": "batter_home_runs",
     "KXMLBTB": "batter_total_bases",
+    "KXNFLPASSYDS":  "player_pass_yds",
+    "KXNFLRSHYDS":   "player_rush_yds",
+    "KXNFLRECYDS":   "player_reception_yds",
+    "KXNFLREC":      "player_receptions",
+    "KXNFLPASSTDS":  "player_pass_tds",
 }
 
 # Series whose MARKET title carries no team names, so the matcher cannot work from it.
@@ -221,8 +244,11 @@ PLAYER_PROP_MARKET: dict[str, str] = {
 _SERIES_NEEDS_EVENT_TITLE: set[str] = {
     "KXEPLBTTS", "KXMLSBTTS", "KXLALIGABTTS", "KXSERIEABTTS", "KXLIGUE1BTTS",
     # Player props too: the market is titled "Zach Neto: 2+ home runs?" while only the
-    # event names the teams ("Los Angeles A vs Texas: Home Runs").
+    # event names the teams ("Los Angeles A vs Texas: Home Runs"). Same shape for NFL
+    # player props (e.g. "Tua Tagovailoa: 300+ passing yards" vs event title
+    # "Atlanta vs Pittsburgh: Passing Yards") -- confirmed live 2026-09-08.
     "KXMLBKS", "KXMLBHR", "KXMLBTB",
+    "KXNFLPASSYDS", "KXNFLRSHYDS", "KXNFLRECYDS", "KXNFLREC", "KXNFLPASSTDS",
 }
 
 # "Zach Neto: 2+"  ->  ("Zach Neto", 1.5).  Kalshi always words player props as an
