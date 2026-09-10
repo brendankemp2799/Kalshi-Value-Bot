@@ -278,8 +278,8 @@ def run_scan(
         daily_risk_cap = bm.bankroll * config.MAX_DAILY_CAPITAL_RISK_PCT
         if daily_staked >= daily_risk_cap:
             logger.info(
-                "Daily capital risk cap reached ($%.2f staked today / $%.2f cap) — "
-                "skipping API fetch. Running auto-settle only.",
+                "Daily capital risk cap reached ($%.2f still open from today's "
+                "entries / $%.2f cap) — skipping API fetch. Running auto-settle only.",
                 daily_staked, daily_risk_cap,
             )
             auto_settle_positions(is_paper=paper, capture_closing_lines=True)
@@ -507,8 +507,8 @@ def run_scan(
             daily_cap_now = daily_staked + pending_exposure_total + sizing.recommended_dollars
             if daily_cap_now > daily_risk_cap:
                 allowed, reason = False, (
-                    f"Daily capital risk cap would reach ${daily_cap_now:.2f} "
-                    f"(max ${daily_risk_cap:.2f})")
+                    f"Daily capital risk cap would reach ${daily_cap_now:.2f} still "
+                    f"open from today's entries (max ${daily_risk_cap:.2f})")
         if allowed and not dry_run and not paper and ticker in approved_tickers_this_scan:
             allowed, reason = False, f"Already queued an entry on {ticker} earlier this scan"
 

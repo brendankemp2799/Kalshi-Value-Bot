@@ -579,12 +579,24 @@ def get_position(position_id: int) -> sqlite3.Row | None:
 
 
 def get_daily_stake_total(is_paper: bool = False) -> float:
-    """Sum of stakes placed in new positions entered today (UTC). Used for daily capital risk gate."""
+    """Sum of stakes STILL OPEN from positions entered today (UTC). Used for the daily
+    capital risk gate (config.MAX_DAILY_CAPITAL_RISK_PCT).
+
+    Deliberately excludes today's positions that have already settled (status=
+    'closed') -- changed 2026-09-09 after that money kept counting against the cap for
+    the rest of the UTC day even though it was no longer at risk (e.g. $54.42 staked
+    on 2026-09-08 tripped the cap while only ~$34.50 of it was still open by evening,
+    the rest having already settled). This still resets at UTC midnight like before
+    and stays a distinct check from MAX_TOTAL_EXPOSURE_PCT/bm.total_at_risk (which
+    covers ALL open positions, any entry day) -- this one only throttles how much of
+    TODAY's new capital can be at risk at once.
+    """
     today = datetime.utcnow().strftime("%Y-%m-%d")
     with get_connection() as conn:
         row = conn.execute(
             "SELECT COALESCE(SUM(stake), 0.0) FROM positions "
-            "WHERE entered_at LIKE ? AND is_paper = ? AND execution_status != 'failed'",
+            "WHERE entered_at LIKE ? AND is_paper = ? AND execution_status != 'failed' "
+            "AND status = 'open'",
             (f"{today}%", 1 if is_paper else 0),
         ).fetchone()
         return float(row[0]) if row else 0.0

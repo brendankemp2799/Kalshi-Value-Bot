@@ -90,7 +90,13 @@ MAX_OPEN_POSITIONS: int = 40          # Backstop circuit-breaker only (e.g. a bu
                                        # either) -- the count cap was the only thing blocking further
                                        # scanning, and hitting it skips the Odds API fetch and
                                        # detect_value() entirely, not just new bets.
-MAX_DAILY_CAPITAL_RISK_PCT: float = 0.30  # Max % of bankroll staked in new positions per calendar day (UTC)
+MAX_DAILY_CAPITAL_RISK_PCT: float = 0.30  # Max % of bankroll STILL OPEN from today's new
+                                           # positions (UTC calendar day) -- see
+                                           # storage/db.py::get_daily_stake_total(). Changed
+                                           # 2026-09-09: previously counted a day's cumulative
+                                           # stakes even after they'd already settled, so the
+                                           # gate could stay tripped for the rest of the day on
+                                           # money that was no longer at risk.
 
 # Trailing-stop and stop-loss mid-position exit risk management were removed
 # 2026-08-28. Both had already been individually backtested off (trailing stop:
