@@ -155,14 +155,20 @@ def _eval_edge(
          would NOT clear the bar, so execute_trade() must only attempt the
          passive mid order and walk away (no bet, no cost) if it doesn't fill,
          rather than crossing the spread into a losing trade.
+
+    Both paths are additionally gated on config.MAX_ENTRY_PRICE regardless of
+    edge -- see that config's docstring. A price beyond the cap is refused
+    outright here, at the single choke point every bet-type detector routes
+    through, rather than in each detector's own branching (cheaper to get right
+    once than to duplicate correctly nine times).
     """
     ask_edge = consensus - ask_price
     _EPS = 1e-9  # floating-point tolerance: treat 1.9999999% as 2.0%
-    if ask_edge >= _effective_min_edge(ask_price, min_edge) - _EPS:
+    if ask_price <= config.MAX_ENTRY_PRICE and ask_edge >= _effective_min_edge(ask_price, min_edge) - _EPS:
         return ask_edge, False
     mid_price = max(0.01, ask_price - spread / 2.0)
     mid_edge = consensus - mid_price
-    if mid_edge >= min_edge - _EPS:
+    if mid_price <= config.MAX_ENTRY_PRICE and mid_edge >= min_edge - _EPS:
         return mid_edge, True
     return None
 
@@ -264,6 +270,30 @@ def _spread_too_wide(km, bet_type: str, is_draw: bool = False) -> str | None:
     qf = config.quality_filters(bet_type, is_draw=is_draw)
     if km.spread > qf["max_kalshi_spread"]:
         return f"Kalshi spread {km.spread*100:.1f}¢ > max {qf['max_kalshi_spread']*100:.0f}¢"
+    return None
+
+
+def _payout_floor_reason(price: float) -> str | None:
+    """
+    Reason string if `price` fails config.MAX_ENTRY_PRICE, else None.
+
+    The actual veto lives inside _eval_edge() — that is the one place every
+    bet-type detector routes through, so it is the only place that can refuse
+    the bet correctly no matter which of the nine call sites reached it. This
+    is a second, deliberately redundant check that exists purely so scan_log
+    records the real reason instead of a misleading "no_edge": a real edge may
+    well have cleared the bar here (that's exactly the Contreras/De La Cruz
+    case — see config.MIN_PAYOUT_RATIO's docstring) — the price is what killed
+    it, not the edge, and the log should say so.
+
+    Mirrors _spread_too_wide()'s (price/reason-string) shape so callers can
+    slot it into the same precedence chain used for wide_reason below.
+    """
+    if price > config.MAX_ENTRY_PRICE:
+        return (
+            f"Price {price*100:.0f}¢ payout too thin (min payout ratio "
+            f"{config.MIN_PAYOUT_RATIO*100:.0f}%, cap {config.MAX_ENTRY_PRICE*100:.0f}¢)"
+        )
     return None
 
 
@@ -485,18 +515,21 @@ def _detect_h2h(me, event, km, min_edge, opportunities, scan_log, mm_candidates=
             else:
                 kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
 
+        payout_reason = _payout_floor_reason(kalshi_price)
         result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
         if result is None:
             best_edge = consensus - kalshi_price
             eff_min = _effective_min_edge(kalshi_price, min_edge)
-            if wide_reason:
+            if payout_reason:
+                status, reason = "payout_too_thin", payout_reason
+            elif wide_reason:
                 status, reason = "spread_too_wide", wide_reason
             else:
                 status = "no_edge"
                 reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
             _log(scan_log, me, team, kalshi_price, consensus, book_count, std_dev,
                  best_edge, status, reason, kalshi_side)
-            if wide_reason and is_yes_side:
+            if wide_reason and not payout_reason and is_yes_side:
                 pending_mm = (me, team, consensus, book_count, std_dev, status, reason)
             continue
         edge, maker_only = result
@@ -541,18 +574,21 @@ def _detect_h2h_tie(me, event, km, min_edge, opportunities, scan_log, mm_candida
         return
     wide_reason = _spread_too_wide(km, "h2h", is_draw=True)
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
+    payout_reason = _payout_floor_reason(kalshi_price)
     result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if result is None:
         best_edge = consensus - kalshi_price
         eff_min = _effective_min_edge(kalshi_price, min_edge)
-        if wide_reason:
+        if payout_reason:
+            status, reason = "payout_too_thin", payout_reason
+        elif wide_reason:
             status, reason = "spread_too_wide", wide_reason
         else:
             status = "no_edge"
             reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, "Draw", kalshi_price, consensus, book_count, std_dev,
              best_edge, status, reason, kalshi_side)
-        if wide_reason:
+        if wide_reason and not payout_reason:
             _maybe_mm_candidate(mm_candidates, me, "Draw", consensus, book_count,
                                  std_dev, status, reason)
         return
@@ -729,18 +765,21 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
 
     # ── YES: the player clears the threshold ──────────────────────────────────
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
+    payout_reason = _payout_floor_reason(kalshi_price)
     result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if result is None:
         best_edge = consensus - kalshi_price
         eff_min = _effective_min_edge(kalshi_price, min_edge)
-        if wide_reason:
+        if payout_reason:
+            status, reason = "payout_too_thin", payout_reason
+        elif wide_reason:
             status, reason = "spread_too_wide", wide_reason
         else:
             status = "no_edge"
             reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              best_edge, status, reason, "yes")
-        if wide_reason:
+        if wide_reason and not payout_reason:
             pending_mm = (me, label, consensus, book_count, std_dev, status, reason)
         if scaled:
             _record_dk_shadow(dk_shadow_log, me, km, diag, market_key, "yes",
@@ -797,11 +836,14 @@ def _detect_player_prop(me, event, km, min_edge, opportunities, scan_log,
         no_label = "[DK-scaled] " + no_label
     no_consensus = 1.0 - consensus
     no_price = (1.0 - km.yes_bid) if km.yes_bid > 0 else (1.0 - km.yes_price)
+    no_payout_reason = _payout_floor_reason(no_price)
     no_result = _eval_edge(no_consensus, no_price, km.spread, min_edge)
     if no_result is None:
         no_best = no_consensus - no_price
         eff_min = _effective_min_edge(no_price, min_edge)
-        if wide_reason:
+        if no_payout_reason:
+            no_status, reason = "payout_too_thin", no_payout_reason
+        elif wide_reason:
             no_status, reason = "spread_too_wide", wide_reason
         else:
             no_status = "no_edge"
@@ -913,18 +955,21 @@ def _detect_binary_prop(me, event, km, min_edge, opportunities, scan_log,
 
     # ── YES ─────────────────────────────────────────────────────────────────────
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
+    payout_reason = _payout_floor_reason(kalshi_price)
     result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if result is None:
         best_edge = consensus - kalshi_price
         eff_min = _effective_min_edge(kalshi_price, min_edge)
-        if wide_reason:
+        if payout_reason:
+            status, reason = "payout_too_thin", payout_reason
+        elif wide_reason:
             status, reason = "spread_too_wide", wide_reason
         else:
             status = "no_edge"
             reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              best_edge, status, reason, "yes")
-        if wide_reason:
+        if wide_reason and not payout_reason:
             pending_mm = (me, label, consensus, book_count, std_dev, status, reason)
     else:
         edge, maker_only = result
@@ -950,11 +995,14 @@ def _detect_binary_prop(me, event, km, min_edge, opportunities, scan_log,
     # ── NO ──────────────────────────────────────────────────────────────────────
     no_consensus = 1.0 - consensus
     no_price = (1.0 - km.yes_bid) if km.yes_bid > 0 else (1.0 - km.yes_price)
+    no_payout_reason = _payout_floor_reason(no_price)
     no_result = _eval_edge(no_consensus, no_price, km.spread, min_edge)
     if no_result is None:
         no_best = no_consensus - no_price
         eff_min = _effective_min_edge(no_price, min_edge)
-        if wide_reason:
+        if no_payout_reason:
+            no_status, reason = "payout_too_thin", no_payout_reason
+        elif wide_reason:
             no_status, reason = "spread_too_wide", wide_reason
         else:
             no_status = "no_edge"
@@ -1053,18 +1101,21 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidat
 
     wide_reason = _spread_too_wide(km, "totals")
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
+    payout_reason = _payout_floor_reason(kalshi_price)
     result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if result is None:
         best_edge = consensus - kalshi_price
         eff_min = _effective_min_edge(kalshi_price, min_edge)
-        if wide_reason:
+        if payout_reason:
+            status, reason = "payout_too_thin", payout_reason
+        elif wide_reason:
             status, reason = "spread_too_wide", wide_reason
         else:
             status = "no_edge"
             reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              best_edge, status, reason, "yes")
-        if wide_reason:
+        if wide_reason and not payout_reason:
             pending_mm = (me, label, consensus, book_count, std_dev, status, reason)
     else:
         edge, maker_only = result
@@ -1103,11 +1154,14 @@ def _detect_totals(me, event, km, min_edge, opportunities, scan_log, mm_candidat
         no_label = f"Under {km.threshold}"
         no_consensus = 1.0 - consensus
         no_price = (1.0 - km.yes_bid) if km.yes_bid > 0 else (1.0 - km.yes_price)
+        no_payout_reason = _payout_floor_reason(no_price)
         no_result = _eval_edge(no_consensus, no_price, km.spread, min_edge)
         if no_result is None:
             no_best = no_consensus - no_price
             eff_min = _effective_min_edge(no_price, min_edge)
-            if wide_reason:
+            if no_payout_reason:
+                no_status, reason = "payout_too_thin", no_payout_reason
+            elif wide_reason:
                 no_status, reason = "spread_too_wide", wide_reason
             else:
                 no_status = "no_edge"
@@ -1268,18 +1322,21 @@ def _detect_spread(me, event, km, min_edge, opportunities, scan_log, mm_candidat
 
     wide_reason = _spread_too_wide(km, "spread")
     kalshi_price = km.yes_ask if km.yes_ask > 0 else km.yes_price
+    payout_reason = _payout_floor_reason(kalshi_price)
     result = _eval_edge(consensus, kalshi_price, km.spread, min_edge)
     if result is None:
         best_edge = consensus - kalshi_price
         eff_min = _effective_min_edge(kalshi_price, min_edge)
-        if wide_reason:
+        if payout_reason:
+            status, reason = "payout_too_thin", payout_reason
+        elif wide_reason:
             status, reason = "spread_too_wide", wide_reason
         else:
             status = "no_edge"
             reason = f"Edge {best_edge*100:.2f}% net below minimum {eff_min*100:.2f}%"
         _log(scan_log, me, label, kalshi_price, consensus, book_count, std_dev,
              best_edge, status, reason, "yes")
-        if wide_reason:
+        if wide_reason and not payout_reason:
             _maybe_mm_candidate(mm_candidates, me, label, consensus, book_count,
                                  std_dev, status, reason)
         return

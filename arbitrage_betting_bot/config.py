@@ -48,6 +48,27 @@ MAX_PCT_BANKROLL: float = 0.05        # Max 5% of bankroll per single bet
 MAX_TOTAL_EXPOSURE_PCT: float = 0.30  # Max 30% of bankroll deployed at once
 MAX_SPORT_EXPOSURE_PCT: float = 0.15  # Max 15% of bankroll in one sport
 
+# Minimum payout ratio -- (1-price)/price, i.e. profit per dollar risked on a win --
+# a bet must offer regardless of edge. Added 2026-09-10 after two same-night player-
+# prop bets (William Contreras and Elly De La Cruz, both "Under 1 HR") both lost:
+# priced at 87c/85c (risking $6.09/$6.80 to win $0.91/$1.20), sized that large
+# because the modeled win probability was 89.8%/88.4% -- full Kelly bets big
+# whenever a loss is modeled as rare, regardless of how thin the resulting payout
+# is. That is exactly backwards from a risk standpoint: at these extreme prices a
+# SMALL error in the probability estimate costs disproportionately, because almost
+# the entire stake is at risk for a sliver of upside -- and with Pinnacle as the
+# sole book (see KELLY_FRACTION's docstring), there is currently no cross-book
+# corroboration and no working uncertainty discount to catch that error before it
+# is realized. This is a hard price cap, independent of edge: a bet priced beyond
+# MAX_ENTRY_PRICE is never taken, on either side of a market, maker or taker,
+# no matter how large its modeled edge.
+# 0.20 (a max entry price of ~83c) was chosen to catch only the most extreme cases
+# like the two above (87c/85c) without touching the bulk of the 70-85c range, which
+# has been net profitable historically -- tune here if that turns out too tight
+# or too loose once more settled data accumulates at this cap.
+MIN_PAYOUT_RATIO: float = float(os.getenv("MIN_PAYOUT_RATIO", "0.20"))
+MAX_ENTRY_PRICE: float = 1.0 / (1.0 + MIN_PAYOUT_RATIO)
+
 # Correlated-bet limits, expressed as MULTIPLES OF MAX_PCT_BANKROLL rather than as
 # independent percentages. That relationship is the whole point.
 #
