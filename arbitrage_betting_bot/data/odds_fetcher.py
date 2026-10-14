@@ -200,6 +200,15 @@ class OddsAPIClient:
         closing-line lookups — costs real credits (~10/call), unlike live odds
         polling, so callers must not invoke this on a tight loop.
 
+        Scoped via _scope_params() -- the same bookmakers= filter (config.
+        ODDS_API_BOOKMAKERS, "pinnacle") as the live odds call -- so a closing
+        consensus is comparable to the entry-time consensus_prob it gets diffed
+        against in core.clv_analytics. Used to send regions=config.ODDS_API_REGIONS
+        instead, which pulled a full multi-book panel at close against a
+        Pinnacle-only number at entry: not the same instrument on both ends, and
+        it made consensus_clv reflect retail-book drift rather than closing-line
+        value. See core/clv_analytics.py's module docstring.
+
         Returns the raw event list (bookmakers in the same shape as live odds —
         feed directly into core.odds_converter.consensus_stats()), or [] on error.
         """
@@ -207,7 +216,7 @@ class OddsAPIClient:
             resp = self._get(
                 f"/historical/sports/{sport}/odds",
                 {
-                    "regions": config.ODDS_API_REGIONS,
+                    **self._scope_params(),
                     "markets": markets,
                     "oddsFormat": config.ODDS_API_ODDS_FORMAT,
                     "date": date_iso,
@@ -220,6 +229,29 @@ class OddsAPIClient:
             return []
         except requests.RequestException as e:
             logger.warning("Odds API historical request failed for %s: %s", sport, e)
+            return []
+
+    def fetch_scores(self, sport: str, days_from: int = 3) -> list[dict]:
+        """
+        Final/live scores for a sport over the last `days_from` days (the API
+        caps this at 1-3). Same event `id` as fetch_odds()/fetch_all_sports() --
+        used by core/settlement_matcher.py to resolve flagged_bets, since there
+        is no Kalshi market-resolution field to read anymore (retail books
+        expose no settlement API at all). Each event carries `completed`
+        (bool) and, once true, `scores: [{name, score}, ...]` with one entry
+        per team.
+
+        Returns the raw event list, or [] on error -- a failed fetch must
+        degrade to "nothing resolved yet", never crash the settlement loop.
+        """
+        try:
+            return self._get(f"/sports/{sport}/scores", {"daysFrom": days_from})
+        except requests.HTTPError as e:
+            status = e.response.status_code if e.response is not None else "?"
+            logger.warning("Odds API scores HTTP %s for %s", status, sport)
+            return []
+        except requests.RequestException as e:
+            logger.warning("Odds API scores request failed for %s: %s", sport, e)
             return []
 
     def fetch_odds(self, sport: str, markets: str = config.ODDS_API_MARKETS) -> list[OddsEvent]:
@@ -363,6 +395,49 @@ class OddsAPIClient:
             return []
         except requests.RequestException as e:
             logger.warning("Alternates request failed for %s/%s: %s", sport, event_id, e)
+            return []
+
+    def fetch_event_links(self, sport: str, event_id: str, markets: str,
+                          bookmakers: str | None = None) -> list[dict]:
+        """
+        Per-event odds WITH betslip deep links (includeLinks=true) and source
+        ids (includeSids=true) -- validated live 2026-10-13 against a real MLS
+        event across all five config.RETAIL_BOOKMAKERS: FanDuel and DraftKings
+        return real outcome-level `addToBetslip`/`?outcomes=` links; BetMGM
+        and Caesars (williamhill_us) return outcome-level links but templated
+        with a literal "{state}" placeholder the API does NOT fill in (see
+        core/deeplink_builder.py, which substitutes config.USER_STATE_CODE);
+        Fanatics returns no links at all, at any level (event/market/outcome
+        all None) -- callers must fall back to a hardcoded homepage for it.
+
+        Same per-event endpoint as fetch_event_alternates(), 1 credit per call
+        with <=10 bookmakers -- call ONCE per newly-flagged bet, never on a
+        recurring scan.
+
+        Returns the raw bookmakers list (with `link`/`sid` fields at the
+        event/market/outcome level), or [] on error -- a failed fetch must
+        degrade to "no deep link for this bet", never break the flagging flow.
+        """
+        scope = {"bookmakers": bookmakers} if bookmakers else self._scope_params()
+        try:
+            resp = self._get(
+                f"/sports/{sport}/events/{event_id}/odds",
+                {
+                    **scope,
+                    "markets": markets,
+                    "oddsFormat": config.ODDS_API_ODDS_FORMAT,
+                    "includeLinks": "true",
+                    "includeSids": "true",
+                },
+            )
+            return (resp or {}).get("bookmakers", []) or []
+        except requests.HTTPError as e:
+            status = e.response.status_code if e.response is not None else "?"
+            log = logger.debug if status == 422 else logger.warning
+            log("Event links HTTP %s for %s/%s", status, sport, event_id)
+            return []
+        except requests.RequestException as e:
+            logger.warning("Event links request failed for %s/%s: %s", sport, event_id, e)
             return []
 
     @staticmethod

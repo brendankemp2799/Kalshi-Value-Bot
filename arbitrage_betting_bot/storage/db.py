@@ -277,6 +277,67 @@ def init_db() -> None:
                 actual_outcome         REAL,            -- 1.0 = this side resolved YES-true, 0.0 = false
                 outcome_check_attempts INTEGER NOT NULL DEFAULT 0
             );
+
+            -- Retail-sportsbook restructure (2026-10): replaces `positions` as the
+            -- lifecycle table going forward. No execution API exists for DraftKings/
+            -- FanDuel/BetMGM/Caesars/Fanatics, so a row here tracks a bet the bot
+            -- RECOMMENDED, not one it placed -- the user confirms placement (and the
+            -- actual book/odds/stake, which can differ slightly from the
+            -- recommendation since the price can move before they tap through)
+            -- manually via the dashboard. `positions` and its Kalshi-shaped columns
+            -- (order_id, execution_status, entry_fee_paid, ...) are left untouched as
+            -- historical record, not reused for this.
+            CREATE TABLE IF NOT EXISTS flagged_bets (
+                id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+                flagged_at                 TEXT NOT NULL,
+                odds_api_event_id          TEXT NOT NULL,
+                sport                      TEXT NOT NULL,
+                home_team                  TEXT NOT NULL,
+                away_team                  TEXT NOT NULL,
+                commence_time              TEXT NOT NULL,
+                bet_type                   TEXT NOT NULL,   -- h2h | totals | spread
+                outcome_label              TEXT NOT NULL,   -- display string
+                side                       TEXT NOT NULL,   -- team name | "Draw" | over | under -- settlement key
+                threshold                  REAL,            -- totals/spread line; NULL for h2h
+                recommended_book           TEXT NOT NULL,
+                recommended_odds_american  INTEGER NOT NULL,
+                recommended_prob           REAL NOT NULL,
+                consensus_prob             REAL NOT NULL,
+                edge                       REAL NOT NULL,
+                bookmaker_count            INTEGER NOT NULL,
+                consensus_std              REAL NOT NULL,
+                recommended_stake          REAL NOT NULL,
+                deep_link_url              TEXT,
+                deep_link_quality          TEXT,            -- outcome | market | event | homepage
+                dashboard_detail_url       TEXT,
+                status                     TEXT NOT NULL DEFAULT 'FLAGGED',  -- FLAGGED|NOTIFIED|PLACED|DISMISSED|SETTLED
+                notified_at                TEXT,
+                telegram_message_id        TEXT,
+                dismissed_at               TEXT,
+                dismiss_reason             TEXT,
+                placed_at                  TEXT,
+                actual_book                TEXT,   -- user-confirmed, may differ from recommended_book
+                actual_odds_american       INTEGER,
+                actual_stake               REAL,
+                settled_at                 TEXT,
+                settlement_result          TEXT,   -- won | lost | push
+                settlement_source          TEXT,   -- odds_api_scores | manual
+                final_home_score           REAL,
+                final_away_score           REAL,
+                pnl                        REAL,
+                bookmakers_json            TEXT
+            );
+
+            -- Single-row table for manually correcting bankroll drift. There is no
+            -- account API to read a real balance from anymore (see flagged_bets),
+            -- so get_current_bankroll() derives it from settled P&L and open stakes
+            -- -- this is the user's own override when that drifts from reality
+            -- (e.g. a deposit/withdrawal, or a bet placed outside this system).
+            CREATE TABLE IF NOT EXISTS bankroll_adjustment (
+                id           INTEGER PRIMARY KEY CHECK (id = 1),
+                manual_delta REAL NOT NULL DEFAULT 0.0,
+                updated_at   TEXT
+            );
         """)
     _migrate()
     logger.info("Database initialized at %s", DB_PATH)
@@ -1667,3 +1728,201 @@ def get_api_credits() -> sqlite3.Row | None:
             ).fetchone()
         except Exception:
             return None
+
+
+# ── flagged_bets: retail-sportsbook manual-placement lifecycle ─────────────────
+# FLAGGED -> NOTIFIED -> PLACED -> SETTLED, with DISMISSED as a terminal
+# off-ramp at any point before PLACED. See storage/db.py's table comment above
+# and the plan this replaces `positions`/Kalshi auto-execution with.
+
+def add_flagged_bet(
+    odds_api_event_id: str,
+    sport: str,
+    home_team: str,
+    away_team: str,
+    commence_time: str,
+    bet_type: str,
+    outcome_label: str,
+    side: str,
+    threshold: float | None,
+    recommended_book: str,
+    recommended_odds_american: int,
+    recommended_prob: float,
+    consensus_prob: float,
+    edge: float,
+    bookmaker_count: int,
+    consensus_std: float,
+    recommended_stake: float,
+    deep_link_url: str | None = None,
+    deep_link_quality: str | None = None,
+    dashboard_detail_url: str | None = None,
+    bookmakers_json: str | None = None,
+) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO flagged_bets
+                (flagged_at, odds_api_event_id, sport, home_team, away_team,
+                 commence_time, bet_type, outcome_label, side, threshold,
+                 recommended_book, recommended_odds_american, recommended_prob,
+                 consensus_prob, edge, bookmaker_count, consensus_std,
+                 recommended_stake, deep_link_url, deep_link_quality,
+                 dashboard_detail_url, bookmakers_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                datetime.utcnow().isoformat(), odds_api_event_id, sport, home_team,
+                away_team, commence_time, bet_type, outcome_label, side, threshold,
+                recommended_book, recommended_odds_american, recommended_prob,
+                consensus_prob, edge, bookmaker_count, consensus_std,
+                recommended_stake, deep_link_url, deep_link_quality,
+                dashboard_detail_url, bookmakers_json,
+            ),
+        )
+        return cur.lastrowid
+
+
+def get_flagged_bet(bet_id: int) -> sqlite3.Row | None:
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM flagged_bets WHERE id = ?", (bet_id,)
+        ).fetchone()
+
+
+def get_flagged_bets(status: str | tuple[str, ...] | None = None,
+                      limit: int = 200) -> list[sqlite3.Row]:
+    """All flagged bets, newest first, optionally filtered to one status or a
+    tuple of statuses (e.g. status=("FLAGGED", "NOTIFIED") for the actionable
+    dashboard view)."""
+    with get_connection() as conn:
+        if status is None:
+            return conn.execute(
+                "SELECT * FROM flagged_bets ORDER BY flagged_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        statuses = (status,) if isinstance(status, str) else tuple(status)
+        placeholders = ",".join("?" * len(statuses))
+        return conn.execute(
+            f"SELECT * FROM flagged_bets WHERE status IN ({placeholders}) "
+            "ORDER BY flagged_at DESC LIMIT ?",
+            (*statuses, limit),
+        ).fetchall()
+
+
+def find_open_flagged_bet(odds_api_event_id: str, outcome_label: str) -> sqlite3.Row | None:
+    """Dedup key for the detector: don't re-flag the same (event, outcome) while
+    an existing row for it is still active (anything short of DISMISSED/SETTLED)."""
+    with get_connection() as conn:
+        return conn.execute(
+            """
+            SELECT * FROM flagged_bets
+            WHERE odds_api_event_id = ? AND outcome_label = ?
+              AND status NOT IN ('DISMISSED', 'SETTLED')
+            """,
+            (odds_api_event_id, outcome_label),
+        ).fetchone()
+
+
+def set_deep_link(bet_id: int, deep_link_url: str, deep_link_quality: str,
+                   dashboard_detail_url: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE flagged_bets
+            SET deep_link_url = ?, deep_link_quality = ?, dashboard_detail_url = ?
+            WHERE id = ?
+            """,
+            (deep_link_url, deep_link_quality, dashboard_detail_url, bet_id),
+        )
+
+
+def mark_bet_notified(bet_id: int, telegram_message_id: str | None) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE flagged_bets
+            SET status = 'NOTIFIED', notified_at = ?, telegram_message_id = ?
+            WHERE id = ?
+            """,
+            (datetime.utcnow().isoformat(), telegram_message_id, bet_id),
+        )
+
+
+def mark_bet_placed(bet_id: int, actual_book: str,
+                     actual_odds_american: int, actual_stake: float) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE flagged_bets
+            SET status = 'PLACED', placed_at = ?, actual_book = ?,
+                actual_odds_american = ?, actual_stake = ?
+            WHERE id = ?
+            """,
+            (datetime.utcnow().isoformat(), actual_book,
+             actual_odds_american, actual_stake, bet_id),
+        )
+
+
+def dismiss_bet(bet_id: int, reason: str = "") -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE flagged_bets
+            SET status = 'DISMISSED', dismissed_at = ?, dismiss_reason = ?
+            WHERE id = ?
+            """,
+            (datetime.utcnow().isoformat(), reason, bet_id),
+        )
+
+
+def settle_flagged_bet(
+    bet_id: int, result: str, pnl: float,
+    final_home_score: float | None = None,
+    final_away_score: float | None = None,
+    settlement_source: str = "odds_api_scores",
+) -> None:
+    """result: 'won' | 'lost' | 'push'. pnl is computed by the caller (see
+    core/payout_calculator.py) from the bet's actual_stake/actual_odds_american,
+    not derived here -- this function just records the outcome."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE flagged_bets
+            SET status = 'SETTLED', settled_at = ?, settlement_result = ?,
+                settlement_source = ?, final_home_score = ?, final_away_score = ?,
+                pnl = ?
+            WHERE id = ?
+            """,
+            (datetime.utcnow().isoformat(), result, settlement_source,
+             final_home_score, final_away_score, pnl, bet_id),
+        )
+
+
+def get_current_bankroll() -> float:
+    """config.STARTING_BANKROLL, plus settled P&L, minus stakes still at risk in
+    PLACED-but-not-yet-settled bets, plus any manual correction. There is no
+    account API to read a real balance from (see flagged_bets table comment)."""
+    with get_connection() as conn:
+        settled_pnl = conn.execute(
+            "SELECT COALESCE(SUM(pnl), 0.0) FROM flagged_bets WHERE status = 'SETTLED'"
+        ).fetchone()[0]
+        open_stake = conn.execute(
+            "SELECT COALESCE(SUM(actual_stake), 0.0) FROM flagged_bets WHERE status = 'PLACED'"
+        ).fetchone()[0]
+        row = conn.execute(
+            "SELECT manual_delta FROM bankroll_adjustment WHERE id = 1"
+        ).fetchone()
+        manual_delta = row["manual_delta"] if row else 0.0
+    return config.STARTING_BANKROLL + settled_pnl - open_stake + manual_delta
+
+
+def set_bankroll_adjustment(delta: float) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO bankroll_adjustment (id, manual_delta, updated_at)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET manual_delta = excluded.manual_delta,
+                                           updated_at = excluded.updated_at
+            """,
+            (delta, datetime.utcnow().isoformat()),
+        )

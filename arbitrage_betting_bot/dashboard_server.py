@@ -20,6 +20,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -39,11 +40,20 @@ from core.odds_converter import american_to_prob, _devig, _norm_team, _names_mat
 import core.clv_analytics as clv
 from execution.auto_settle import auto_settle_positions
 from data.kalshi_client import KalshiClient
+import core.settlement_matcher as settlement_matcher
 import config
 import re as _re
 
 app = Flask(__name__)
 IS_PAPER = False   # set by CLI arg at startup
+
+# Process-local throttle for settle_due_flagged_bets() -- the Odds API
+# /scores endpoint is credit-metered, and /value-bets auto-refreshes every
+# 60s like the rest of this dashboard. Same in-memory-timestamp pattern as
+# data/odds_fetcher.py's _ALT_CACHE, not a DB table -- a restart just means
+# the next page load pays for one fresh poll, which is the safe direction.
+_LAST_SETTLEMENT_POLL: float = 0.0
+_SETTLEMENT_POLL_INTERVAL_SECONDS: int = 600
 
 
 def _requires_auth(f):
@@ -1781,6 +1791,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <header>
   <h1>Kalshi Arb Bot</h1>
   <div class="header-right">
+    <a href="/value-bets" style="font-size:12px;color:var(--green);text-decoration:none;padding:4px 10px;border:1px solid var(--green);border-radius:6px;white-space:nowrap;">Value Bets</a>
     <a href="/scan" style="font-size:12px;color:var(--blue);text-decoration:none;padding:4px 10px;border:1px solid var(--blue);border-radius:6px;white-space:nowrap;">Last Scan</a>
     <a href="/mm" style="font-size:12px;color:var(--blue);text-decoration:none;padding:4px 10px;border:1px solid var(--blue);border-radius:6px;white-space:nowrap;">Market Making</a>
     <a href="/dk-scaled" style="font-size:12px;color:var(--blue);text-decoration:none;padding:4px 10px;border:1px solid var(--blue);border-radius:6px;white-space:nowrap;">DK-Scaled Shadow</a>
@@ -2766,6 +2777,375 @@ DK_SCALED_TEMPLATE = """<!DOCTYPE html>
 </html>
 """
 
+
+
+# ── Value Bets (retail-sportsbook restructure, 2026-10) ────────────────────────
+# Replaces the old "Open Positions" Kalshi view for the new manual-placement
+# workflow: FLAGGED/NOTIFIED bets need a user action (place or dismiss);
+# PLACED bets are awaiting settlement. No execution API exists for any of
+# these books, so this is the only place a bet's lifecycle actually advances.
+
+def _maybe_settle_due_bets() -> None:
+    """Best-effort, throttled settlement poll -- same defensive shape as
+    build_data()'s try/except around auto_settle_positions() above, so an
+    Odds API hiccup never breaks this page."""
+    global _LAST_SETTLEMENT_POLL
+    now = time.time()
+    if now - _LAST_SETTLEMENT_POLL < _SETTLEMENT_POLL_INTERVAL_SECONDS:
+        return
+    _LAST_SETTLEMENT_POLL = now
+    try:
+        n = settlement_matcher.settle_due_flagged_bets()
+        if n:
+            app.logger.info("Settled %d flagged bet(s)", n)
+    except Exception:
+        app.logger.exception("settle_due_flagged_bets() failed — continuing")
+
+
+def _value_bet_row(r: dict) -> dict:
+    book_label = (r["recommended_book"] or "").replace("_", " ").title()
+    return {
+        "id": r["id"],
+        "flagged_at": _fmt_dt(r["flagged_at"]),
+        "sport": _short_sport(r["sport"] or ""),
+        "matchup": f"{r['home_team']} vs {r['away_team']}",
+        "commence_time": _fmt_dt(r["commence_time"]),
+        "outcome_label": r["outcome_label"],
+        "book_label": book_label,
+        "odds": r["recommended_odds_american"],
+        "edge_pct": round(r["edge"] * 100, 1) if r["edge"] is not None else None,
+        "consensus_pct": round(r["consensus_prob"] * 100, 1) if r["consensus_prob"] is not None else None,
+        "stake": r["recommended_stake"],
+        "status": r["status"],
+        "deep_link_url": r["deep_link_url"],
+        "deep_link_quality": r["deep_link_quality"],
+        "actual_book": r["actual_book"],
+        "actual_odds": r["actual_odds_american"],
+        "actual_stake": r["actual_stake"],
+        "pnl": r["pnl"],
+        "settlement_result": r["settlement_result"],
+    }
+
+
+@app.route("/value-bets")
+@_requires_auth
+def value_bets_page():
+    db.init_db()
+    _maybe_settle_due_bets()
+
+    actionable = [_value_bet_row(dict(r)) for r in db.get_flagged_bets(status=("FLAGGED", "NOTIFIED"))]
+    placed = [_value_bet_row(dict(r)) for r in db.get_flagged_bets(status="PLACED")]
+    settled = [_value_bet_row(dict(r)) for r in db.get_flagged_bets(status="SETTLED", limit=50)]
+
+    bankroll = db.get_current_bankroll()
+    settled_pnl = sum(r["pnl"] or 0.0 for r in settled)
+
+    return render_template_string(
+        VALUE_BETS_TEMPLATE,
+        actionable=actionable, placed=placed, settled=settled,
+        bankroll=bankroll, settled_pnl=settled_pnl,
+        dashboard_password_set=bool(config.DASHBOARD_PASSWORD),
+    )
+
+
+@app.route("/value-bets/<int:bet_id>")
+@_requires_auth
+def value_bet_detail(bet_id: int):
+    db.init_db()
+    row = db.get_flagged_bet(bet_id)
+    if row is None:
+        abort(404)
+    return render_template_string(VALUE_BET_DETAIL_TEMPLATE, bet=_value_bet_row(dict(row)), raw=dict(row))
+
+
+@app.route("/api/value-bets/<int:bet_id>/place", methods=["POST"])
+@_requires_auth
+def api_place_bet(bet_id: int):
+    body = request.get_json(silent=True) or {}
+    try:
+        book = str(body["book"]).strip()
+        odds = int(body["odds_american"])
+        stake = float(body["stake"])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "Expected JSON body {book, odds_american, stake}"}), 400
+    if not book or stake <= 0:
+        return jsonify({"error": "book must be non-empty and stake must be > 0"}), 400
+    if db.get_flagged_bet(bet_id) is None:
+        abort(404)
+    db.mark_bet_placed(bet_id, book, odds, stake)
+    return jsonify({"status": "PLACED"})
+
+
+@app.route("/api/value-bets/<int:bet_id>/dismiss", methods=["POST"])
+@_requires_auth
+def api_dismiss_bet(bet_id: int):
+    body = request.get_json(silent=True) or {}
+    if db.get_flagged_bet(bet_id) is None:
+        abort(404)
+    db.dismiss_bet(bet_id, reason=str(body.get("reason", "")))
+    return jsonify({"status": "DISMISSED"})
+
+
+@app.route("/api/value-bets/<int:bet_id>/settle", methods=["POST"])
+@_requires_auth
+def api_settle_bet_override(bet_id: int):
+    """Manual settlement override -- for the ambiguous cases
+    core/settlement_matcher.py::derive_result() refuses to guess (an h2h tie
+    with no draw market, or a score mismatch), or simply to correct a mistake."""
+    body = request.get_json(silent=True) or {}
+    result = body.get("result")
+    if result not in ("won", "lost", "push"):
+        return jsonify({"error": "result must be one of: won, lost, push"}), 400
+    row = db.get_flagged_bet(bet_id)
+    if row is None:
+        abort(404)
+    if row["actual_stake"] is None or row["actual_odds_american"] is None:
+        return jsonify({"error": "Bet has no actual_stake/actual_odds_american — place it first"}), 400
+    from core.payout_calculator import compute_pnl
+    pnl = compute_pnl(row["actual_stake"], row["actual_odds_american"], result)
+    db.settle_flagged_bet(bet_id, result, pnl, settlement_source="manual")
+    return jsonify({"status": "SETTLED", "result": result, "pnl": pnl})
+
+
+@app.route("/api/bankroll/adjust", methods=["POST"])
+@_requires_auth
+def api_bankroll_adjust():
+    body = request.get_json(silent=True) or {}
+    try:
+        delta = float(body["delta"])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "Expected JSON body {delta}"}), 400
+    db.set_bankroll_adjustment(delta)
+    return jsonify({"status": "ok", "bankroll": db.get_current_bankroll()})
+
+
+VALUE_BETS_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Value Bets — Arb Bot</title>
+<style>
+  :root {
+    --bg:#0f1117;--surface:#1a1d27;--border:#2a2d3a;--text:#e2e8f0;
+    --muted:#64748b;--green:#22c55e;--red:#ef4444;--blue:#3b82f6;
+    --yellow:#f59e0b;--orange:#f97316;--purple:#a855f7;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{overflow-x:hidden;}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;}
+  header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+  header a{color:var(--muted);text-decoration:none;font-size:13px;white-space:nowrap;}
+  header a:hover{color:var(--text);}
+  header h1{font-size:16px;font-weight:600;}
+  main{padding:20px;max-width:1200px;margin:0 auto;}
+  .warn{background:rgba(239,68,68,.12);border:1px solid var(--red);color:var(--red);
+       border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;}
+  .cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;min-width:130px;}
+  .card .n{font-size:22px;font-weight:600;}
+  .card .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
+  h2.section{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);
+             margin:22px 0 10px;}
+  .bet-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+            padding:14px 16px;margin-bottom:10px;}
+  .bet-top{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;}
+  .bet-matchup{font-weight:600;}
+  .bet-meta{color:var(--muted);font-size:11px;}
+  .bet-outcome{font-size:14px;margin-top:6px;}
+  .bet-stats{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--muted);}
+  .bet-stats strong{color:var(--text);}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;
+        font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-left:6px;}
+  .s-FLAGGED{background:rgba(100,116,139,.15);color:var(--muted);}
+  .s-NOTIFIED{background:rgba(245,158,11,.15);color:var(--yellow);}
+  .s-PLACED{background:rgba(59,130,246,.15);color:var(--blue);}
+  .s-SETTLED{background:rgba(34,197,94,.15);color:var(--green);}
+  .btn{display:inline-block;font-size:12px;padding:6px 12px;border-radius:6px;text-decoration:none;
+       border:1px solid var(--border);color:var(--text);margin-top:10px;margin-right:6px;}
+  .btn-primary{background:var(--green);color:#06260f;border:none;font-weight:600;}
+  .empty{text-align:center;color:var(--muted);padding:28px;}
+  .pnl-pos{color:var(--green);} .pnl-neg{color:var(--red);}
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← Dashboard</a>
+  <h1>Value Bets</h1>
+  <span class="bet-meta">Derived bankroll: ${{ '%.2f'|format(bankroll) }}</span>
+</header>
+<main>
+  {% if not dashboard_password_set %}
+  <div class="warn">DASHBOARD_PASSWORD is not set — anyone on your network can place/dismiss/settle
+    bets from this page. Set it in .env before relying on this remotely.</div>
+  {% endif %}
+
+  <div class="cards">
+    <div class="card"><div class="n">{{ actionable|length }}</div><div class="l">Needs action</div></div>
+    <div class="card"><div class="n" style="color:var(--blue)">{{ placed|length }}</div><div class="l">Placed, open</div></div>
+    <div class="card"><div class="n {{ 'pnl-pos' if settled_pnl >= 0 else 'pnl-neg' }}">${{ '%.2f'|format(settled_pnl) }}</div>
+      <div class="l">Settled P&amp;L (last 50)</div></div>
+  </div>
+
+  <h2 class="section">Needs action ({{ actionable|length }})</h2>
+  {% if not actionable %}<div class="empty">Nothing flagged right now.</div>{% endif %}
+  {% for b in actionable %}
+  <div class="bet-card">
+    <div class="bet-top">
+      <span class="bet-matchup">[{{ b.sport }}] {{ b.matchup }}</span>
+      <span class="bet-meta">{{ b.commence_time }} <span class="pill s-{{ b.status }}">{{ b.status }}</span></span>
+    </div>
+    <div class="bet-outcome">{{ b.outcome_label }} @ {{ b.book_label }} {{ '%+d'|format(b.odds) }}</div>
+    <div class="bet-stats">
+      <span>edge <strong>{{ '%+.1f'|format(b.edge_pct) }}%</strong></span>
+      <span>fair <strong>{{ '%.1f'|format(b.consensus_pct) }}%</strong></span>
+      <span>stake <strong>${{ '%.2f'|format(b.stake) }}</strong></span>
+    </div>
+    {% if b.deep_link_url %}
+    <a class="btn btn-primary" href="{{ b.deep_link_url }}" target="_blank">Open in {{ b.book_label }}
+      {% if b.deep_link_quality != 'outcome' %}({{ b.deep_link_quality }}){% endif %}</a>
+    {% endif %}
+    <a class="btn" href="/value-bets/{{ b.id }}">Place / Dismiss</a>
+  </div>
+  {% endfor %}
+
+  <h2 class="section">Placed, awaiting settlement ({{ placed|length }})</h2>
+  {% if not placed %}<div class="empty">Nothing placed right now.</div>{% endif %}
+  {% for b in placed %}
+  <div class="bet-card">
+    <div class="bet-top">
+      <span class="bet-matchup">[{{ b.sport }}] {{ b.matchup }}</span>
+      <span class="bet-meta">{{ b.commence_time }} <span class="pill s-{{ b.status }}">{{ b.status }}</span></span>
+    </div>
+    <div class="bet-outcome">{{ b.outcome_label }} @ {{ b.actual_book or b.book_label }} {{ '%+d'|format(b.actual_odds or b.odds) }}</div>
+    <div class="bet-stats"><span>stake <strong>${{ '%.2f'|format(b.actual_stake or b.stake) }}</strong></span></div>
+    <a class="btn" href="/value-bets/{{ b.id }}">Settle manually</a>
+  </div>
+  {% endfor %}
+
+  <h2 class="section">Recently settled</h2>
+  {% if not settled %}<div class="empty">Nothing settled yet.</div>{% endif %}
+  {% for b in settled %}
+  <div class="bet-card">
+    <div class="bet-top">
+      <span class="bet-matchup">[{{ b.sport }}] {{ b.matchup }}</span>
+      <span class="bet-meta pill s-SETTLED">{{ b.settlement_result|upper }}</span>
+    </div>
+    <div class="bet-outcome">{{ b.outcome_label }} @ {{ b.actual_book or b.book_label }}</div>
+    <div class="bet-stats"><span class="{{ 'pnl-pos' if (b.pnl or 0) >= 0 else 'pnl-neg' }}">
+      pnl ${{ '%.2f'|format(b.pnl or 0) }}</span></div>
+  </div>
+  {% endfor %}
+</main>
+</body>
+</html>
+"""
+
+
+VALUE_BET_DETAIL_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bet #{{ bet.id }} — Arb Bot</title>
+<style>
+  :root {
+    --bg:#0f1117;--surface:#1a1d27;--border:#2a2d3a;--text:#e2e8f0;
+    --muted:#64748b;--green:#22c55e;--red:#ef4444;--blue:#3b82f6;--yellow:#f59e0b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;}
+  header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);}
+  header a{color:var(--muted);text-decoration:none;font-size:13px;}
+  main{padding:20px;max-width:560px;margin:0 auto;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;}
+  label{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:10px 0 4px;}
+  input,select{width:100%;padding:8px;background:#0b0d13;border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;}
+  button{margin-top:14px;width:100%;padding:10px;border-radius:6px;border:none;font-weight:600;font-size:13px;cursor:pointer;}
+  .btn-green{background:var(--green);color:#06260f;}
+  .btn-red{background:var(--red);color:#2d0a0a;}
+  .btn-muted{background:var(--border);color:var(--text);}
+  .row{display:flex;gap:8px;}
+  .row > div{flex:1;}
+  #msg{margin-top:10px;font-size:12px;}
+  a.open{display:inline-block;margin-top:10px;color:var(--green);}
+</style>
+</head>
+<body>
+<header><a href="/value-bets">← Value Bets</a></header>
+<main>
+  <div class="card">
+    <div style="font-weight:600;font-size:15px;">[{{ bet.sport }}] {{ bet.matchup }}</div>
+    <div style="color:var(--muted);font-size:12px;margin-top:4px;">{{ bet.commence_time }}</div>
+    <div style="font-size:15px;margin-top:10px;">{{ bet.outcome_label }} @ {{ bet.book_label }} {{ '%+d'|format(bet.odds) }}</div>
+    <div style="color:var(--muted);font-size:12px;margin-top:6px;">
+      edge {{ '%+.1f'|format(bet.edge_pct) }}% · fair {{ '%.1f'|format(bet.consensus_pct) }}% ·
+      recommended stake ${{ '%.2f'|format(bet.stake) }} · status {{ bet.status }}</div>
+    {% if bet.deep_link_url %}
+    <a class="open" href="{{ bet.deep_link_url }}" target="_blank">Open in {{ bet.book_label }} →</a>
+    {% endif %}
+  </div>
+
+  {% if bet.status in ('FLAGGED', 'NOTIFIED') %}
+  <div class="card">
+    <strong>Confirm placement</strong>
+    <p style="color:var(--muted);font-size:11px;margin-top:4px;">Enter what you actually got — the price
+      may have moved since this was flagged.</p>
+    <label>Book</label>
+    <input id="f-book" value="{{ bet.book_label }}">
+    <div class="row">
+      <div><label>Odds (American)</label><input id="f-odds" type="number" value="{{ bet.odds }}"></div>
+      <div><label>Stake ($)</label><input id="f-stake" type="number" step="0.01" value="{{ '%.2f'|format(bet.stake) }}"></div>
+    </div>
+    <button class="btn-green" onclick="placeBet()">Mark Placed</button>
+  </div>
+  <div class="card">
+    <button class="btn-muted" onclick="dismissBet()">Dismiss — not placing this one</button>
+  </div>
+  {% elif bet.status == 'PLACED' %}
+  <div class="card">
+    <strong>Manual settlement</strong>
+    <p style="color:var(--muted);font-size:11px;margin-top:4px;">Normally settles automatically once the
+      game ends. Use this only if it needs a manual result (ambiguous outcome, or to fix a mistake).</p>
+    <div class="row" style="margin-top:10px;">
+      <button class="btn-green" onclick="settleBet('won')">Won</button>
+      <button class="btn-red" onclick="settleBet('lost')">Lost</button>
+      <button class="btn-muted" onclick="settleBet('push')">Push</button>
+    </div>
+  </div>
+  {% elif bet.status == 'SETTLED' %}
+  <div class="card">Settled: <strong>{{ bet.settlement_result }}</strong>, pnl ${{ '%.2f'|format(bet.pnl or 0) }}</div>
+  {% endif %}
+
+  <div id="msg"></div>
+</main>
+<script>
+async function post(url, body) {
+  const resp = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  const data = await resp.json();
+  const msg = document.getElementById('msg');
+  if (!resp.ok) { msg.style.color = '#ef4444'; msg.textContent = data.error || 'Failed'; return null; }
+  msg.style.color = '#22c55e'; msg.textContent = 'Saved — reloading…';
+  setTimeout(() => location.reload(), 600);
+  return data;
+}
+function placeBet() {
+  post('/api/value-bets/{{ bet.id }}/place', {
+    book: document.getElementById('f-book').value,
+    odds_american: parseInt(document.getElementById('f-odds').value, 10),
+    stake: parseFloat(document.getElementById('f-stake').value),
+  });
+}
+function dismissBet() {
+  post('/api/value-bets/{{ bet.id }}/dismiss', {reason: 'manual'});
+}
+function settleBet(result) {
+  post('/api/value-bets/{{ bet.id }}/settle', {result: result});
+}
+</script>
+</body>
+</html>
+"""
 
 
 if __name__ == "__main__":

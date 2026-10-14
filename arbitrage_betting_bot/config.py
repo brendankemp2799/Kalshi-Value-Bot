@@ -17,6 +17,15 @@ KALSHI_PRIVATE_KEY_PATH: str = os.getenv("KALSHI_PRIVATE_KEY_PATH", "")
 # ── Bankroll ──────────────────────────────────────────────────────────────────
 BANKROLL: float = float(os.getenv("BANKROLL", "1000"))
 
+# No account API exists to read a live balance from any of the five retail
+# sportsbooks (see storage/db.py::flagged_bets / get_current_bankroll()) --
+# STARTING_BANKROLL is the baseline that function adds settled P&L to and
+# subtracts open actual stakes from. Correct via STARTING_BANKROLL or the
+# dashboard's manual bankroll_adjustment row if it drifts from the real
+# combined balance across books (a deposit/withdrawal, a bet placed outside
+# this system, etc).
+STARTING_BANKROLL: float = float(os.getenv("STARTING_BANKROLL", str(BANKROLL)))
+
 # ── Risk Management ───────────────────────────────────────────────────────────
 # 0.225, not 0.25, since 2026-08-21 -- this is a NO-OP on realised stake size, not a
 # risk reduction. kelly_calculator applies uncertainty_factor = max(0.5, 1 -
@@ -427,6 +436,39 @@ ODDS_API_ODDS_FORMAT: str = "american"
 # 1 unit. This buys simplicity and noise reduction, not credits.
 ODDS_API_BOOKMAKERS: str = os.getenv("ODDS_API_BOOKMAKERS", "pinnacle")
 
+# ── Retail sportsbook restructure (2026-10) ────────────────────────────────────
+# Kalshi is not legal in the user's new home state, so the bot no longer auto-
+# executes anywhere. The new path (core/retail_value_detector.py, scan_retail.py)
+# flags value bets at legal retail sportsbooks instead, for manual placement.
+#
+# SHARP_BOOKMAKERS feeds the fair-value consensus (never bet directly).
+# RETAIL_BOOKMAKERS are the books actually priced against that consensus and
+# flagged. Kept separate from ODDS_API_BOOKMAKERS above so this doesn't disturb
+# the legacy Kalshi path (stopped; fully removed in a later cleanup phase).
+SHARP_BOOKMAKERS: set[str] = {
+    b.strip() for b in os.getenv("SHARP_BOOKMAKERS", "pinnacle").split(",") if b.strip()
+}
+# Keys per The Odds API's own bookmaker list. williamhill_us is Caesars' key
+# there; fanatics' key is UNCONFIRMED -- validate against a live odds response
+# (see the deep-link validation step planned for later) and correct if wrong.
+RETAIL_BOOKMAKERS: list[str] = [
+    b.strip() for b in os.getenv(
+        "RETAIL_BOOKMAKERS", "draftkings,fanduel,betmgm,williamhill_us,fanatics"
+    ).split(",") if b.strip()
+]
+# Combined bookmakers= scope for scan_retail.py's own odds fetch (sharp book for
+# the fair side, retail books for the priced side, one call). scan_retail.py
+# overrides config.ODDS_API_BOOKMAKERS with this at import time -- a process-
+# local override, not a change to the shared default other code still reads.
+RETAIL_SCAN_BOOKMAKERS: str = ",".join(sorted(SHARP_BOOKMAKERS | set(RETAIL_BOOKMAKERS)))
+
+# State code used to fill in BetMGM/Caesars deep links. Validated live
+# 2026-10-13: The Odds API's includeLinks=true returns those two books'
+# outcome-level betslip URLs with a literal "{state}" placeholder it does NOT
+# fill in itself (e.g. "https://sports.{state}.betmgm.com/...") -- see
+# core/deeplink_builder.py. Lowercase two-letter state code.
+USER_STATE_CODE: str = os.getenv("USER_STATE_CODE", "mi")
+
 # Never look at a game starting more than this far out. Measured 2026-08-20 across
 # every order the bot has placed: orders >48h from kickoff filled 57/751 = 7.6% of
 # the time, versus 45.8% in the 3-12h window. That tail is the bulk of our order
@@ -796,3 +838,15 @@ KALSHI_TAKER_FEE_RATE_ESTIMATE: float = 0.07
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 DASHBOARD_USERNAME: str = os.getenv("DASHBOARD_USERNAME", "")  # Required username; empty = any username accepted
 DASHBOARD_PASSWORD: str = os.getenv("DASHBOARD_PASSWORD", "")  # HTTP Basic Auth; empty = no auth (local dev)
+# Base URL the dashboard is actually reachable at from your phone (not
+# localhost) -- used to build the "View on Dashboard" link in Telegram
+# notifications. e.g. "https://your-droplet-ip:5000" or a tunnel URL.
+DASHBOARD_BASE_URL: str = os.getenv("DASHBOARD_BASE_URL", "http://localhost:5000")
+
+# ── Telegram notifications ──────────────────────────────────────────────────────
+# One-time setup: message @BotFather on Telegram -> /newbot -> copy the token
+# into TELEGRAM_BOT_TOKEN. Then send the new bot any message, and GET
+# https://api.telegram.org/bot<token>/getUpdates to read your chat id into
+# TELEGRAM_CHAT_ID. See alerts/telegram_notifier.py.
+TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")

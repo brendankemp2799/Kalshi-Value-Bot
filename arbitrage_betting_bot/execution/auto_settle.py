@@ -205,8 +205,12 @@ _BET_TYPE_TO_MARKET_KEY = {"h2h": "h2h", "totals": "totals", "spread": "spreads"
 
 def _fetch_consensus_closing_prob(pos) -> float | None:
     """
-    Sportsbook consensus probability (same de-vig method as entry-time edge)
-    for our side, at the historical odds snapshot closest to game start.
+    Sportsbook consensus probability for our side, at the historical odds
+    snapshot closest to game start -- same book scope (fetch_historical_odds
+    now applies config.ODDS_API_BOOKMAKERS via _scope_params(), just like the
+    live call) and same de-vig method (consensus_stats) as entry-time
+    consensus_prob, so consensus_clv diffs the same instrument at both ends
+    instead of Pinnacle-at-open against a multi-book blend at close.
 
     Requests only the ONE market this position actually needs (bet_type ->
     market_key), not all of h2h,totals,spreads -- historical odds calls cost
