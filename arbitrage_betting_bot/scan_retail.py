@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import secrets
 
 import config
 # Process-local override: use the sharp+retail union for THIS process's odds
@@ -35,7 +36,7 @@ from data.odds_fetcher import OddsAPIClient
 from core.retail_value_detector import detect_retail_value, RetailOpportunity
 from core.kelly_calculator import calculate_kelly, BetSizing
 from core.deeplink_builder import resolve_deep_link
-from alerts.telegram_notifier import send_bet_notification
+from alerts.telegram_notifier import send_batch_notification
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -81,6 +82,7 @@ def main() -> None:
 
     shown = 0
     saved = 0
+    newly_flagged: dict[str, list[int]] = {}   # book_key -> [bet_id, ...]
     for opp in opportunities:
         sizing = calculate_kelly(
             consensus_prob=opp.consensus_prob,
@@ -120,8 +122,11 @@ def main() -> None:
                 )
                 saved += 1
 
-                # Deep link + notification, best-effort -- a failure here must
-                # never lose the flagged bet itself (already committed above).
+                # Deep link, best-effort -- a failure here must never lose the
+                # flagged bet itself (already committed above). Notification is
+                # deferred: bets are batched into one message per book after
+                # the whole scan, so the user gets one tap per book rather than
+                # one message per bet.
                 try:
                     links = client.fetch_event_links(
                         opp.sport_key, opp.odds_api_event_id,
@@ -135,14 +140,23 @@ def main() -> None:
                     db.set_deep_link(bet_id, url, quality, dashboard_url)
                 except Exception:
                     logger.exception("Deep link lookup failed for bet #%d — continuing without one", bet_id)
-                    url, quality, dashboard_url = None, None, None
 
-                flagged_bet = dict(db.get_flagged_bet(bet_id))
-                message_id = send_bet_notification(flagged_bet)
-                db.mark_bet_notified(bet_id, message_id)
+                newly_flagged.setdefault(opp.book_key, []).append(bet_id)
 
         _print_opportunity(opp, sizing, bet_id)
         shown += 1
+
+    # One notification per book, covering every bet newly flagged at that book
+    # this scan. Each batch gets an unguessable id so the dashboard's
+    # /s/<batch_id> route can rebuild exactly this message's bet list for the
+    # iOS Shortcut that loads them all into one slip.
+    for book_key, bet_ids in newly_flagged.items():
+        batch_id = secrets.token_urlsafe(12)
+        bets = [dict(db.get_flagged_bet(i)) for i in bet_ids]
+        message_id = send_batch_notification(book_key, bets, batch_id)
+        for bet_id in bet_ids:
+            db.mark_bet_notified(bet_id, message_id, notify_batch_id=batch_id)
+        logger.info("Notified %d bet(s) for %s (batch %s)", len(bet_ids), book_key, batch_id)
 
     if not shown:
         print("No value opportunities found this scan.")

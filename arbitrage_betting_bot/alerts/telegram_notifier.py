@@ -95,6 +95,59 @@ def send_bet_notification(flagged_bet: dict) -> str | None:
     return None
 
 
+def send_batch_notification(book_key: str, bets: list[dict], batch_id: str) -> str | None:
+    """ONE message for every bet flagged at one book in one scan, with a single
+    button that loads all of them into that book's bet slip at once.
+
+    The button points at the dashboard's /s/<batch_id> route rather than at a
+    sportsbook directly -- that route redirects into the iOS Shortcut, which
+    opens each deep link in turn. Telegram will not accept a shortcuts:// URL
+    in a button (confirmed live 2026-10-14), so the https hop is required.
+
+    Falls back to a link-free message if the dashboard URL is unusable, rather
+    than losing the alert -- see send_bet_notification()'s button degradation.
+    """
+    if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
+        logger.warning("Telegram not configured -- skipping batch alert for %s", book_key)
+        return None
+    if not bets:
+        return None
+
+    book_label = book_key.replace("_", " ").title()
+    lines = [f"<b>{len(bets)} value bet{'' if len(bets) == 1 else 's'} — {book_label}</b>"]
+    total_stake = 0.0
+    for b in bets:
+        total_stake += b["recommended_stake"] or 0.0
+        lines.append(
+            f"\n• {b['outcome_label']}  {b['recommended_odds_american']:+d}\n"
+            f"   {b['home_team']} vs {b['away_team']}\n"
+            f"   edge {b['edge']:+.1%} · stake ${b['recommended_stake']:.2f}"
+        )
+    lines.append(f"\nTotal staked: ${total_stake:.2f}")
+    text = "\n".join(lines)
+
+    batch_url = f"{config.DASHBOARD_BASE_URL}/s/{batch_id}"
+    buttons = [
+        {"text": f"Add all {len(bets)} to {book_label} slip", "url": batch_url},
+        {"text": "View on Dashboard", "url": f"{config.DASHBOARD_BASE_URL}/value-bets"},
+    ]
+    base = {"chat_id": config.TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
+
+    for keep in range(len(buttons), -1, -1):
+        payload = dict(base)
+        if keep:
+            payload["reply_markup"] = {"inline_keyboard": [[b] for b in buttons[:keep]]}
+        message_id = _try_send(payload)
+        if message_id is not None:
+            if keep < len(buttons):
+                logger.warning("Batch alert for %s sent with %d/%d button(s)",
+                               book_key, keep, len(buttons))
+            return message_id
+
+    logger.error("Batch alert failed entirely for %s", book_key)
+    return None
+
+
 def _try_send(payload: dict) -> str | None:
     """One sendMessage attempt. Returns the message_id on success, None on any
     failure (bad request, network error, etc) -- never raises."""

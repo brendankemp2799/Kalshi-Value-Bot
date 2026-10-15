@@ -404,6 +404,23 @@ def _migrate() -> None:
                 conn.execute(ddl)
                 logger.debug("Migration: added positions.%s", col)
 
+        # flagged_bets migrations. notify_batch_id groups the bets that went out in
+        # ONE Telegram notification (one message per book per scan), so the
+        # /s/<batch_id> redirect route can rebuild exactly that message's bet list
+        # for the iOS Shortcut -- rather than "whatever is pending right now",
+        # which would silently change under a link the user tapped minutes later.
+        fb_existing = {row[1] for row in conn.execute("PRAGMA table_info(flagged_bets)").fetchall()}
+        for col, ddl in [
+            ("notify_batch_id", "ALTER TABLE flagged_bets ADD COLUMN notify_batch_id TEXT"),
+        ]:
+            if col not in fb_existing:
+                conn.execute(ddl)
+                logger.debug("Migration: added flagged_bets.%s", col)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_flagged_bets_batch "
+            "ON flagged_bets(notify_batch_id)"
+        )
+
         # positions carried NO indexes at all, so every lookup was a full table scan --
         # 4.7ms each on 1,392 rows, and growing linearly with the table. Rule 0 asks
         # "have we ever held this ticker?" once per candidate, several hundred times a
@@ -1835,16 +1852,33 @@ def set_deep_link(bet_id: int, deep_link_url: str, deep_link_quality: str,
         )
 
 
-def mark_bet_notified(bet_id: int, telegram_message_id: str | None) -> None:
+def mark_bet_notified(bet_id: int, telegram_message_id: str | None,
+                       notify_batch_id: str | None = None) -> None:
+    """notify_batch_id groups every bet that went out in ONE Telegram message
+    (one per book per scan) -- see get_flagged_bets_by_batch() and the
+    /s/<batch_id> redirect the iOS Shortcut is launched from."""
     with get_connection() as conn:
         conn.execute(
             """
             UPDATE flagged_bets
-            SET status = 'NOTIFIED', notified_at = ?, telegram_message_id = ?
+            SET status = 'NOTIFIED', notified_at = ?, telegram_message_id = ?,
+                notify_batch_id = COALESCE(?, notify_batch_id)
             WHERE id = ?
             """,
-            (datetime.utcnow().isoformat(), telegram_message_id, bet_id),
+            (datetime.utcnow().isoformat(), telegram_message_id, notify_batch_id, bet_id),
         )
+
+
+def get_flagged_bets_by_batch(batch_id: str) -> list[sqlite3.Row]:
+    """Every bet from one notification batch, in flag order. Deliberately NOT
+    filtered by status: a link tapped after some bets were already placed or
+    dismissed should still rebuild the slip it promised, rather than silently
+    returning a different set than the message described."""
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM flagged_bets WHERE notify_batch_id = ? ORDER BY id",
+            (batch_id,),
+        ).fetchall()
 
 
 def mark_bet_placed(bet_id: int, actual_book: str,

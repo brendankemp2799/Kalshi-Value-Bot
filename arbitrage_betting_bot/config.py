@@ -850,3 +850,19 @@ DASHBOARD_BASE_URL: str = os.getenv("DASHBOARD_BASE_URL", "http://localhost:5000
 # TELEGRAM_CHAT_ID. See alerts/telegram_notifier.py.
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
+
+# Name of the iOS Shortcut that opens a batch of sportsbook deep links so they
+# all land in one bet slip (built by hand in the Shortcuts app:
+# Get URLs from Input -> Repeat with Each -> Open URLs). Must match EXACTLY,
+# including case -- shortcuts://run-shortcut?name=... looks it up by name.
+# See dashboard_server.py::shortcut_redirect().
+SHORTCUT_NAME: str = os.getenv("SHORTCUT_NAME", "OpenBets")
+
+# Shared secret the iOS Shortcut sends when pulling its list of pending bet
+# deep links (dashboard_server.py::pending_links). The Shortcut is launched by
+# tapping its home-screen icon -- iOS refuses to auto-run a shortcut from a
+# Safari redirect (confirmed live 2026-10-14 across three URL formats,
+# including a bare name with no payload), so the Shortcut fetches its own
+# input rather than being handed it. Unauthenticated-but-unguessable: the
+# endpoint exposes only which bets were flagged, never account access.
+SHORTCUT_API_KEY: str = os.getenv("SHORTCUT_API_KEY", "")

@@ -2919,6 +2919,130 @@ def api_bankroll_adjust():
     return jsonify({"status": "ok", "bankroll": db.get_current_bankroll()})
 
 
+@app.route("/api/pending-links")
+def pending_links():
+    """Newline-separated deep links for bets still awaiting placement, for the
+    iOS "OpenBets" Shortcut to fetch and open in turn (Get Contents of URL ->
+    Get URLs from Input -> Repeat -> Open URLs).
+
+    The Shortcut pulls its own input rather than being handed it, because iOS
+    will not auto-run a shortcut launched from a Safari redirect -- confirmed
+    live 2026-10-14 against three URL formats (run-shortcut, x-callback-url,
+    and a bare name with no payload); all three opened the Shortcuts app
+    without running anything. Tapping the Shortcut's own icon does run it, so
+    the launch has to come from the user's home screen and the data has to
+    come from here.
+
+    Plain text, not JSON: "Get URLs from Input" reads URLs straight out of a
+    text body, so this avoids a JSON-parsing step inside the Shortcut.
+
+    Auth is a shared secret in the query string rather than Basic Auth, which
+    Shortcuts cannot supply without extra per-request header configuration.
+    """
+    if not config.SHORTCUT_API_KEY or request.args.get("key") != config.SHORTCUT_API_KEY:
+        abort(403)
+
+    book = request.args.get("book")
+    rows = db.get_flagged_bets(status=("FLAGGED", "NOTIFIED"), limit=50)
+
+    # Skip games that have already started. A sportsbook retires its pre-game
+    # outcome ID at kickoff and issues new ones for live betting, so a stored
+    # link goes dead the moment the game begins -- confirmed live 2026-10-14,
+    # where an MLS link resolved fine pre-game and silently failed to add 54
+    # minutes after kickoff (the event's DraftKings ID had changed). Serving
+    # it anyway just produces an unexplained "pick couldn't be added".
+    now = datetime.now(timezone.utc)
+    links = []
+    for r in rows:
+        if not r["deep_link_url"]:
+            continue
+        if book and r["recommended_book"] != book:
+            continue
+        try:
+            commence = datetime.fromisoformat(r["commence_time"])
+            if commence.tzinfo is None:
+                commence = commence.replace(tzinfo=timezone.utc)
+            if commence <= now:
+                continue
+        except (TypeError, ValueError):
+            pass   # unparseable commence_time: serve it rather than silently drop
+        links.append(r["deep_link_url"])
+
+    return Response("\n".join(links), mimetype="text/plain")
+
+
+@app.route("/s/<batch_id>")
+def shortcut_redirect(batch_id: str):
+    """Bounce a Telegram button into the iOS "OpenBets" Shortcut, which opens
+    every deep link in this batch so they all land in one bet slip.
+
+    Why this route exists: Telegram refuses custom URL schemes outright
+    (confirmed live 2026-10-14 -- an inline button URL of shortcuts://... is
+    rejected "Unsupported URL protocol", an HTML anchor is silently stripped,
+    and a raw one isn't linkified). An https:// button is accepted, so the
+    scheme switch has to happen after Safari is already open -- here.
+
+    Deliberately NOT behind _requires_auth: a Basic Auth prompt in Safari
+    would defeat the one-tap flow this whole mechanism exists for. The
+    batch_id is an unguessable random token and the only thing it exposes is
+    which bets were flagged -- no account access, no ability to place
+    anything. The meta-refresh plus visible link is the fallback for when iOS
+    declines to follow an automatic redirect into an app scheme without a
+    user gesture.
+    """
+    rows = db.get_flagged_bets_by_batch(batch_id)
+    links = [r["deep_link_url"] for r in rows if r["deep_link_url"]]
+    if not links:
+        abort(404)
+
+    import urllib.parse
+    name_q = urllib.parse.quote(config.SHORTCUT_NAME, safe="")
+    text_q = urllib.parse.quote("\n".join(links), safe="")
+    # ?v= selects the launch URL format. Temporary diagnostic while working out
+    # which form iOS actually honors from a Safari redirect -- collapse to the
+    # winner once known.
+    variant = request.args.get("v", "1")
+    if variant == "2":
+        shortcut_url = f"shortcuts://x-callback-url/run-shortcut?name={name_q}&input=text&text={text_q}"
+    elif variant == "3":
+        shortcut_url = f"shortcuts://run-shortcut?name={name_q}"
+    else:
+        shortcut_url = f"shortcuts://run-shortcut?name={name_q}&input=text&text={text_q}"
+    book = (rows[0]["recommended_book"] or "").replace("_", " ").title()
+    return render_template_string(
+        SHORTCUT_REDIRECT_TEMPLATE,
+        shortcut_url=shortcut_url, count=len(links), book=book,
+    )
+
+
+SHORTCUT_REDIRECT_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Opening {{ book }}…</title>
+<meta http-equiv="refresh" content="0; url={{ shortcut_url }}">
+<style>
+  body{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+       display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;}
+  .box{padding:24px;}
+  a.go{display:inline-block;margin-top:18px;background:#22c55e;color:#06260f;font-weight:600;
+       padding:14px 22px;border-radius:10px;text-decoration:none;font-size:16px;}
+  p{color:#64748b;font-size:13px;margin-top:14px;}
+</style>
+</head>
+<body>
+<div class="box">
+  <div style="font-size:17px;font-weight:600;">Adding {{ count }} bet{{ '' if count == 1 else 's' }} to {{ book }}</div>
+  <a class="go" href="{{ shortcut_url }}">Open in Shortcuts</a>
+  <p>If nothing happens automatically, tap the button above.</p>
+</div>
+<script>window.location = {{ shortcut_url|tojson }};</script>
+</body>
+</html>
+"""
+
+
 VALUE_BETS_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
