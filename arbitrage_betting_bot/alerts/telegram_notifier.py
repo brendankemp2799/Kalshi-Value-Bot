@@ -124,11 +124,16 @@ def send_batch_notification(book_key: str, bets: list[dict], batch_id: str) -> s
             f"   edge {b['edge']:+.1%} · stake ${b['recommended_stake']:.2f}"
         )
     lines.append(f"\nTotal staked: ${total_stake:.2f}")
+    lines.append(f"\n<i>Tap the {config.SHORTCUT_NAME} shortcut to load these into your slip.</i>")
     text = "\n".join(lines)
 
-    batch_url = f"{config.DASHBOARD_BASE_URL}/s/{batch_id}"
+    # No "add to slip" button here on purpose. iOS will not auto-run a shortcut
+    # launched from a link (confirmed live 2026-10-14 across three URL formats),
+    # so a button promising that would always dead-end at the Shortcuts app.
+    # The user launches the shortcut themselves; it pulls its own list from
+    # /api/pending-links. The /s/<batch_id> route still exists for the day that
+    # restriction changes.
     buttons = [
-        {"text": f"Add all {len(bets)} to {book_label} slip", "url": batch_url},
         {"text": "View on Dashboard", "url": f"{config.DASHBOARD_BASE_URL}/value-bets"},
     ]
     base = {"chat_id": config.TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
