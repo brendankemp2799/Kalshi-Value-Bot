@@ -34,6 +34,8 @@ _HOMEPAGE: dict[str, str] = {
     "betmgm":         f"https://sports.{config.USER_STATE_CODE}.betmgm.com/",
     "williamhill_us": f"https://sportsbook.caesars.com/us/{config.USER_STATE_CODE}/bet/",
     "fanatics":       "https://sportsbook.fanatics.com/",
+    "betrivers":      f"https://{config.USER_STATE_CODE}.betrivers.com/",
+    "espnbet":        "https://espnbet.com/",
 }
 
 # bet_type (as stored on flagged_bets) -> Odds API market key used by

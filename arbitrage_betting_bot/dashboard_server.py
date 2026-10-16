@@ -2958,6 +2958,13 @@ def pending_links():
             continue
         if book and r["recommended_book"] != book:
             continue
+        # A homepage link adds nothing to a bet slip -- it just drops the user
+        # on a landing page mid-chain and interrupts the run. Measured
+        # 2026-10-16: Fanatics returns no links at any level, and BetRivers is
+        # frequently absent from the per-event response entirely. Those bets
+        # still appear on /value-bets to be placed by hand.
+        if r["deep_link_quality"] == "homepage":
+            continue
         try:
             commence = datetime.fromisoformat(r["commence_time"])
             if commence.tzinfo is None:

@@ -451,9 +451,21 @@ SHARP_BOOKMAKERS: set[str] = {
 # Keys per The Odds API's own bookmaker list. williamhill_us is Caesars' key
 # there; fanatics' key is UNCONFIRMED -- validate against a live odds response
 # (see the deep-link validation step planned for later) and correct if wrong.
+# Michigan-licensed books, verified present in a live us,us2 response
+# 2026-10-16. williamhill_us is Caesars; espnbet is listed as "theScore Bet".
+#
+# Deliberately excluded: bovada / betonlineag / mybookieag / lowvig / betus /
+# betanysports (offshore, not MI-licensed), fliff / rebet / courtside
+# (sweepstakes-style). Betting an unlicensed book is the exact problem this
+# whole restructure exists to avoid, so nothing goes in this list on a guess.
+#
+# COST: The Odds API bills ceil(books/10) units per market. This list plus
+# Pinnacle is 8 books -- one unit, same as the single-book panel it replaced.
+# Adding a 10th retail book is still free; an 11th doubles every scan's cost.
 RETAIL_BOOKMAKERS: list[str] = [
     b.strip() for b in os.getenv(
-        "RETAIL_BOOKMAKERS", "draftkings,fanduel,betmgm,williamhill_us,fanatics"
+        "RETAIL_BOOKMAKERS",
+        "draftkings,fanduel,betmgm,williamhill_us,fanatics,betrivers,espnbet"
     ).split(",") if b.strip()
 ]
 # Combined bookmakers= scope for scan_retail.py's own odds fetch (sharp book for
