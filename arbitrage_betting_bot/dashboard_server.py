@@ -2824,7 +2824,7 @@ def _value_bet_row(r: dict) -> dict:
         # UI so an un-loadable bet reads as "place this by hand", not as the
         # Shortcut having quietly missed one.
         "manual_only": (
-            r["recommended_book"] in config.DEEP_LINK_UNSUPPORTED_BOOKS
+            r["recommended_book"] in config.SHORTCUT_EXCLUDED_BOOKS
             or r["deep_link_quality"] == "homepage"
         ),
         "actual_book": r["actual_book"],
@@ -2999,7 +2999,7 @@ def pending_links():
         # having silently added nothing, which is worse than not opening them
         # at all -- it looks like it worked. See config's note for the
         # per-book evidence.
-        if r["recommended_book"] in config.DEEP_LINK_UNSUPPORTED_BOOKS:
+        if r["recommended_book"] in config.SHORTCUT_EXCLUDED_BOOKS:
             continue
         try:
             commence = datetime.fromisoformat(r["commence_time"])

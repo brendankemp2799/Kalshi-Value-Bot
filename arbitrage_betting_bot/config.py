@@ -481,24 +481,28 @@ RETAIL_SCAN_BOOKMAKERS: str = ",".join(sorted(SHARP_BOOKMAKERS | set(RETAIL_BOOK
 # core/deeplink_builder.py. Lowercase two-letter state code.
 USER_STATE_CODE: str = os.getenv("USER_STATE_CODE", "mi")
 
-# Books whose deep links are well-formed but do not actually build a bet slip
-# on iOS, so they are excluded from the Shortcut feed (/api/pending-links).
-# They are still scanned, still flagged, and still shown on /value-bets -- the
-# edge is real, the bet just has to be placed by hand.
+# Books kept out of the iOS Shortcut chain (/api/pending-links). They are
+# still scanned, still flagged and still shown on /value-bets tagged "place by
+# hand" -- the edge is real, only the one-tap loading is unavailable.
 #
-# Nothing in the API response distinguishes these: the link looks identical in
-# shape to one that works, so this can only be established by tapping it on a
-# real phone. Verified 2026-11-03:
-#   espnbet   the iOS app claims the domain as a universal link, opens, and
-#             ignores the market_selection_id[] parameters entirely; opening
-#             the same URL in mobile Safari redirects to the App Store. No
-#             path to a built slip on a phone either way.
-#   fanatics  returns no link at any level, only internal ids (it is also
-#             caught by the homepage-quality filter, listed here for the
-#             record).
-DEEP_LINK_UNSUPPORTED_BOOKS: set[str] = {
+# None of this is derivable from the API: every one of these returns a
+# well-formed, outcome-level link indistinguishable in shape from one that
+# works. It can only be established by tapping links on a real device.
+# Verified 2026-11-03:
+#   espnbet    the iOS app claims the domain as a universal link, opens, and
+#              ignores the market_selection_id[] parameters entirely; the same
+#              URL in mobile Safari redirects to the App Store. No path to a
+#              built slip on a phone either way.
+#   fanatics   returns no link at any level, only internal ids (also caught by
+#              the homepage-quality filter; listed here for the record).
+#   betrivers  the link genuinely works -- it opens Safari and builds the slip
+#              with the stake pre-filled -- but the web session does not
+#              persist, so it demands a fresh login on every run and stalls
+#              the whole chain partway through. Excluded for that friction,
+#              not for being broken. Drop it from this list to restore it.
+SHORTCUT_EXCLUDED_BOOKS: set[str] = {
     b.strip() for b in os.getenv(
-        "DEEP_LINK_UNSUPPORTED_BOOKS", "espnbet,fanatics"
+        "SHORTCUT_EXCLUDED_BOOKS", "espnbet,fanatics,betrivers"
     ).split(",") if b.strip()
 }
 
