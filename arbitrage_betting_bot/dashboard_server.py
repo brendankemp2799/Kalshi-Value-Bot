@@ -2854,6 +2854,12 @@ def _value_bet_row(r: dict) -> dict:
 @_requires_auth
 def value_bets_page():
     db.init_db()
+    # Cheap and local -- no API call -- so unlike settlement this runs on every
+    # load. Keeps the actionable list to bets that are still actionable.
+    try:
+        db.expire_stale_bets()
+    except Exception:
+        app.logger.exception("expire_stale_bets() failed — continuing")
     _maybe_settle_due_bets()
 
     actionable = [_value_bet_row(dict(r)) for r in db.get_flagged_bets(status=("FLAGGED", "NOTIFIED"))]
@@ -2961,6 +2967,56 @@ def api_bankroll_adjust():
         return jsonify({"error": "Expected JSON body {delta}"}), 400
     db.set_bankroll_adjustment(delta)
     return jsonify({"status": "ok", "bankroll": db.get_current_bankroll()})
+
+
+_REASON_HELP = {
+    "flagged":            "Cleared every gate — became a flagged bet",
+    "below_min_edge":     "Priced close to fair; edge under the minimum",
+    "price_cap":          "Heavy favourite above the payout floor (MAX_ENTRY_PRICE)",
+    "no_sharp_consensus": "Pinnacle doesn't price this market, so there's no fair value to compare against",
+}
+
+
+@app.route("/scan-diagnostics")
+@_requires_auth
+def scan_diagnostics():
+    """What the last scan evaluated and why each candidate was or wasn't taken.
+
+    Exists because "0 opportunities" is otherwise indistinguishable from a
+    broken detector: an efficient market, a fault, and everything hitting the
+    price cap all render the same way. This separates them.
+    """
+    db.init_db()
+    summary, rows = db.get_last_retail_scan()
+    history = db.get_retail_scan_history(limit=48)
+
+    reasons = {}
+    if summary and summary["reasons_json"]:
+        try:
+            reasons = json.loads(summary["reasons_json"])
+        except (TypeError, ValueError):
+            reasons = {}
+
+    entries = [{
+        "sport": _short_sport(r["sport"] or ""),
+        "matchup": f'{r["home_team"]} vs {r["away_team"]}',
+        "outcome_label": r["outcome_label"],
+        "book": (r["book"] or "").replace("_", " ").title(),
+        "odds": r["odds_american"],
+        "edge_pct": round(r["edge"] * 100, 2) if r["edge"] is not None else None,
+        "consensus_pct": round(r["consensus_prob"] * 100, 1) if r["consensus_prob"] is not None else None,
+        "status": r["status"],
+        "reason": r["reason"],
+    } for r in rows[:300]]
+
+    return render_template_string(
+        SCAN_DIAG_TEMPLATE,
+        summary=summary, entries=entries, history=history,
+        reasons=sorted(reasons.items(), key=lambda kv: -kv[1]),
+        reason_help=_REASON_HELP,
+        scanned_at=_fmt_dt(summary["scanned_at"]) if summary else None,
+        min_edge_pct=config.MIN_EDGE * 100,
+    )
 
 
 @app.route("/api/pending-links")
@@ -3101,6 +3157,133 @@ SHORTCUT_REDIRECT_TEMPLATE = """<!DOCTYPE html>
 """
 
 
+SCAN_DIAG_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scan Diagnostics — Arb Bot</title>
+<style>
+  :root{--bg:#0f1117;--surface:#1a1d27;--border:#2a2d3a;--text:#e2e8f0;--muted:#64748b;
+        --green:#22c55e;--red:#ef4444;--blue:#3b82f6;--yellow:#f59e0b;--orange:#f97316;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;}
+  header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+  header a{color:var(--muted);text-decoration:none;}
+  header h1{font-size:16px;font-weight:600;}
+  main{padding:20px;max-width:1100px;margin:0 auto;}
+  .meta{color:var(--muted);font-size:12px;}
+  .cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;min-width:120px;}
+  .card .n{font-size:22px;font-weight:600;}
+  .card .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:20px 0 8px;}
+  .why{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:16px;}
+  .why li{display:flex;gap:10px;align-items:baseline;font-size:12px;padding:4px 0;list-style:none;}
+  .why .cnt{font-variant-numeric:tabular-nums;font-weight:600;min-width:46px;text-align:right;}
+  .why .txt{color:var(--muted);}
+  table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:9px 10px;border-bottom:1px solid var(--border);}
+  td{padding:9px 10px;border-bottom:1px solid var(--border);font-size:12px;}
+  tbody tr:last-child td{border-bottom:none;}
+  .num{font-variant-numeric:tabular-nums;text-align:right;}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:600;}
+  .s-flagged{background:rgba(34,197,94,.15);color:var(--green);}
+  .s-rejected{background:rgba(100,116,139,.15);color:var(--muted);}
+  .empty{text-align:center;color:var(--muted);padding:26px;}
+  .pos{color:var(--green);} .neg{color:var(--muted);}
+  .spark{display:flex;gap:2px;align-items:flex-end;height:34px;margin-top:8px;}
+  .spark div{flex:1;background:var(--blue);border-radius:1px;min-height:2px;opacity:.75;}
+  .spark div.hit{background:var(--green);opacity:1;}
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← Value Bets</a>
+  <h1>Scan Diagnostics</h1>
+  <span class="meta">{% if scanned_at %}Last scan: {{ scanned_at }}{% else %}No scan recorded yet{% endif %}</span>
+</header>
+<main>
+  {% if not summary %}
+    <div class="empty">No scan has been recorded yet. The next scheduled run (every 45 min) will populate this.</div>
+  {% else %}
+  <div class="cards">
+    <div class="card"><div class="n">{{ summary.events }}</div><div class="l">Events in window</div></div>
+    <div class="card"><div class="n">{{ summary.candidates }}</div><div class="l">Candidates evaluated</div></div>
+    <div class="card"><div class="n" style="color:var(--green)">{{ summary.flagged }}</div><div class="l">Flagged</div></div>
+    <div class="card">
+      <div class="n {{ 'pos' if summary.best_edge and summary.best_edge > 0 else 'neg' }}">
+        {% if summary.best_edge is not none %}{{ '%+.2f'|format(summary.best_edge * 100) }}%{% else %}—{% endif %}</div>
+      <div class="l">Best edge seen</div></div>
+    <div class="card"><div class="n">{{ '%.1f'|format(min_edge_pct) }}%</div><div class="l">Required edge</div></div>
+  </div>
+
+  {% if summary.flagged == 0 and summary.candidates > 0 %}
+  <div class="why" style="border-color:var(--blue);">
+    <strong>Nothing qualified, and that's a real result.</strong>
+    <p style="color:var(--muted);font-size:12px;margin-top:6px;">
+      {{ summary.candidates }} candidates were priced against Pinnacle. The best edge found was
+      {% if summary.best_edge is not none %}{{ '%+.2f'|format(summary.best_edge * 100) }}%
+      ({{ summary.best_label }}){% else %}none{% endif %},
+      short of the {{ '%.1f'|format(min_edge_pct) }}% required. That means the books agreed with
+      the sharp line — not that the scan failed.</p>
+  </div>
+  {% endif %}
+
+  <h2>Why candidates were rejected</h2>
+  <div class="why">
+    <ul>
+    {% for reason, count in reasons %}
+      <li><span class="cnt {{ 'pos' if reason == 'flagged' }}">{{ count }}</span>
+          <span class="txt"><strong style="color:var(--text)">{{ reason }}</strong> —
+          {{ reason_help.get(reason, 'no description') }}</span></li>
+    {% endfor %}
+    </ul>
+  </div>
+
+  <h2>Recent scans ({{ history|length }})</h2>
+  <div class="why">
+    <div class="spark">
+      {% for h in history|reverse %}
+        <div class="{{ 'hit' if h.flagged else '' }}"
+             style="height:{{ 4 + (h.candidates / 20) if h.candidates else 2 }}px"
+             title="{{ h.scanned_at }} — {{ h.candidates }} candidates, {{ h.flagged }} flagged"></div>
+      {% endfor %}
+    </div>
+    <p style="color:var(--muted);font-size:11px;margin-top:8px;">
+      Bar height is candidates evaluated; green means something was flagged. A flat run of
+      zero-height bars would mean scans stopped finding anything to evaluate at all.</p>
+  </div>
+
+  <h2>Candidates (top {{ entries|length }} by edge)</h2>
+  {% if not entries %}<div class="empty">No candidates recorded.</div>{% else %}
+  <table>
+    <thead><tr><th>Sport</th><th>Matchup</th><th>Bet</th><th>Book</th>
+      <th class="num">Odds</th><th class="num">Fair</th><th class="num">Edge</th><th>Outcome</th></tr></thead>
+    <tbody>
+    {% for e in entries %}
+      <tr>
+        <td>{{ e.sport }}</td>
+        <td>{{ e.matchup }}</td>
+        <td>{{ e.outcome_label }}</td>
+        <td>{{ e.book or '—' }}</td>
+        <td class="num">{% if e.odds %}{{ '%+d'|format(e.odds) }}{% else %}—{% endif %}</td>
+        <td class="num">{% if e.consensus_pct is not none %}{{ '%.1f'|format(e.consensus_pct) }}%{% else %}—{% endif %}</td>
+        <td class="num {{ 'pos' if e.edge_pct and e.edge_pct > 0 }}">
+          {% if e.edge_pct is not none %}{{ '%+.2f'|format(e.edge_pct) }}%{% else %}—{% endif %}</td>
+        <td><span class="pill s-{{ e.status }}">{{ e.reason }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% endif %}
+</main>
+</body>
+</html>
+"""
+
+
 VALUE_BETS_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3153,6 +3336,7 @@ VALUE_BETS_TEMPLATE = """<!DOCTYPE html>
 <body>
 <header>
   <h1>Value Bets</h1>
+  <a href="/scan-diagnostics">Scan diagnostics</a>
   <a href="/kalshi-legacy">Kalshi history</a>
   <span class="bet-meta">Bankroll: ${{ '%.2f'|format(bankroll) }}</span>
 </header>

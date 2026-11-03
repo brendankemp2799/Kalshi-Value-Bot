@@ -90,14 +90,33 @@ def _retail_price(
 def _best_retail(
     event: OddsEvent, sharp_books: list[dict], market_key: str,
     outcome_name: str, side: str, threshold: float | None, outcome_label: str,
-    min_edge: float,
+    min_edge: float, scan_log: list[dict] | None = None,
 ) -> RetailOpportunity | None:
     """Price `outcome_name` against every configured retail book, keep the
-    single best-edge one. Returns None if nothing clears min_edge."""
+    single best-edge one. Returns None if nothing clears min_edge.
+
+    `scan_log`, when given, collects one record per candidate evaluated --
+    rejections included, with the reason why -- so a scan that legitimately
+    finds nothing can be told apart from one that is silently broken. See
+    storage/db.py's retail_scan_log table comment.
+    """
+    def _note(reason: str, status: str = "rejected", **kw) -> None:
+        if scan_log is None:
+            return
+        scan_log.append({
+            "sport": event.sport_key, "home_team": event.home_team,
+            "away_team": event.away_team,
+            "commence_time": event.commence_time.isoformat(),
+            "bet_type": "spread" if market_key == "spreads" else market_key,
+            "outcome_label": outcome_label, "status": status, "reason": reason,
+            **kw,
+        })
+
     consensus_prob, book_count, std = consensus_stats(
         sharp_books, outcome_name, market_key=market_key, point=threshold,
     )
     if consensus_prob is None:
+        _note("no_sharp_consensus")
         return None
 
     best: RetailOpportunity | None = None
@@ -119,10 +138,15 @@ def _best_retail(
         # rewrite let -520 to -800 favorites through: 5 of 177 flagged bets but
         # $140 of $1,480 in recommended stake, measured 2026-11-02.
         if book_prob > config.MAX_ENTRY_PRICE:
+            _note("price_cap", book=book_key, odds_american=price,
+                  book_prob=book_prob, consensus_prob=consensus_prob,
+                  edge=consensus_prob - book_prob)
             continue
 
         edge = consensus_prob - book_prob
         if edge < min_edge:
+            _note("below_min_edge", book=book_key, odds_american=price,
+                  book_prob=book_prob, consensus_prob=consensus_prob, edge=edge)
             continue
         if best is None or edge > best.edge:
             best = RetailOpportunity(
@@ -143,6 +167,10 @@ def _best_retail(
                 bookmaker_count=book_count,
                 consensus_std=std,
             )
+    if best is not None:
+        _note("flagged", status="flagged", book=best.book_key,
+              odds_american=best.book_odds_american, book_prob=best.book_price_prob,
+              consensus_prob=best.consensus_prob, edge=best.edge)
     return best
 
 
@@ -199,10 +227,14 @@ def _spread_points(event: OddsEvent) -> dict[str, set[float]]:
 def detect_retail_value(
     events: list[OddsEvent],
     min_edge: float = config.MIN_EDGE,
+    scan_log: list[dict] | None = None,
 ) -> list[RetailOpportunity]:
     """Scan every event for a best-book value bet on h2h, totals, and spreads.
     At most one RetailOpportunity per (event, outcome) -- the single best-edge
-    retail book for that outcome, not every book that happens to clear min_edge."""
+    retail book for that outcome, not every book that happens to clear min_edge.
+
+    Pass a list as `scan_log` to collect a record of every candidate evaluated,
+    rejections and all, for the scan-diagnostics view."""
     opportunities: list[RetailOpportunity] = []
 
     for event in events:
@@ -214,7 +246,7 @@ def detect_retail_value(
         for outcome_name in _h2h_outcome_names(sharp_books):
             opp = _best_retail(
                 event, sharp_books, "h2h", outcome_name, outcome_name, None,
-                outcome_label=f"{outcome_name} ML", min_edge=min_edge,
+                outcome_label=f"{outcome_name} ML", min_edge=min_edge, scan_log=scan_log,
             )
             if opp:
                 opportunities.append(opp)
@@ -224,7 +256,7 @@ def detect_retail_value(
             for name, side in (("Over", "over"), ("Under", "under")):
                 opp = _best_retail(
                     event, sharp_books, "totals", name, side, point,
-                    outcome_label=f"{name} {point:g}", min_edge=min_edge,
+                    outcome_label=f"{name} {point:g}", min_edge=min_edge, scan_log=scan_log,
                 )
                 if opp:
                     opportunities.append(opp)
@@ -234,7 +266,7 @@ def detect_retail_value(
             for point in points:
                 opp = _best_retail(
                     event, sharp_books, "spreads", team, team, point,
-                    outcome_label=f"{team} {point:+g}", min_edge=min_edge,
+                    outcome_label=f"{team} {point:+g}", min_edge=min_edge, scan_log=scan_log,
                 )
                 if opp:
                     opportunities.append(opp)

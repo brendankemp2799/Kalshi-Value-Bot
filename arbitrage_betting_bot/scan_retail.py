@@ -76,9 +76,28 @@ def main() -> None:
     events = client.fetch_all_sports()
     logger.info("Fetched %d events across %d configured sports", len(events), len(config.SPORTS))
 
-    opportunities = detect_retail_value(events, min_edge=args.min_edge)
+    # Retire anything whose game started before it was placed, so the
+    # actionable list stays actionable rather than accumulating dead rows.
+    if not args.no_db:
+        expired = db.expire_stale_bets()
+        if expired:
+            logger.info("Expired %d stale flagged bet(s) — game already started", expired)
+
+    scan_log: list[dict] = []
+    opportunities = detect_retail_value(events, min_edge=args.min_edge, scan_log=scan_log)
     opportunities.sort(key=lambda o: o.edge, reverse=True)
     logger.info("Found %d candidate opportunities (min_edge=%.1f%%)", len(opportunities), args.min_edge * 100)
+
+    # Record what was evaluated and why it was or wasn't taken. Without this a
+    # quiet scan looks identical to a broken one from the dashboard.
+    if not args.no_db:
+        scan_id = secrets.token_urlsafe(8)
+        db.log_retail_scan(scan_id, scan_log, events=len(events))
+        reasons: dict[str, int] = {}
+        for e in scan_log:
+            reasons[e["reason"]] = reasons.get(e["reason"], 0) + 1
+        logger.info("Evaluated %d candidates: %s", len(scan_log),
+                    ", ".join(f"{k}={v}" for k, v in sorted(reasons.items())) or "none")
 
     shown = 0
     saved = 0

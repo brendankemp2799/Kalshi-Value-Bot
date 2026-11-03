@@ -9,6 +9,7 @@ Tables:
 """
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import sys
@@ -333,6 +334,51 @@ def init_db() -> None:
             -- so get_current_bankroll() derives it from settled P&L and open stakes
             -- -- this is the user's own override when that drifts from reality
             -- (e.g. a deposit/withdrawal, or a bet placed outside this system).
+            -- Every candidate the retail detector evaluated on the MOST RECENT
+            -- scan, with the reason it did or didn't become a flagged bet.
+            -- Without this a quiet scan is indistinguishable from a broken one:
+            -- "0 opportunities" could mean an efficient market, a detector
+            -- fault, or everything hitting the price cap, and there was no way
+            -- to tell which.
+            --
+            -- Holds one scan only, replaced wholesale each run (same pattern as
+            -- the retired Kalshi scan_log). Retaining history here would write
+            -- hundreds of rows every 45 minutes -- exactly how book_probability_
+            -- log reached 457,000 rows and the database reached 2.6GB. The
+            -- durable record is retail_scan_summary below.
+            CREATE TABLE IF NOT EXISTS retail_scan_log (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                scan_id         TEXT NOT NULL,
+                scanned_at      TEXT NOT NULL,
+                sport           TEXT,
+                home_team       TEXT,
+                away_team       TEXT,
+                commence_time   TEXT,
+                bet_type        TEXT,
+                outcome_label   TEXT,
+                book            TEXT,
+                odds_american   INTEGER,
+                book_prob       REAL,
+                consensus_prob  REAL,
+                edge            REAL,
+                status          TEXT NOT NULL,   -- flagged | rejected
+                reason          TEXT NOT NULL    -- below_min_edge | price_cap | ...
+            );
+
+            -- One row per scan, kept. Cheap enough to retain (roughly 32 rows a
+            -- day) and it answers the question the detail table cannot: has
+            -- this been running, and has it been finding anything, over time.
+            CREATE TABLE IF NOT EXISTS retail_scan_summary (
+                scan_id         TEXT PRIMARY KEY,
+                scanned_at      TEXT NOT NULL,
+                events          INTEGER NOT NULL DEFAULT 0,
+                candidates      INTEGER NOT NULL DEFAULT 0,
+                flagged         INTEGER NOT NULL DEFAULT 0,
+                best_edge       REAL,
+                best_label      TEXT,
+                reasons_json    TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS bankroll_adjustment (
                 id           INTEGER PRIMARY KEY CHECK (id = 1),
                 manual_delta REAL NOT NULL DEFAULT 0.0,
@@ -1929,6 +1975,107 @@ def settle_flagged_bet(
             (datetime.utcnow().isoformat(), result, settlement_source,
              final_home_score, final_away_score, pnl, bet_id),
         )
+
+
+def log_retail_scan(scan_id: str, entries: list[dict], events: int) -> None:
+    """Record one scan: every evaluated candidate, plus a summary row.
+
+    Detail replaces the previous scan's wholesale; the summary accumulates.
+    See the table comments in init_db() for why they are split that way.
+    """
+    now = datetime.utcnow().isoformat()
+    flagged = [e for e in entries if e.get("status") == "flagged"]
+    reasons: dict[str, int] = {}
+    for e in entries:
+        key = e.get("reason") or "unknown"
+        reasons[key] = reasons.get(key, 0) + 1
+    best = max(entries, key=lambda e: e.get("edge") or -9) if entries else None
+
+    with get_connection() as conn:
+        conn.execute("DELETE FROM retail_scan_log")
+        conn.executemany(
+            """
+            INSERT INTO retail_scan_log
+                (scan_id, scanned_at, sport, home_team, away_team, commence_time,
+                 bet_type, outcome_label, book, odds_american, book_prob,
+                 consensus_prob, edge, status, reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (scan_id, now, e.get("sport"), e.get("home_team"), e.get("away_team"),
+                 e.get("commence_time"), e.get("bet_type"), e.get("outcome_label"),
+                 e.get("book"), e.get("odds_american"), e.get("book_prob"),
+                 e.get("consensus_prob"), e.get("edge"),
+                 e.get("status", "rejected"), e.get("reason", "unknown"))
+                for e in entries
+            ],
+        )
+        conn.execute(
+            """
+            INSERT INTO retail_scan_summary
+                (scan_id, scanned_at, events, candidates, flagged, best_edge,
+                 best_label, reasons_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(scan_id) DO NOTHING
+            """,
+            (scan_id, now, events, len(entries), len(flagged),
+             (best or {}).get("edge"), (best or {}).get("outcome_label"),
+             json.dumps(reasons)),
+        )
+        # Bound the summary table so it cannot become the next 457,000-row log.
+        conn.execute(
+            "DELETE FROM retail_scan_summary WHERE scan_id NOT IN "
+            "(SELECT scan_id FROM retail_scan_summary ORDER BY scanned_at DESC LIMIT 500)"
+        )
+
+
+def get_last_retail_scan() -> tuple[sqlite3.Row | None, list[sqlite3.Row]]:
+    """(summary, candidate rows) for the most recent scan, best edge first."""
+    with get_connection() as conn:
+        try:
+            summary = conn.execute(
+                "SELECT * FROM retail_scan_summary ORDER BY scanned_at DESC LIMIT 1"
+            ).fetchone()
+            rows = conn.execute(
+                "SELECT * FROM retail_scan_log ORDER BY edge DESC"
+            ).fetchall()
+            return summary, rows
+        except sqlite3.OperationalError:
+            return None, []
+
+
+def get_retail_scan_history(limit: int = 48) -> list[sqlite3.Row]:
+    """Recent scan summaries, newest first -- the 'has it been running' view."""
+    with get_connection() as conn:
+        try:
+            return conn.execute(
+                "SELECT * FROM retail_scan_summary ORDER BY scanned_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+
+
+def expire_stale_bets() -> int:
+    """Retire flagged bets whose game has started without being placed.
+
+    Settlement only ever touches PLACED bets, so anything left in FLAGGED or
+    NOTIFIED when its game begins would otherwise sit there permanently --
+    177 such rows had accumulated by 2026-11-02, burying the handful that
+    still needed action. Returns how many were expired.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        cur = conn.execute(
+            """
+            UPDATE flagged_bets
+            SET status = 'EXPIRED', dismissed_at = ?,
+                dismiss_reason = 'auto: game started before the bet was placed'
+            WHERE status IN ('FLAGGED', 'NOTIFIED') AND commence_time <= ?
+            """,
+            (datetime.utcnow().isoformat(), now),
+        )
+        return cur.rowcount
 
 
 def set_bankroll(amount: float) -> None:
