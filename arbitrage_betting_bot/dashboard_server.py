@@ -1028,6 +1028,21 @@ def dk_scaled_shadow():
 @app.route("/")
 @_requires_auth
 def index():
+    """Value Bets is the homepage as of 2026-11-03. The Kalshi CLV/TTE view
+    this used to serve describes a system that no longer runs -- its 1,385
+    settled bets, its closing-line value and its calibration all belong to
+    exchange trading that ended when Kalshi became unavailable. Landing on it
+    buried the only page that still drives anything (bankroll, place, dismiss,
+    settle) behind a nav button, and invited reading retired numbers as
+    current. Still reachable at /kalshi-legacy; the data is untouched."""
+    return value_bets_page()
+
+
+@app.route("/kalshi-legacy")
+@_requires_auth
+def kalshi_legacy():
+    """The former homepage: CLV and time-to-event analytics for the retired
+    Kalshi strategy. Read-only history, kept for comparison."""
     timeframe = request.args.get("timeframe", "all")
     return render_template_string(HTML_TEMPLATE, **_clv_context(timeframe))
 
@@ -3137,9 +3152,10 @@ VALUE_BETS_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <a href="/">← Dashboard</a>
   <h1>Value Bets</h1>
-  <span class="bet-meta">Derived bankroll: ${{ '%.2f'|format(bankroll) }}</span>
+  <a href="/scan">Last Scan</a>
+  <a href="/kalshi-legacy">Kalshi history</a>
+  <span class="bet-meta">Bankroll: ${{ '%.2f'|format(bankroll) }}</span>
 </header>
 <main>
   {% if not dashboard_password_set %}
