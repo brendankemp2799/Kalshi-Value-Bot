@@ -3153,7 +3153,6 @@ VALUE_BETS_TEMPLATE = """<!DOCTYPE html>
 <body>
 <header>
   <h1>Value Bets</h1>
-  <a href="/scan">Last Scan</a>
   <a href="/kalshi-legacy">Kalshi history</a>
   <span class="bet-meta">Bankroll: ${{ '%.2f'|format(bankroll) }}</span>
 </header>
