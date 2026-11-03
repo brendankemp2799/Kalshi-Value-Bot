@@ -731,6 +731,21 @@ def scan_detail(entry_id: int):
 
 @app.route("/scan")
 @_requires_auth
+def scan_results_redirect():
+    """/scan now redirects to /scan-diagnostics.
+
+    It read scan_log, which only the retired Kalshi main.py ever wrote, so
+    under the current pipeline it always rendered "No scan data yet -- run the
+    bot first" over a stale Oct 7 heartbeat. That reads as the system being
+    broken when it is running fine, and it is a URL people still reach by
+    bookmark and back button. The retail equivalent is scan_diagnostics().
+    """
+    from flask import redirect
+    return redirect("/scan-diagnostics")
+
+
+@app.route("/scan-legacy")
+@_requires_auth
 def scan_results():
     rows = db.get_last_scan()
     scanned_at = _fmt_dt(rows[0]["scanned_at"]) if rows else "No scan data yet"
