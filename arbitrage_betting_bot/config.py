@@ -462,10 +462,31 @@ SHARP_BOOKMAKERS: set[str] = {
 # COST: The Odds API bills ceil(books/10) units per market. This list plus
 # Pinnacle is 8 books -- one unit, same as the single-book panel it replaced.
 # Adding a 10th retail book is still free; an 11th doubles every scan's cost.
+# Narrowed 2026-11-03 to the three books that load a bet slip INSIDE THEIR APP
+# from a tapped link -- the only shape that makes the one-tap flow worth
+# having. Every book below was tap-tested on a real device; none of this is
+# visible in the API, whose links all look alike:
+#
+#   kept     draftkings      app opens, slip builds
+#            fanduel         app opens, slip builds
+#            williamhill_us  app opens, slip builds (Caesars)
+#
+#   dropped  betmgm          slip builds but in mobile Safari, not the app
+#            betrivers       same, plus a fresh login every run
+#            espnbet         app opens but ignores the selection entirely
+#            fanatics        returns no link at any level
+#
+# TRADE-OFF: fewer books means fewer edges. Soft lines often show up at
+# exactly the smaller books dropped here, so expect noticeably fewer alerts.
+# Re-adding one is just a matter of putting its key back -- the per-book
+# evidence above is the reason, not a permanent verdict.
+#
+# COST: 3 retail + Pinnacle = 4 books, still one API credit per market
+# (billing is ceil(books/10), so there is headroom to re-add without cost).
 RETAIL_BOOKMAKERS: list[str] = [
     b.strip() for b in os.getenv(
         "RETAIL_BOOKMAKERS",
-        "draftkings,fanduel,betmgm,williamhill_us,fanatics,betrivers,espnbet"
+        "draftkings,fanduel,williamhill_us"
     ).split(",") if b.strip()
 ]
 # Combined bookmakers= scope for scan_retail.py's own odds fetch (sharp book for
