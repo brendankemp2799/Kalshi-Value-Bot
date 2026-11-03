@@ -2839,11 +2839,15 @@ def value_bets_page():
 
     bankroll = db.get_current_bankroll()
     settled_pnl = sum(r["pnl"] or 0.0 for r in settled)
+    state = db.get_bankroll_state()
 
     return render_template_string(
         VALUE_BETS_TEMPLATE,
         actionable=actionable, placed=placed, settled=settled,
         bankroll=bankroll, settled_pnl=settled_pnl,
+        bankroll_set_at=_fmt_dt(state["set_at"]) if state else None,
+        bankroll_anchor=state["amount"] if state else None,
+        max_bet=min(config.MAX_BET_DOLLARS, config.MAX_PCT_BANKROLL * bankroll),
         dashboard_password_set=bool(config.DASHBOARD_PASSWORD),
     )
 
@@ -2905,6 +2909,23 @@ def api_settle_bet_override(bet_id: int):
     pnl = compute_pnl(row["actual_stake"], row["actual_odds_american"], result)
     db.settle_flagged_bet(bet_id, result, pnl, settlement_source="manual")
     return jsonify({"status": "SETTLED", "result": result, "pnl": pnl})
+
+
+@app.route("/api/bankroll/set", methods=["POST"])
+@_requires_auth
+def api_bankroll_set():
+    """Anchor the bankroll to what the user's sportsbook apps actually show.
+    No retail book exposes a balance API, so this is the only accurate
+    source -- see storage/db.py::set_bankroll()."""
+    body = request.get_json(silent=True) or {}
+    try:
+        amount = float(body["amount"])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "Expected JSON body {amount}"}), 400
+    if amount < 0 or amount > 10_000_000:
+        return jsonify({"error": "amount must be between 0 and 10,000,000"}), 400
+    db.set_bankroll(amount)
+    return jsonify({"status": "ok", "bankroll": db.get_current_bankroll()})
 
 
 @app.route("/api/bankroll/adjust", methods=["POST"])
@@ -3116,6 +3137,34 @@ VALUE_BETS_TEMPLATE = """<!DOCTYPE html>
     <div class="card"><div class="n" style="color:var(--blue)">{{ placed|length }}</div><div class="l">Placed, open</div></div>
     <div class="card"><div class="n {{ 'pnl-pos' if settled_pnl >= 0 else 'pnl-neg' }}">${{ '%.2f'|format(settled_pnl) }}</div>
       <div class="l">Settled P&amp;L (last 50)</div></div>
+    <div class="card"><div class="n">${{ '%.2f'|format(bankroll) }}</div><div class="l">Bankroll</div></div>
+    <div class="card"><div class="n" style="color:var(--yellow)">${{ '%.2f'|format(max_bet) }}</div><div class="l">Max single bet</div></div>
+  </div>
+
+  <div class="bet-card" style="border-color:var(--yellow);">
+    <div style="font-weight:600;">Bankroll</div>
+    {% if bankroll_anchor is none %}
+    <p style="color:var(--red);font-size:12px;margin-top:6px;">
+      Not set — sizing against the ${{ '%.0f'|format(bankroll) }} default from config, which is
+      almost certainly wrong. Every recommended stake scales directly off this number.</p>
+    {% else %}
+    <p style="color:var(--muted);font-size:12px;margin-top:6px;">
+      Anchored at ${{ '%.2f'|format(bankroll_anchor) }} on {{ bankroll_set_at }}, then adjusted by
+      settled results since. Re-enter whenever it drifts from what your apps show.</p>
+    {% endif %}
+    <p style="color:var(--muted);font-size:11px;margin-top:6px;">
+      Enter the <strong>combined available balance</strong> across every book you bet with.
+      No sportsbook exposes a balance API, so this can't be read automatically.</p>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;">
+      <input id="bankroll-input" type="number" step="0.01" min="0" placeholder="e.g. 340.00"
+             value="{{ '%.2f'|format(bankroll_anchor) if bankroll_anchor is not none else '' }}"
+             style="flex:1;min-width:140px;padding:8px;background:#0b0d13;border:1px solid var(--border);
+                    border-radius:6px;color:var(--text);font-size:14px;">
+      <button onclick="setBankroll()"
+              style="padding:9px 18px;border:none;border-radius:6px;background:var(--green);
+                     color:#06260f;font-weight:600;font-size:13px;cursor:pointer;">Save</button>
+    </div>
+    <div id="bankroll-msg" style="margin-top:8px;font-size:12px;"></div>
   </div>
 
   <h2 class="section">Needs action ({{ actionable|length }})</h2>
@@ -3168,6 +3217,25 @@ VALUE_BETS_TEMPLATE = """<!DOCTYPE html>
   </div>
   {% endfor %}
 </main>
+<script>
+async function setBankroll() {
+  const el = document.getElementById('bankroll-input');
+  const msg = document.getElementById('bankroll-msg');
+  const amount = parseFloat(el.value);
+  if (isNaN(amount) || amount < 0) {
+    msg.style.color = '#ef4444'; msg.textContent = 'Enter a valid amount.'; return;
+  }
+  const resp = await fetch('/api/bankroll/set', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({amount: amount}),
+  });
+  const data = await resp.json();
+  if (!resp.ok) { msg.style.color = '#ef4444'; msg.textContent = data.error || 'Failed'; return; }
+  msg.style.color = '#22c55e';
+  msg.textContent = 'Saved — bankroll now $' + data.bankroll.toFixed(2) + '. Reloading…';
+  setTimeout(() => location.reload(), 900);
+}
+</script>
 </body>
 </html>
 """

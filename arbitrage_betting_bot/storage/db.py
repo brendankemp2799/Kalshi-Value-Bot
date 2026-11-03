@@ -1931,11 +1931,70 @@ def settle_flagged_bet(
         )
 
 
-def get_current_bankroll() -> float:
-    """config.STARTING_BANKROLL, plus settled P&L, minus stakes still at risk in
-    PLACED-but-not-yet-settled bets, plus any manual correction. There is no
-    account API to read a real balance from (see flagged_bets table comment)."""
+def set_bankroll(amount: float) -> None:
+    """Anchor the bankroll to a figure the user read off their sportsbook apps.
+
+    No retail book exposes a balance API -- unlike Kalshi, which the old bot
+    synced from automatically every scan -- so the only accurate source is the
+    user reading their own balances. Re-entering this re-anchors and wipes out
+    any accumulated drift, which is the point: it's a correction, not a log.
+    """
     with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS bankroll_state (
+                id     INTEGER PRIMARY KEY CHECK (id = 1),
+                amount REAL NOT NULL,
+                set_at TEXT NOT NULL
+            )
+        """)
+        conn.execute(
+            """
+            INSERT INTO bankroll_state (id, amount, set_at) VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET amount = excluded.amount,
+                                           set_at = excluded.set_at
+            """,
+            (amount, datetime.utcnow().isoformat()),
+        )
+
+
+def get_bankroll_state() -> sqlite3.Row | None:
+    """The user-entered bankroll anchor and when it was set, or None."""
+    with get_connection() as conn:
+        try:
+            return conn.execute(
+                "SELECT amount, set_at FROM bankroll_state WHERE id = 1"
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return None          # table not created until the first set
+
+
+def get_current_bankroll() -> float:
+    """Spendable bankroll, used as the Kelly base.
+
+    Anchored on the figure the user last entered (the combined balance their
+    apps actually showed), then carried forward by this system's own record:
+    plus the P&L of anything settled since, minus stakes still tied up in
+    bets placed since. Both adjustments are scoped to AFTER the anchor,
+    because the balance they typed in already reflected everything before it.
+
+    Falls back to config.STARTING_BANKROLL over all history when no anchor has
+    been set -- the pre-existing behaviour, and the reason sizing ran against
+    a $1,000 placeholder until someone noticed.
+    """
+    state = get_bankroll_state()
+    with get_connection() as conn:
+        if state is not None:
+            since = state["set_at"]
+            settled_pnl = conn.execute(
+                "SELECT COALESCE(SUM(pnl), 0.0) FROM flagged_bets "
+                "WHERE status = 'SETTLED' AND settled_at > ?", (since,),
+            ).fetchone()[0]
+            open_stake = conn.execute(
+                "SELECT COALESCE(SUM(actual_stake), 0.0) FROM flagged_bets "
+                "WHERE status = 'PLACED' AND placed_at > ?", (since,),
+            ).fetchone()[0]
+            return state["amount"] + settled_pnl - open_stake
+
         settled_pnl = conn.execute(
             "SELECT COALESCE(SUM(pnl), 0.0) FROM flagged_bets WHERE status = 'SETTLED'"
         ).fetchone()[0]

@@ -106,6 +106,21 @@ def _best_retail(
         if price is None:
             continue
         book_prob = american_to_prob(price)
+
+        # Hard price cap, independent of edge -- the same guard the Kalshi path
+        # enforced (see archive/kalshi_legacy/core/value_detector.py::_eval_edge),
+        # added there after two same-night under-props at 85-87c lost $12.95.
+        # Kelly sizes hardest exactly where the modeled win probability is
+        # highest, so a heavy favorite risks almost the whole stake for a sliver
+        # of upside and a small probability error costs disproportionately. With
+        # Pinnacle as the sole sharp book there is no cross-book corroboration
+        # to catch such an error, and consensus_std is identically 0 so Kelly's
+        # uncertainty discount never fires either. Dropping this in the retail
+        # rewrite let -520 to -800 favorites through: 5 of 177 flagged bets but
+        # $140 of $1,480 in recommended stake, measured 2026-11-02.
+        if book_prob > config.MAX_ENTRY_PRICE:
+            continue
+
         edge = consensus_prob - book_prob
         if edge < min_edge:
             continue
