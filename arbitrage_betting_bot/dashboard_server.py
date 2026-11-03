@@ -2819,6 +2819,14 @@ def _value_bet_row(r: dict) -> dict:
         "status": r["status"],
         "deep_link_url": r["deep_link_url"],
         "deep_link_quality": r["deep_link_quality"],
+        # True when the Shortcut will skip this bet -- either the book returns
+        # no usable link, or its link never builds a slip on iOS. Shown in the
+        # UI so an un-loadable bet reads as "place this by hand", not as the
+        # Shortcut having quietly missed one.
+        "manual_only": (
+            r["recommended_book"] in config.DEEP_LINK_UNSUPPORTED_BOOKS
+            or r["deep_link_quality"] == "homepage"
+        ),
         "actual_book": r["actual_book"],
         "actual_odds": r["actual_odds_american"],
         "actual_stake": r["actual_stake"],
@@ -2985,6 +2993,13 @@ def pending_links():
         # frequently absent from the per-event response entirely. Those bets
         # still appear on /value-bets to be placed by hand.
         if r["deep_link_quality"] == "homepage":
+            continue
+        # Well-formed links that nonetheless never build a slip on iOS. Opening
+        # them mid-chain just bounces the user into an app (or the App Store)
+        # having silently added nothing, which is worse than not opening them
+        # at all -- it looks like it worked. See config's note for the
+        # per-book evidence.
+        if r["recommended_book"] in config.DEEP_LINK_UNSUPPORTED_BOOKS:
             continue
         try:
             commence = datetime.fromisoformat(r["commence_time"])
@@ -3175,12 +3190,18 @@ VALUE_BETS_TEMPLATE = """<!DOCTYPE html>
       <span class="bet-matchup">[{{ b.sport }}] {{ b.matchup }}</span>
       <span class="bet-meta">{{ b.commence_time }} <span class="pill s-{{ b.status }}">{{ b.status }}</span></span>
     </div>
-    <div class="bet-outcome">{{ b.outcome_label }} @ {{ b.book_label }} {{ '%+d'|format(b.odds) }}</div>
+    <div class="bet-outcome">{{ b.outcome_label }} @ {{ b.book_label }} {{ '%+d'|format(b.odds) }}
+      {% if b.manual_only %}<span class="pill" style="background:rgba(249,115,22,.15);color:var(--orange);">place by hand</span>{% endif %}
+    </div>
     <div class="bet-stats">
       <span>edge <strong>{{ '%+.1f'|format(b.edge_pct) }}%</strong></span>
       <span>fair <strong>{{ '%.1f'|format(b.consensus_pct) }}%</strong></span>
       <span>stake <strong>${{ '%.2f'|format(b.stake) }}</strong></span>
     </div>
+    {% if b.manual_only %}
+    <div style="color:var(--muted);font-size:11px;margin-top:6px;">
+      {{ b.book_label }} can't load a bet slip from a link on iOS — the Shortcut skips this one.</div>
+    {% endif %}
     {% if b.deep_link_url %}
     <a class="btn btn-primary" href="{{ b.deep_link_url }}" target="_blank">Open in {{ b.book_label }}
       {% if b.deep_link_quality != 'outcome' %}({{ b.deep_link_quality }}){% endif %}</a>

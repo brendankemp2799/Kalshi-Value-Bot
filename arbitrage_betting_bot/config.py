@@ -481,6 +481,27 @@ RETAIL_SCAN_BOOKMAKERS: str = ",".join(sorted(SHARP_BOOKMAKERS | set(RETAIL_BOOK
 # core/deeplink_builder.py. Lowercase two-letter state code.
 USER_STATE_CODE: str = os.getenv("USER_STATE_CODE", "mi")
 
+# Books whose deep links are well-formed but do not actually build a bet slip
+# on iOS, so they are excluded from the Shortcut feed (/api/pending-links).
+# They are still scanned, still flagged, and still shown on /value-bets -- the
+# edge is real, the bet just has to be placed by hand.
+#
+# Nothing in the API response distinguishes these: the link looks identical in
+# shape to one that works, so this can only be established by tapping it on a
+# real phone. Verified 2026-11-03:
+#   espnbet   the iOS app claims the domain as a universal link, opens, and
+#             ignores the market_selection_id[] parameters entirely; opening
+#             the same URL in mobile Safari redirects to the App Store. No
+#             path to a built slip on a phone either way.
+#   fanatics  returns no link at any level, only internal ids (it is also
+#             caught by the homepage-quality filter, listed here for the
+#             record).
+DEEP_LINK_UNSUPPORTED_BOOKS: set[str] = {
+    b.strip() for b in os.getenv(
+        "DEEP_LINK_UNSUPPORTED_BOOKS", "espnbet,fanatics"
+    ).split(",") if b.strip()
+}
+
 # Never look at a game starting more than this far out. Measured 2026-08-20 across
 # every order the bot has placed: orders >48h from kickoff filled 57/751 = 7.6% of
 # the time, versus 45.8% in the 3-12h window. That tail is the bulk of our order
