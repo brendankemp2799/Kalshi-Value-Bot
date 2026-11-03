@@ -135,6 +135,7 @@ def main() -> None:
                     )
                     url, quality = resolve_deep_link(
                         links, opp.book_key, opp.bet_type, opp.side, opp.threshold,
+                        stake=sizing.recommended_dollars,
                     )
                     dashboard_url = f"{config.DASHBOARD_BASE_URL}/value-bets/{bet_id}"
                     db.set_deep_link(bet_id, url, quality, dashboard_url)

@@ -48,9 +48,37 @@ MARKET_KEY_FOR_BET_TYPE: dict[str, str] = {
 }
 
 
-def _fill_state(url: str | None) -> str | None:
-    if url and "{state}" in url:
-        return url.replace("{state}", config.USER_STATE_CODE)
+def _fill_placeholders(url: str | None, stake: float | None = None) -> str | None:
+    """Substitute the template placeholders The Odds API leaves in deep links.
+
+    The API hands these back literally -- it does not know the user's state or
+    how much they intend to wager -- so an unsubstituted link is a broken
+    link. Observed live 2026-11-02:
+
+      {state}        BetMGM, Caesars, BetRivers -- state-specific subdomain
+                     or path segment (config.USER_STATE_CODE)
+      {wagerAmount}  BetRivers -- stake, in its "coupon" parameter
+                     (coupon=<pickType>|<selectionId>|<wagerAmount>).
+                     The only book observed to accept a stake in the URL at
+                     all; everywhere else the amount is typed in the slip.
+      {pickType}     BetRivers -- "single" vs a parlay/combo coupon. Always
+                     single here: this system never recommends a parlay, and
+                     each flagged bet is sized independently by Kelly.
+
+    A stake of None (or a book with no {wagerAmount}) just leaves the slip's
+    amount blank, which is the pre-existing behaviour everywhere else.
+    """
+    if not url:
+        return url
+    if "{state}" in url:
+        url = url.replace("{state}", config.USER_STATE_CODE)
+    if "{pickType}" in url:
+        url = url.replace("{pickType}", "single")
+    if "{wagerAmount}" in url:
+        # Whole dollars: the coupon parameter is parsed by the book, and a
+        # trailing ".00" is noise at best. Blank when unknown rather than
+        # guessing an amount into someone's bet slip.
+        url = url.replace("{wagerAmount}", f"{stake:.0f}" if stake else "")
     return url
 
 
@@ -87,6 +115,7 @@ def best_deep_link(
     outcome_link: str | None,
     market_link: str | None,
     event_link: str | None,
+    stake: float | None = None,
 ) -> tuple[str, str]:
     """(url, quality), quality in {"outcome", "market", "event", "homepage"}."""
     for url, quality in (
@@ -94,7 +123,7 @@ def best_deep_link(
         (market_link, "market"),
         (event_link, "event"),
     ):
-        filled = _fill_state(url)
+        filled = _fill_placeholders(url, stake)
         if filled:
             return filled, quality
     return _HOMEPAGE.get(book_key, "https://www.google.com/search?q=" + book_key), "homepage"
@@ -102,13 +131,16 @@ def best_deep_link(
 
 def resolve_deep_link(
     bookmakers: list[dict], book_key: str, bet_type: str,
-    outcome_name: str, point: float | None,
+    outcome_name: str, point: float | None, stake: float | None = None,
 ) -> tuple[str, str]:
     """One-call convenience: extract + pick the best link for a flagged bet's
     (book, outcome). `bet_type` is the flagged_bets value ("h2h"/"totals"/
-    "spread"), translated internally to the Odds API's market key."""
+    "spread"), translated internally to the Odds API's market key.
+
+    `stake` fills the {wagerAmount} placeholder where a book supports one
+    (BetRivers today) so the slip arrives pre-filled with the Kelly size."""
     market_key = MARKET_KEY_FOR_BET_TYPE.get(bet_type, bet_type)
     outcome_link, market_link, event_link = extract_links(
         bookmakers, book_key, market_key, outcome_name, point,
     )
-    return best_deep_link(book_key, outcome_link, market_link, event_link)
+    return best_deep_link(book_key, outcome_link, market_link, event_link, stake)
