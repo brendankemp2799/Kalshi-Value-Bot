@@ -240,6 +240,20 @@ def detect_retail_value(
     for event in events:
         sharp_books = _sharp_only(event.bookmakers)
         if not sharp_books:
+            # Pinnacle quotes nothing for this event, so there is no fair price
+            # to compare against and the whole event is unpriceable. Logged
+            # rather than skipped in silence: this is invisible in the per-
+            # candidate reasons (it happens before any candidate is built), so
+            # without a record an event the model never even looked at is
+            # indistinguishable from one it looked at and passed on.
+            if scan_log is not None:
+                scan_log.append({
+                    "sport": event.sport_key, "home_team": event.home_team,
+                    "away_team": event.away_team,
+                    "commence_time": event.commence_time.isoformat(),
+                    "bet_type": None, "outcome_label": "(whole event)",
+                    "status": "rejected", "reason": "no_sharp_book",
+                })
             continue
 
         # ── h2h (including soccer's 3-way Draw) ────────────────────────────

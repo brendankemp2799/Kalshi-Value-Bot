@@ -534,6 +534,45 @@ SHORTCUT_EXCLUDED_BOOKS: set[str] = {
 # which bills per game in the window.
 MAX_TIME_TO_EVENT_HOURS: int = int(os.getenv("MAX_TIME_TO_EVENT_HOURS", "48"))
 
+# The retail path uses its OWN, much wider horizon, because the 48h figure above
+# is justified entirely by Kalshi LIMIT-ORDER FILL RATES -- a constraint that
+# does not exist here. On a sportsbook you tap and the bet is placed at the
+# posted price; there is no resting order to go unfilled, so "7.6% of orders
+# filled" has no analogue. The other stated reason, capping per-event
+# alternate-line cost, does not apply either: no entry in SPORT_MARKETS
+# requests alternate_* markets, so the retail scan makes zero per-event calls.
+#
+# Inheriting 48h silently suppressed ~80% of the market. Measured 2026-11-03,
+# same fetch, horizon the only variable:
+#     48h  ->  29 events,  338 candidates, 0 flagged
+#    240h  -> 148 events, 1219 candidates, 1 flagged
+# At 48h only 1 of 16 NFL games was visible (Monday night); the whole Sunday
+# slate sits 5-6 days out. Every soccer league except the Champions League
+# midweek round vanished entirely. The bet hidden that day was Jets ML +420 at
+# FanDuel, +1.47% edge, 112h to kickoff -- a genuine qualifying bet the scan
+# could not see. Six of the day's eight best edges were NFL games outside 48h.
+#
+# This costs NOTHING extra: the Odds API bills markets x ceil(books/10) per
+# request and ignores event count (see odds_fetcher._window_params). Per-scan
+# cost is 37 credits at any horizon.
+#
+# 168h (7 days) rather than longer: it covers a full NFL week and the complete
+# soccer weekend from any day of the week, without reaching into the thin,
+# fast-moving lines two Sundays out. Pair this with FLAGGED_BET_TTL_HOURS below
+# -- a wider horizon means a flagged price can go stale before it is acted on.
+RETAIL_MAX_TIME_TO_EVENT_HOURS: int = int(
+    os.getenv("RETAIL_MAX_TIME_TO_EVENT_HOURS", "168")
+)
+
+# How long a FLAGGED/NOTIFIED bet stays actionable before it is retired and left
+# to be re-found at a fresh price. expire_stale_bets() previously only retired
+# bets at kickoff, which was adequate at a 48h horizon; at 168h a recommendation
+# could sit in the list for a week while the book moved off the price the edge
+# was computed from. Expiring instead of re-pricing in place keeps the
+# (odds_api_event_id, outcome_label) dedup honest: once the row is terminal the
+# next scan is free to flag the same outcome again at whatever it is worth then.
+FLAGGED_BET_TTL_HOURS: int = int(os.getenv("FLAGGED_BET_TTL_HOURS", "12"))
+
 # Fetch each game's FULL totals ladder (alternate_totals) instead of relying on
 # whichever single line each book happens to feature.
 #

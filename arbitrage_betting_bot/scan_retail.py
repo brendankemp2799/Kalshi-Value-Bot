@@ -30,6 +30,10 @@ import config
 # fetch, without touching the shared default the (stopped) legacy Kalshi path
 # still reads. See config.py's RETAIL_SCAN_BOOKMAKERS comment.
 config.ODDS_API_BOOKMAKERS = config.RETAIL_SCAN_BOOKMAKERS
+# Same process-local pattern for the event horizon: the shared 48h default is a
+# Kalshi fill-rate constraint with no meaning on a sportsbook, and inheriting it
+# hid ~80% of the market. See config.RETAIL_MAX_TIME_TO_EVENT_HOURS.
+config.MAX_TIME_TO_EVENT_HOURS = config.RETAIL_MAX_TIME_TO_EVENT_HOURS
 
 import storage.db as db
 from data.odds_fetcher import OddsAPIClient

@@ -2075,7 +2075,36 @@ def expire_stale_bets() -> int:
             """,
             (datetime.utcnow().isoformat(), now),
         )
-        return cur.rowcount
+        expired = cur.rowcount
+
+        # Also retire bets that are simply too OLD to trust, regardless of when
+        # their game starts. The recommended book/odds/stake on a row are a
+        # snapshot of the moment it was flagged; once the book has moved off that
+        # price the row is advice about a bet that no longer exists. This did not
+        # matter while the scan looked only 48h ahead, but the retail horizon is
+        # now 168h (see config.RETAIL_MAX_TIME_TO_EVENT_HOURS), so a row could
+        # otherwise sit in the actionable list for a week on a dead price.
+        #
+        # Expiring is deliberately preferred to re-pricing in place: it releases
+        # the (odds_api_event_id, outcome_label) dedup held by
+        # find_open_flagged_bet(), so the next scan re-flags the same outcome at
+        # a current price if the edge is still there -- and stays quiet if it is
+        # not. flagged_at is naive UTC, so the cutoff must be too.
+        ttl = getattr(config, "FLAGGED_BET_TTL_HOURS", 0)
+        if ttl:
+            cutoff = (datetime.utcnow() - timedelta(hours=ttl)).isoformat()
+            cur = conn.execute(
+                """
+                UPDATE flagged_bets
+                SET status = 'EXPIRED', dismissed_at = ?,
+                    dismiss_reason = 'auto: recommendation older than '
+                                     || ? || 'h, price no longer current'
+                WHERE status IN ('FLAGGED', 'NOTIFIED') AND flagged_at <= ?
+                """,
+                (datetime.utcnow().isoformat(), ttl, cutoff),
+            )
+            expired += cur.rowcount
+        return expired
 
 
 def set_bankroll(amount: float) -> None:
