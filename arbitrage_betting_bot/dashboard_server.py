@@ -41,6 +41,7 @@ import core.clv_analytics as clv
 from execution.auto_settle import auto_settle_positions
 from data.kalshi_client import KalshiClient
 import core.settlement_matcher as settlement_matcher
+from core.deeplink_builder import is_shortcut_eligible
 import config
 import re as _re
 
@@ -2833,7 +2834,7 @@ def _maybe_settle_due_bets() -> None:
 
 
 def _value_bet_row(r: dict) -> dict:
-    book_label = (r["recommended_book"] or "").replace("_", " ").title()
+    book_label = config.book_label(r["recommended_book"])
     return {
         "id": r["id"],
         "flagged_at": _fmt_dt(r["flagged_at"]),
@@ -3016,7 +3017,7 @@ def scan_diagnostics():
         "sport": _short_sport(r["sport"] or ""),
         "matchup": f'{r["home_team"]} vs {r["away_team"]}',
         "outcome_label": r["outcome_label"],
-        "book": (r["book"] or "").replace("_", " ").title(),
+        "book": config.book_label(r["book"]),
         "odds": r["odds_american"],
         "edge_pct": round(r["edge"] * 100, 2) if r["edge"] is not None else None,
         "consensus_pct": round(r["consensus_prob"] * 100, 1) if r["consensus_prob"] is not None else None,
@@ -3069,23 +3070,17 @@ def pending_links():
     now = datetime.now(timezone.utc)
     links = []
     for r in rows:
-        if not r["deep_link_url"]:
-            continue
         if book and r["recommended_book"] != book:
             continue
-        # A homepage link adds nothing to a bet slip -- it just drops the user
-        # on a landing page mid-chain and interrupts the run. Measured
-        # 2026-10-16: Fanatics returns no links at any level, and BetRivers is
-        # frequently absent from the per-event response entirely. Those bets
+        # Both rules -- drop homepage-quality links (they add nothing to a slip
+        # and just interrupt the run on a landing page) and drop books that
+        # never build a slip on iOS (bouncing the user into an app having
+        # silently added nothing, which is worse than not opening at all) --
+        # now live in core/deeplink_builder.is_shortcut_eligible(), shared with
+        # alerts/telegram_notifier.py so the alert's instructions cannot
+        # contradict what this route will actually serve. Bets rejected here
         # still appear on /value-bets to be placed by hand.
-        if r["deep_link_quality"] == "homepage":
-            continue
-        # Well-formed links that nonetheless never build a slip on iOS. Opening
-        # them mid-chain just bounces the user into an app (or the App Store)
-        # having silently added nothing, which is worse than not opening them
-        # at all -- it looks like it worked. See config's note for the
-        # per-book evidence.
-        if r["recommended_book"] in config.SHORTCUT_EXCLUDED_BOOKS:
+        if not is_shortcut_eligible(r):
             continue
         try:
             commence = datetime.fromisoformat(r["commence_time"])
@@ -3137,7 +3132,7 @@ def shortcut_redirect(batch_id: str):
         shortcut_url = f"shortcuts://run-shortcut?name={name_q}"
     else:
         shortcut_url = f"shortcuts://run-shortcut?name={name_q}&input=text&text={text_q}"
-    book = (rows[0]["recommended_book"] or "").replace("_", " ").title()
+    book = config.book_label(rows[0]["recommended_book"])
     return render_template_string(
         SHORTCUT_REDIRECT_TEMPLATE,
         shortcut_url=shortcut_url, count=len(links), book=book,

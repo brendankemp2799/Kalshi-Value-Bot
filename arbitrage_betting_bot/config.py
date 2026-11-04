@@ -495,6 +495,30 @@ RETAIL_BOOKMAKERS: list[str] = [
 # local override, not a change to the shared default other code still reads.
 RETAIL_SCAN_BOOKMAKERS: str = ",".join(sorted(SHARP_BOOKMAKERS | set(RETAIL_BOOKMAKERS)))
 
+# How each book is NAMED to the user. The Odds API's keys do not survive
+# .replace("_"," ").title() as anything a bettor recognises: williamhill_us is
+# the key for CAESARS, and rendering it "Williamhill Us" on a Telegram button
+# or a dashboard row points at an app that is not on the phone under that name.
+# The others are merely mis-capitalised ("Fanduel", "Draftkings").
+BOOK_LABELS: dict[str, str] = {
+    "draftkings":     "DraftKings",
+    "fanduel":        "FanDuel",
+    "williamhill_us": "Caesars",
+    "betmgm":         "BetMGM",
+    "betrivers":      "BetRivers",
+    "espnbet":        "ESPN Bet",
+    "fanatics":       "Fanatics",
+    "pinnacle":       "Pinnacle",
+}
+
+
+def book_label(book_key: str | None) -> str:
+    """Display name for a bookmaker key, falling back to a tidied key so an
+    unmapped book degrades to "Some Book" rather than vanishing."""
+    if not book_key:
+        return ""
+    return BOOK_LABELS.get(book_key, book_key.replace("_", " ").title())
+
 # State code used to fill in BetMGM/Caesars deep links. Validated live
 # 2026-10-13: The Odds API's includeLinks=true returns those two books'
 # outcome-level betslip URLs with a literal "{state}" placeholder it does NOT

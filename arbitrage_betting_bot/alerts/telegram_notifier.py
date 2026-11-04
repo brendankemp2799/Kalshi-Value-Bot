@@ -23,6 +23,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
+from core.deeplink_builder import is_shortcut_eligible, is_usable_link
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ def send_bet_notification(flagged_bet: dict) -> str | None:
         )
         return None
 
-    book_label = flagged_bet["recommended_book"].replace("_", " ").title()
+    book_label = config.book_label(flagged_bet["recommended_book"])
     odds = flagged_bet["recommended_odds_american"]
     text = (
         f"<b>Value bet flagged</b>\n"
@@ -113,7 +114,7 @@ def send_batch_notification(book_key: str, bets: list[dict], batch_id: str) -> s
     if not bets:
         return None
 
-    book_label = book_key.replace("_", " ").title()
+    book_label = config.book_label(book_key)
     lines = [f"<b>{len(bets)} value bet{'' if len(bets) == 1 else 's'} — {book_label}</b>"]
     total_stake = 0.0
     for b in bets:
@@ -124,18 +125,51 @@ def send_batch_notification(book_key: str, bets: list[dict], batch_id: str) -> s
             f"   edge {b['edge']:+.1%} · stake ${b['recommended_stake']:.2f}"
         )
     lines.append(f"\nTotal staked: ${total_stake:.2f}")
-    lines.append(f"\n<i>Tap the {config.SHORTCUT_NAME} shortcut to load these into your slip.</i>")
+
+    # How the user actually gets these into a slip depends on the batch, and
+    # saying the wrong thing here is worse than saying nothing -- an alert that
+    # tells them to tap the Shortcut for a bet the Shortcut will never be
+    # served just makes the whole thing look broken.
+    buttons = []
+    eligible = [b for b in bets if is_shortcut_eligible(b)]
+
+    if len(bets) == 1 and is_usable_link(bets[0]):
+        # One bet needs no Shortcut at all. The Shortcut exists solely to open
+        # SEVERAL links in turn without the user tapping each one; for a single
+        # bet it is pure overhead -- leave Telegram, find the icon, tap it --
+        # when an ordinary https button does the same job in one tap, right
+        # here. This is why the alert looked like a downgrade: every batch so
+        # far has been a single bet, so the Shortcut line was the only
+        # instruction shown even though a direct link was already stored.
+        #
+        # Judged by is_usable_link(), not is_shortcut_eligible(): the excluded
+        # books are excluded for misbehaving MID-CHAIN, which cannot happen
+        # when this is the only link and the user sees the result immediately.
+        buttons.append({"text": f"Open {book_label}", "url": bets[0]["deep_link_url"]})
+        lines.append(f"\n<i>Tap Open {book_label} to load this into your slip.</i>")
+    elif len(eligible) == len(bets):
+        lines.append(
+            f"\n<i>Tap the {config.SHORTCUT_NAME} shortcut to load these into your slip.</i>"
+        )
+    elif eligible:
+        lines.append(
+            f"\n<i>Tap the {config.SHORTCUT_NAME} shortcut to load "
+            f"{len(eligible)} of these into your slip — the rest need placing by hand.</i>"
+        )
+    else:
+        lines.append("\n<i>No usable bet-slip link for these — place by hand.</i>")
+
     text = "\n".join(lines)
 
-    # No "add to slip" button here on purpose. iOS will not auto-run a shortcut
-    # launched from a link (confirmed live 2026-10-14 across three URL formats),
-    # so a button promising that would always dead-end at the Shortcuts app.
-    # The user launches the shortcut themselves; it pulls its own list from
-    # /api/pending-links. The /s/<batch_id> route still exists for the day that
-    # restriction changes.
-    buttons = [
-        {"text": "View on Dashboard", "url": f"{config.DASHBOARD_BASE_URL}/value-bets"},
-    ]
+    # For multi-bet batches there is still no "add to slip" button: iOS will not
+    # auto-run a shortcut launched from a link (confirmed live 2026-10-14 across
+    # three URL formats), so a button promising that would always dead-end at
+    # the Shortcuts app. The user launches the shortcut themselves and it pulls
+    # its own list from /api/pending-links. The /s/<batch_id> route still exists
+    # for the day that restriction changes.
+    buttons.append(
+        {"text": "View on Dashboard", "url": f"{config.DASHBOARD_BASE_URL}/value-bets"}
+    )
     base = {"chat_id": config.TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
 
     for keep in range(len(buttons), -1, -1):

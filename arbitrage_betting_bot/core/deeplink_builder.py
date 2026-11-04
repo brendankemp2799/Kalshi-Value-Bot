@@ -144,3 +144,52 @@ def resolve_deep_link(
         bookmakers, book_key, market_key, outcome_name, point,
     )
     return best_deep_link(book_key, outcome_link, market_link, event_link, stake)
+
+
+def _field(bet, key: str):
+    """Read one field from either a dict or a sqlite3.Row.
+
+    Callers pass both: alerts/telegram_notifier.py hands over dicts built in
+    scan_retail.py, while dashboard_server.pending_links() iterates raw
+    sqlite3.Row objects straight from db.get_flagged_bets(). Row supports
+    bet["x"] but has no .get(), and raises IndexError (not KeyError) on an
+    unknown column, so neither plain indexing nor .get() works for both.
+    """
+    try:
+        return bet[key]
+    except (KeyError, IndexError):
+        return None
+
+
+def is_usable_link(bet) -> bool:
+    """Does this bet have a link that lands on something specific?
+
+    A "homepage" link is the end of best_deep_link()'s fallback chain -- it
+    means no real link was found and the user is being dropped on a landing
+    page. Anything else (outcome/market/event) at least opens the right place.
+    """
+    return bool(_field(bet, "deep_link_url")) and _field(bet, "deep_link_quality") != "homepage"
+
+
+def is_shortcut_eligible(bet) -> bool:
+    """Should this bet be served to the OpenBets Shortcut chain?
+
+    Stricter than is_usable_link(): a link can be perfectly well-formed and
+    still be wrong to open MID-CHAIN, because the chain opens links one after
+    another with no chance for the user to see what each one did. A book that
+    opens its app without building the slip (espnbet) or demands a fresh login
+    (betrivers) stalls or silently no-ops the rest of the run, which looks like
+    success. See config.SHORTCUT_EXCLUDED_BOOKS for the per-book evidence.
+
+    Single deliberate taps are judged by is_usable_link() instead -- there the
+    user sees the result immediately, so there is nothing to silently swallow.
+
+    Shared by dashboard_server.pending_links() (what the Shortcut fetches) and
+    alerts/telegram_notifier.py (what the alert tells the user to do). These
+    MUST agree: an alert saying "tap the shortcut" for a bet the shortcut will
+    never be served is worse than no instruction at all.
+    """
+    return (
+        is_usable_link(bet)
+        and _field(bet, "recommended_book") not in config.SHORTCUT_EXCLUDED_BOOKS
+    )
